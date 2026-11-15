@@ -29,6 +29,7 @@ TMP, CUDA = DATA / "tmp", DATA / "cuda"
 RENDERS = videos_dir() / "ShortsMaker" if PACKAGED else ROOT / "renders"   # готові шорти — там, де користувач шукає відео, а не в теці програми
 for d in (THUMBS, TRANS, MODELS, MIXES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
 # портативно: тимчасові файли й кеш моделей — лише в теці програми, ніде більше в системі
+SYS_ENV = dict(os.environ)                                         # для вікна Edge: його тимчасові файли не мають жити в нашій теці (їх тримає BITS і програму не видалити)
 tempfile.tempdir = str(TMP); os.environ.update(TMP=str(TMP), TEMP=str(TMP), HF_HOME=str(DATA / "hf"), HF_HUB_DISABLE_TELEMETRY="1")
 if (ROOT / "ffmpeg").is_dir(): os.environ["PATH"] = str(ROOT / "ffmpeg") + os.pathsep + os.environ.get("PATH", "")
 
@@ -1000,7 +1001,7 @@ def open_window(url):
         edge = Path(base or "-", "Microsoft/Edge/Application/msedge.exe")
         if edge.is_file():                                         # вікно-застосунок без панелей браузера
             return subprocess.Popen([str(edge), f"--app={url}", f"--user-data-dir={DATA / 'window'}", "--no-first-run",
-                                     "--no-default-browser-check", "--window-size=1500,950"])
+                                     "--no-default-browser-check", "--window-size=1500,950"], env=SYS_ENV)
     webbrowser.open(url)
 
 PAGE_SILENT_S = 150                                               # вікно, що зникло без «бувай» (браузер вбили): згорнуте браузер будить рідко, тож чекаємо довше

@@ -54,7 +54,8 @@ Name: "{autodesktop}\ShortsMaker"; Filename: "{app}\ShortsMaker.exe"; Tasks: des
 Filename: "{app}\ShortsMaker.exe"; Description: "{cm:LaunchProgram,ShortsMaker}"; Flags: nowait postinstall
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-Process | Where-Object {{ $_.Path -like '{app}\*' } | Stop-Process -Force"""; Flags: runhidden; RunOnceId: "StopShortsMaker"
+; програма й її вікно Edge (профіль вікна лежить у data\window), інакше теку не видалити
+Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -like '{app}\*' -or $_.CommandLine -like '*{app}\data\window*' } | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }"""; Flags: runhidden waituntilterminated; RunOnceId: "StopShortsMaker"
 
 [UninstallDelete]
 ; разом з проєктами, моделями й завантаженим ШІ; готові шорти лишаються у «Відео\ShortsMaker»
