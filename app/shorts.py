@@ -896,7 +896,7 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.0.9"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.0.10"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1186,7 +1186,13 @@ def finish_update(setup):
     if setup: detached(str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART")
     else: detached(str(ROOT / "runtime" / "pythonw.exe"), str(HERE / "shorts.py"), "--restart")
     time.sleep(1.5)                                               # cmd має встигнути запустити процес і вийти, інакше taskkill /T забере і його
-    quit_app()
+    if setup: quit_app()                                          # інсталятор сам відкриє програму
+    AI.stop(); STT.stop(); os._exit(0)                            # без taskkill /T: вікно Edge — наш дочірній процес, воно лишається й перезавантажиться
+
+def reopen_window(url):
+    """Старе вікно не озвалось після оновлення (його закрила попередня версія) — відкриваємо нове."""
+    time.sleep(8)
+    if not PAGES and (w := open_window(url)): threading.Thread(target=watch_window, args=(w,), daemon=True).start()
 
 def watch_window(proc):
     """Процес вікна Edge завершився — вікно закрили. Якщо він вийшов за секунди, це не наше вікно: Edge передав його вже запущеному."""
@@ -1238,7 +1244,8 @@ def main():
     threading.Thread(target=prepare_ffmpeg, daemon=True).start()   # перший запуск: ffmpeg завантажується, поки відкривається вікно
     print(datetime.now(), "start", url)
     threading.Thread(target=check_update, daemon=True).start()
-    if "--restart" in sys.argv: threading.Thread(target=watchdog, daemon=True).start()   # після оновлення: вікно вже відкрите, воно перезавантажиться
+    if "--restart" in sys.argv:                                   # після оновлення: старе вікно перезавантажиться саме
+        threading.Thread(target=watchdog, daemon=True).start(); threading.Thread(target=reopen_window, args=(url,), daemon=True).start()
     elif "--no-window" not in sys.argv:
         threading.Thread(target=watchdog, daemon=True).start()
         if w := open_window(url): threading.Thread(target=watch_window, args=(w,), daemon=True).start()
