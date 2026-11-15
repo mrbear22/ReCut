@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-import localai, publish
+import brands, localai, publish
 
 HERE = Path(__file__).resolve().parent
 PACKAGED = (HERE.parent / "runtime").is_dir()                    # зібрана програма (інсталятор); інакше — запуск із сорсів
@@ -44,7 +44,7 @@ W, H = 1080, 1920
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
 STT_MODEL, OLLAMA = "large-v3-turbo", "http://127.0.0.1:11434/api/"
-ART = ("card", "stream", "text", "image", "chat", "alert", "shape", "emoji")   # елементи, що малюються картинкою поверх відео
+ART = ("card", "stream", "text", "image", "chat", "alert", "shape", "emoji", "social")   # елементи, що малюються картинкою поверх відео
 PAD = 40                                       # поле під тінь навколо плашки
 ENC = {"nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "{q}", "-b:v", "0", "-pix_fmt", "yuv420p"],
        "amf":   ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "{q}", "-qp_p", "{q}", "-pix_fmt", "yuv420p"],
@@ -649,6 +649,30 @@ def make_text(el):
                stroke_width=stroke, stroke_fill="black")
     return img, cw, ch
 
+def make_social(el):
+    """Плашка соцмережі: логотип і нікнейм. Вигляд — темна плашка, плашка кольору мережі або без плашки (з обведенням)."""
+    key = el.get("net") if el.get("net") in brands.BRANDS else "tiktok"; style = el.get("style", "dark")
+    f = ImageFont.truetype(pick_font(el.get("font"))[1], max(8, round(float(el.get("size", 46)))))
+    handle = (el.get("handle") or "").strip(); logo = round(f.size * 1.3); gap = round(f.size * .4) if handle else 0
+    pad = (round(f.size * .3), round(f.size * .55)) if style != "clean" else (0, 0)      # зверху-знизу, праворуч
+    stroke = 0 if style != "clean" else max(1, f.size // 12)
+    cw = pad[0] + logo + gap + (round(f.getlength(handle)) + 2 * stroke if handle else 0) + (pad[1] if handle else pad[0])
+    ch = logo + 2 * pad[0]
+    img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); d = ImageDraw.Draw(img); r = round(ch * .32)
+    name, col, _ = brands.BRANDS[key]
+    if style == "dark": shadow(img, cw, ch, r); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), r, fill=(18, 18, 22, 235))
+    if style == "brand":
+        shadow(img, cw, ch, r); m = Image.new("L", img.size, 0); ImageDraw.Draw(m).rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), r, fill=255)
+        bg = brands._gradient(max(cw, ch), brands.INSTAGRAM_GRADIENT).resize((cw, ch)) if key == "instagram" else Image.new("RGB", (cw, ch), col)
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0)); layer.paste(bg, (PAD, PAD)); img.paste(layer, (0, 0), m)
+    ink = "#000000" if style == "brand" and key == "kick" else "#ffffff"
+    if style == "brand":                                          # на кольоровій плашці — білий знак без квадрата
+        img.paste(Image.new("RGBA", (logo, logo), ink), (PAD + pad[0], PAD + pad[0]), brands.glyph_mask(key, logo))
+    else: img.alpha_composite(brands.brand_tile(key, logo), (PAD + pad[0], PAD + pad[0]))
+    if handle:
+        ImageDraw.Draw(img).text((PAD + pad[0] + logo + gap + stroke, PAD + ch / 2), handle, font=f, fill=ink, anchor="lm", stroke_width=stroke, stroke_fill="black")
+    return img, cw, ch
+
 def make_image(el):
     """Логотип / стікер шириною w зі збереженням пропорцій."""
     w = max(8, round(float(el.get("w", 300))))
@@ -709,7 +733,7 @@ def make_emoji(el):
     ImageDraw.Draw(img).text((PAD - l, PAD - t), txt, font=f, embedded_color=True); return img, r - l, b - t
 
 def art(el): return {"card": make_card, "stream": make_card, "text": make_text, "image": make_image,
-                     "chat": make_chat, "alert": make_alert, "shape": make_shape, "emoji": make_emoji}[el["type"]](el)
+                     "chat": make_chat, "alert": make_alert, "shape": make_shape, "emoji": make_emoji, "social": make_social}[el["type"]](el)
 
 def layer(l, sw, sh):
     """Кадрування шару відео: (фільтр, ширина, висота) на місці призначення."""
@@ -896,7 +920,7 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.0.10"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.1.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 

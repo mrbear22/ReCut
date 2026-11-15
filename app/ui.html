@@ -416,6 +416,8 @@ const COLORS = ['#ffffff', '#111111', '#ffcc33', '#ff3b30', '#e91916', '#a970ff'
 const SHAPE = [['shape', 'seg', 'Форма', [['rect', 'Прямокутник'], ['round', 'Заокруглена'], ['circle', 'Коло']]],
   ['radius', 'range', 'Заокруглення', [0, 200, 1, 'px'], e => e.shape === 'round'], ['bw', 'range', 'Рамка', [0, 30, 1, 'px']], ['border', 'color', 'Колір рамки', null, e => e.bw > 0]];
 const T = (name, ic, col, size, props) => ({name, ic, col, size, props});
+const NETS = [['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['instagram', 'Instagram'], ['telegram', 'Telegram'], ['twitch', 'Twitch'],
+              ['discord', 'Discord'], ['kick', 'Kick'], ['x', 'X'], ['facebook', 'Facebook'], ['threads', 'Threads']];   // логотипи — app/brands.py
 const TYPES = {
   video:  T('Відео', '▶', '#6b8fb8', ['w'], SHAPE),
   cam:    T('Вебкамера', '◉', '#b8789a', ['w'], [['detect', 'button', 'Знайти вебкамеру автоматично'], ...SHAPE]),
@@ -423,6 +425,9 @@ const TYPES = {
             ['channel', 'text', 'Канал'], ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [30, 250, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
   stream: T('Плашка стріму', '◎', '#c9a75a', ['s'], [['logo', 'file', 'Аватар'], ['channel', 'text', 'Нікнейм'], ['title', 'area', 'Назва стріму'],
             ['category', 'text', 'Гра / категорія'], ['badge', 'text', 'Бейдж'], ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [30, 250, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
+  social: T('Соцмережа', '@', '#6b95c9', ['size'], [['net', 'seg', 'Мережа', NETS], ['handle', 'text', 'Нікнейм чи посилання'],
+            ['style', 'seg', 'Вигляд', [['dark', 'Темна плашка'], ['brand', 'Колір мережі'], ['clean', 'Без плашки']]], ['font', 'font', 'Шрифт'],
+            ['size', 'range', 'Розмір', [20, 140, 1, 'px']], ['anim', 'seg', 'Поява', ANIM]]),
   text:   T('Текст', 'T', '#9a86c6', ['size'], [['text', 'area', 'Текст'], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [16, 220, 1, 'px']],
             ['color', 'color', 'Колір'], ['bgOn', 'toggle', 'Плашка під текстом'], ['bg', 'color', 'Колір плашки', null, e => e.bgOn], ['anim', 'seg', 'Поява', ANIM]]),
   chat:   T('Чат-повідомлення', '“', '#8a7fc0', ['s'], [['name', 'text', 'Нік глядача'], ['nameColor', 'color', 'Колір ніка'], ['text', 'area', 'Повідомлення'],
@@ -449,7 +454,7 @@ const CATALOG = [
     ['Донат-алерт', 'хто задонатив і що написав', {type: 'alert', s: .9, title: 'Нікнейм задонатив 100 ₴', text: 'Дякую за стрім!', color: '#ffcc33', y: 700, anim: 'pop', from: 2}],
     ['Новий фоловер', 'сповіщення про підписку', {type: 'alert', s: .8, title: 'Новий фоловер: нікнейм', text: '', color: '#a970ff', y: 700, anim: 'slide', from: 2}],
     ['Бейдж LIVE', 'червона мітка ефіру', {type: 'text', text: 'LIVE', size: 44, color: '#ffffff', bg: '#e91916', bgOn: true, x: 60, y: 60}],
-    ['Нікнейм / соцмережі', '@нік на темній плашці', {type: 'text', text: '@nickname', size: 46, color: '#ffffff', bg: '#18181b', bgOn: true, y: 1700}],
+    ['Нікнейм у соцмережі', 'логотип мережі й @нік', {type: 'social', net: 'tiktok', handle: '@nickname', style: 'dark', size: 46, y: 1700, anim: 'none'}],
     ['Заклик «Підпишись»', 'вистрибує на 2-й секунді', {type: 'text', text: 'ПІДПИШИСЬ', size: 60, color: '#ffffff', bg: '#e91916', bgOn: true, anim: 'pop', from: 2, y: 1560}]]],
   ['Текст', [
     ['Заголовок-хук', 'жирний текст на жовтому', {type: 'text', text: 'ЦЕ ТРЕБА БАЧИТИ', size: 70, color: '#111111', bg: '#ffcc33', bgOn: true, y: 120}],
@@ -469,6 +474,13 @@ const CATALOG = [
     ['Вебкамера кругла', 'обличчя в колі з рамкою', {type: 'cam', src: [0.72, 0.62, 0.26, 0.34], w: 360, x: 680, y: 1180, shape: 'circle', bw: 8, border: '#ffcc33'}],
     ['Вебкамера на всю ширину', 'камера згори, гра знизу', {type: 'cam', src: [0.72, 0.62, 0.26, 0.34], w: 1080, x: 0, y: 0, shape: 'rect', bw: 0, border: '#ffffff', stack: true}],
     ['Ще шар відео', 'інший фрагмент кадру', {type: 'video', src: [0.3, 0.3, 0.4, 0.4], w: 700, x: 190, y: 700, shape: 'round', radius: 40, bw: 0, border: '#ffffff'}]]],
+  ['Соцмережі', [
+    ['Telegram-канал', 'логотип Telegram і посилання', {type: 'social', net: 'telegram', handle: 't.me/channel', style: 'brand', size: 44, y: 1650, anim: 'pop'}],
+    ['TikTok', 'логотип і @нік', {type: 'social', net: 'tiktok', handle: '@nickname', style: 'dark', size: 44, y: 1650, anim: 'pop'}],
+    ['YouTube', 'логотип і назва каналу', {type: 'social', net: 'youtube', handle: '@channel', style: 'dark', size: 44, y: 1650, anim: 'pop'}],
+    ['Instagram', 'логотип і @нік', {type: 'social', net: 'instagram', handle: '@nickname', style: 'brand', size: 44, y: 1650, anim: 'pop'}],
+    ['Twitch', 'логотип і канал стрімів', {type: 'social', net: 'twitch', handle: 'twitch.tv/nickname', style: 'brand', size: 44, y: 1650, anim: 'pop'}],
+    ['Discord-сервер', 'логотип і запрошення', {type: 'social', net: 'discord', handle: 'discord.gg/invite', style: 'brand', size: 44, y: 1650, anim: 'pop'}]]]
 ];
 const SINGLE = ['bg'];
 const mk = p => ({id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, to: 0, ...structuredClone(p)});
@@ -665,7 +677,7 @@ function readControl(t, cur) {                                    // значе�
 // ── шари й налаштування вибраного ──
 function renderEls() {
   $('#els').innerHTML = els().slice().reverse().map(e => {
-    const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || '';
+    const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || e.handle || '';
     return `<div class="el ${e.id === selEl ? 'sel' : ''} ${e.on ? '' : 'off'}" data-id="${e.id}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
       <span class="nm">${Ty.name}${note ? `<small>${esc(note)}</small>` : ''}</span>
       <span class="tl"><button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
@@ -735,7 +747,7 @@ $('#props').addEventListener('click', async e => {
 function afterEdit(el, k) {
   if (el.type === 'progress' && k) el.y = el.pos === 'top' ? 0 : 1920 - el.h;
   if (el.type === 'subs' && ['name', 'color'].includes(k)) drawTL();   // підпис і колір рядка спікера
-  if (['title', 'text', 'channel', 'name'].includes(k)) { const r = $(`.el[data-id="${el.id}"] small`); if (r) r.textContent = el[k]; }
+  if (['title', 'text', 'channel', 'name', 'handle'].includes(k)) { const r = $(`.el[data-id="${el.id}"] small`); if (r) r.textContent = el[k]; }
   if (['bgOn', 'karaoke', 'shape', 'style', 'bw'].includes(k)) renderProps();
   save();
 }
