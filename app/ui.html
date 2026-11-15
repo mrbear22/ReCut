@@ -108,7 +108,6 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .el .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.el .nm small{color:var(--mut);margin-left:6px}
 .el .tl{display:flex;gap:1px;visibility:hidden}.el:hover .tl,.el.sel .tl{visibility:visible}
 .el .tl button{padding:1px 6px;background:none;border-color:transparent;color:var(--mut)}.el .tl button:hover{background:var(--s4);color:var(--hi)}
-.elhint{margin:0;padding:6px 14px 10px;font-size:11.5px;line-height:1.4;color:var(--mut)}.elhint b{color:var(--fg);font-weight:600}
 #props{border-top:1px solid var(--line);padding:12px;overflow:auto;flex:1;min-height:0}
 #props .hd{display:flex;align-items:center;gap:8px}#props .hd b{font-size:14px;font-weight:600;color:var(--hi)}
 #imp{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}#imp.on{display:flex}
@@ -321,7 +320,6 @@ footer{padding:0 8px 8px}
     <div class="top"><button class="pri wide" id="addEl">+ Додати елемент</button></div>
     <div class="pop" id="cat"></div>
     <div id="els"></div>
-    <p class="elhint">Новий елемент додається у вибраний кліп. В інший кліп — перетягни рядок зі списку на кліп на таймлайні. <b>Глобальний</b> елемент є в усіх кліпах.</p>
     <div id="props"></div>
   </section>
 
@@ -338,7 +336,6 @@ footer{padding:0 8px 8px}
       <button class="ghost" data-crop="c" title="По центру кадру">⊕</button>
       <button class="ghost" data-crop="cx" title="По центру горизонтально">↔</button>
       <button class="ghost" data-crop="cy" title="По центру вертикально">↕</button>
-      <span class="mut"><kbd>Shift</kbd> — пропорції · <kbd>Ctrl</kbd> — без магнетизму · ПКМ — ще дії</span>
     </div>
     <div class="cv"><canvas id="pv" class="short" width="540" height="960"></canvas><button id="pvZoom" class="ghost" hidden title="Вписати у вікно"></button></div>
     <div class="ctrl"><button id="play" class="ghost" aria-label="Програти">▶</button><span id="time">0:00.0 / 0:00.0</span></div>
@@ -789,7 +786,7 @@ function moveEl(el, where) {                                      // поряд�
   a.splice(j, 0, el); renderEls(); save();
 }
 $('#cat').innerHTML = CATALOG.map(([g, items], gi) => `<h4>${g}</h4><div class="cg">${items.map(([n, d, p], i) =>
-  `<button data-g="${gi}" data-i="${i}"><i>${TYPES[p.type].ic}</i><b>${n}</b><small>${d}</small></button>`).join('')}</div>`).join('') +
+  `<button data-g="${gi}" data-i="${i}"><i>${TYPES[p.type].ic}</i><b>${n}</b></button>`).join('')}</div>`).join('') +
   '<button class="wide" id="impOpen" style="margin-top:14px">Імпорт з іншого проєкту…</button>';
 $('#addEl').onclick = e => P ? togglePop('#cat', e) : msg('Спершу відкрий або створи проєкт', 1);
 $('#cat').addEventListener('click', e => { if (e.target.closest('#impOpen')) { $('#cat').classList.remove('on'); openImport(); } });
@@ -815,10 +812,10 @@ function setGlobal(el, on) {                                      // глоба�
 }
 function renderProps() {
   const el = elById(selEl), box = $('#props');
-  if (!el) { box.innerHTML = '<p class="mut" style="margin:0">Обери елемент у списку або клікни його на прев\'ю. Тягни його мишею, кут — розмір.</p>'; return; }
+  if (!el) { box.innerHTML = ''; return; }
   const Ty = TYPES[el.type];
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
-    (['subs', 'bg'].includes(el.type) ? '' : `<label class="tg" data-glob>Глобальний — є в усіх кліпах<input type="checkbox" ${el.solo ? '' : 'checked'}><i></i></label>`) +
+    (['subs', 'bg'].includes(el.type) ? '' : `<label class="tg" data-glob>Глобальний<input type="checkbox" ${el.solo ? '' : 'checked'}><i></i></label>`) +
     Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
 }
 $('#props').addEventListener('change', e => { if (e.target.closest('[data-glob]')) setGlobal(elById(selEl), e.target.checked); });
@@ -1020,7 +1017,7 @@ function selectCue(j, jump = true) {
   $('#cueEdit').classList.toggle('on', !!c); if (c) { $('#cueText').value = c.text; if (jump) seek(c.a); }
 }
 function addCue(t, row = 0) {
-  const sid = subsEls()[row]?.id, nx = P.cues.find(c => rowOf(c) === row && c.a > t), c = {a: t, b: Math.min(t + 1.5, nx ? nx.a : dur), text: 'Текст', ...(sid ? {sid} : {})};
+  const sid = (subsEls()[row] || ensureSubs()).id, nx = P.cues.find(c => rowOf(c) === row && c.a > t), c = {a: t, b: Math.min(t + 1.5, nx ? nx.a : dur), text: 'Текст', sid};   // перша репліка — сама додає елемент «Субтитри»
   P.cues.push(c); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(c)); $('#cueText').focus(); $('#cueText').select(); save();
 }
 $('#cueText').oninput = e => { const c = P.cues[selCue]; if (c) { c.text = e.target.value; save(); } };
@@ -1190,7 +1187,9 @@ function paste(t = vid.currentTime) {                             // елеме�
   if (kind === 'clip') {
     P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh)}); sel = P.clips.length - 1; focus = 'clip'; return commit();
   }
-  const q = {...structuredClone(v), a: t, b: t + v.b - v.a, k: (v.k || []).map(x => x + sh)}; P.cues.push(q); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(q)); save();
+  const q = {...structuredClone(v), a: t, b: t + v.b - v.a, k: (v.k || []).map(x => x + sh)};
+  if (!subsEls().some(e => e.id === q.sid)) q.sid = (subsEls()[0] || ensureSubs()).id;   // з проєкту, де інші доріжки
+  P.cues.push(q); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(q)); save();
 }
 
 // ── прев'ю: шорт ──
@@ -1559,7 +1558,6 @@ function drawTL() {
     if (r % 2) { tx.fillStyle = PAL.grid; tx.fillRect(0, cueY + r * CUE, TW, CUE); }
     if (many) { tx.fillStyle = mixHex(x.color, PAL.bg, x.on === false ? .8 : .55); tx.fillText(subName(x, r), 8, cueY + r * CUE + CUE * .67); }
   });
-  if (!P.cues.length) { tx.fillStyle = PAL.tick; tx.fillText('субтитри з\'являться тут · Shift + перетягування — нова репліка', many ? 120 : 8, cueY + CUE * .67); }
   P.cues.forEach((c, j) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
     const y = cueY + rowOf(c) * CUE, col = cueOwner(c)?.color || '#ffffff';
@@ -1658,7 +1656,7 @@ tl.onpointerdown = e => {
   focus = drag.bar ? 'el' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
   const t = Tt(e.offsetX), inLane = e.offsetY >= TICK + 2 && e.offsetY < geo().cueY;
   if (e.shiftKey && e.offsetY >= geo().cueY) {   // Shift+тягни в рядку реплік — нова репліка
-    const sid = subsEls()[spAt(e.offsetY)]?.id, q = {a: snap(t), b: snap(t), text: 'Текст', k: [], ...(sid ? {sid} : {})}; P.cues.push(q); drag = {createCue: q, t0: q.a}; focus = 'cue'; return;
+    const sid = (subsEls()[spAt(e.offsetY)] || ensureSubs()).id, q = {a: snap(t), b: snap(t), text: 'Текст', k: [], sid}; P.cues.push(q); drag = {createCue: q, t0: q.a}; focus = 'cue'; return;
   }
   if (e.shiftKey && inLane) {                                     // Shift+тягни — новий кліп
     const c = {a: snap(t), b: snap(t), on: true, score: null}; P.clips.push(c); sel = P.clips.length - 1; drag = {create: c, t0: c.a}; focus = 'clip'; return;

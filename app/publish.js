@@ -117,7 +117,7 @@ function renderPubHead() {
   const edit = pubEditing(), k = pub.chosen.size;
   $('#pubAll').checked = edit.length > 0 && edit.every(f => pub.chosen.has(f.path)); $('#pubAll').indeterminate = k > 0 && !$('#pubAll').checked;
   $('#pubCount').textContent = k ? `вибрано ${k} з ${edit.length}` : `вибрати всі · ${plural(edit.length, 'шорт', 'шорти', 'шортів')}`;
-  $('#pubSelNote').textContent = k ? `Вибраним (${k})` : 'Вибраним — спершу відміть шорти галочками';
+  $('#pubSelNote').textContent = k ? `Вибраним (${k})` : 'Вибраним';
   $('#pubAI').disabled = !k || pub.busy;
   $('#pubQueueSel').disabled = !k || !pubReady() || pub.sending.size > 0;
   const o = pubOpt();
