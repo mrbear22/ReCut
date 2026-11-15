@@ -1602,7 +1602,7 @@ addEventListener('keydown', e => { setMods(e); if (e.key === 'Alt' && hover) e.p
 tl.onpointerleave = () => hover = null;
 // ── магнетизм: краї кліпів, пропусків, області, реплік, елементів і курсор ──
 function snapPts(own) {
-  const pts = [vid.currentTime, ...region()], c = P.clips.length ? ctxClip() : null;
+  const pts = [...(own === 'ph' ? [] : [vid.currentTime]), ...region()], c = P.clips.length ? ctxClip() : null;   // 'ph' — тягнуть сам курсор
   for (const k of P.clips) if (k !== own) { pts.push(k.a, k.b); for (const u of k.cut || []) if (u !== own) pts.push(...u); }
   for (const q of P.cues) if (q !== own) pts.push(q.a, q.b);
   if (c) for (const e of laneEls()) for (const x of segsOf(c, e)) if (x !== own) pts.push(...segSpan(c, x));
@@ -1681,7 +1681,7 @@ tl.onpointerdown = e => {
   }
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
-  if (drag.seek) seek(t);
+  if (drag.seek) seek(snap(t, 'ph'));
   else if (drag.cue != null) selectCue(drag.cue, false);           // курсор лишається там, де був: B розріже саме там
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
 };
@@ -1716,7 +1716,7 @@ tl.onpointermove = e => {
     P.region = drag.region === 'a' ? [Math.min(snap(raw), b - g), b] : [a, Math.max(snap(raw), a + g)];
     return;
   }
-  if (drag.seek) { guide = null; return seek(raw); }
+  if (drag.seek) return seek(snap(raw, 'ph'));                   // курсор прилипає до країв; Ctrl — ні
   if (drag.bar && drag.seg != null) {                             // частина елемента в цьому кліпі
     const e = drag.bar, c = drag.c, n = net(c), x = ownSegs(c, e)[drag.seg]; if (!x) return;
     const end = x[1] || n;
