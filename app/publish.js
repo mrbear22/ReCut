@@ -82,15 +82,20 @@ function pubQueue() {                                             // уже за
   const ids = new Set(pubChannels().map(c => c.id));
   return (pub.queue || []).filter(q => ids.has(q.channelId)).sort((x, y) => new Date(x.dueAt) - new Date(y.dueAt));
 }
-function pubSlots(count, after, seed) {                           // слоти рівно ділять вікно доби, хвилина в слоті випадкова
+function pubSlots(count, after, seed, taken = []) {               // слоти рівно ділять вікно доби, хвилина в слоті випадкова
   const o = pubOpt(), span = Math.max(1, ((o.to - o.from + 24) % 24) || 24), per = Math.max(1, Math.round(o.perDay)), every = o.perDay < 1 ? 2 : 1;
   let rnd = seed; const rand = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;   // відтворюваний «випадок»: дата на картці = те, що піде в Buffer
   const out = [], day = new Date(after); day.setHours(0, 0, 0, 0);
   for (let d = 0; out.length < count && d < 3650; d += every) {
+    const dd = new Date(day); dd.setDate(day.getDate() + d);
+    const busy = taken.filter(x => x.toDateString() === dd.toDateString());   // що вже стоїть у черзі цього дня
+    let left = per - busy.length;
     for (let i = 0; i < per && out.length < count; i++) {
       const slotH = span / per, h = o.from + slotH * (i + .15 + rand() * .7);   // не впритул до меж слоту
-      const t = new Date(day); t.setDate(day.getDate() + d); t.setHours(0, Math.round(h * 60), 0, 0);
-      if (t - after >= PUB_MIN_GAP) out.push(t);
+      const t = new Date(dd); t.setHours(0, Math.round(h * 60), 0, 0);
+      const s0 = new Date(dd), s1 = new Date(dd); s0.setHours(0, Math.round((o.from + slotH * i) * 60)); s1.setHours(0, Math.round((o.from + slotH * (i + 1)) * 60));
+      if (left <= 0 || busy.some(x => x >= s0 && x < s1)) continue;      // слот уже зайнятий постом із черги
+      if (t - after >= PUB_MIN_GAP) { out.push(t); left--; }
     }
   }
   return out;
@@ -98,7 +103,9 @@ function pubSlots(count, after, seed) {                           // слоти 
 function pubDates() {                                             // path → {t, own}: дата, задана на картці, або наступний вільний слот
   const files = pubEditing(), free = files.filter(f => !f.post?.when);
   const after = new Date(Math.max(Date.now(), ...pubQueue().map(q => +new Date(q.dueAt))));
-  const slots = pubSlots(free.length, after, pub.seed), out = {};
+  const taken = [...new Set(pubQueue().map(q => +new Date(q.dueAt)))].map(x => new Date(x));   // один шорт у кількох мережах — один пост
+  files.filter(f => f.post?.when).forEach(f => taken.push(new Date(f.post.when)));
+  const slots = pubSlots(free.length, after, pub.seed, taken), out = {};
   free.forEach((f, i) => out[f.path] = {t: slots[i]});
   files.filter(f => f.post?.when).forEach(f => out[f.path] = {t: new Date(f.post.when), own: true});
   return out;
@@ -109,12 +116,12 @@ function renderPubHead() {
   $('#pubProj').innerHTML = pub.projects.map(p => `<option value="${p.id}" ${p.id === pub.pid ? 'selected' : ''}>${esc(projName(p))} · ${pubFiles(p).length}</option>`).join('');
   const edit = pubEditing(), k = pub.chosen.size;
   $('#pubAll').checked = edit.length > 0 && edit.every(f => pub.chosen.has(f.path)); $('#pubAll').indeterminate = k > 0 && !$('#pubAll').checked;
-  $('#pubCount').textContent = k ? `вибрано ${k} з ${edit.length}` : `${plural(edit.length, 'шорт', 'шорти', 'шортів')} на редагуванні`;
-  $('#pubAI').disabled = !k || pub.busy; $('#pubAI').textContent = k ? `Написати описи для ${k}` : 'Написати описи';
+  $('#pubCount').textContent = k ? `вибрано ${k} з ${edit.length}` : `вибрати всі · ${plural(edit.length, 'шорт', 'шорти', 'шортів')}`;
+  $('#pubSelNote').textContent = k ? `Вибраним (${k})` : 'Вибраним — спершу відміть шорти галочками';
+  $('#pubAI').disabled = !k || pub.busy;
   $('#pubQueueSel').disabled = !k || !pubReady() || pub.sending.size > 0;
-  $('#pubQueueSel').textContent = k ? `Додати ${k} до черги` : 'Додати до черги';
   const o = pubOpt();
-  $('#pubOpt summary').textContent = `Розклад: ${PUB_FREQ.find(([v]) => v === o.perDay)[1].toLowerCase()}, ${hh(o.from)}–${hh(o.to)}`;
+  $('#pubOpt summary').textContent = `${PUB_FREQ.find(([v]) => v === o.perDay)[1]} · ${hh(o.from)}–${hh(o.to)}`;
   const hours = (id, v) => `<select id="${id}">${[...Array(24).keys()].map(h => `<option value="${h}" ${h === v ? 'selected' : ''}>${hh(h)}</option>`).join('')}</select>`;
   $('#pubOptBody').innerHTML = `<label>Як часто</label><div class="seg" id="pubFreq">${PUB_FREQ.map(([v, l]) => `<button data-v="${v}" class="${v === o.perDay ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>У який час доби</label><div class="row">${hours('pubFrom', o.from)}<span>–</span>${hours('pubTo', o.to)}</div>
