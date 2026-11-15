@@ -1,5 +1,6 @@
 ; Інсталятор ShortsMaker (Inno Setup 6). Збирає build.sh: ISCC /DAppVersion=1.2.3 installer.iss
-; Ставиться без прав адміністратора в %LOCALAPPDATA%\Programs\ShortsMaker; оновлення ставиться поверх, дані лишаються.
+; Тека — на вибір користувача, без прав адміністратора: програма пише у свою теку (data, renders), тож потрібен дозвіл на запис.
+; Оновлення ставиться в ту саму теку поверх, data й renders лишаються.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -13,7 +14,6 @@ AppPublisher=mrbear22
 AppPublisherURL=https://github.com/mrbear22/ShortsMaker
 AppUpdatesURL=https://github.com/mrbear22/ShortsMaker/releases
 DefaultDirName={localappdata}\Programs\ShortsMaker
-DisableDirPage=yes
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 PrivilegesRequired=lowest
@@ -37,13 +37,12 @@ Name: "uk"; MessagesFile: "compiler:Languages\Ukrainian.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [InstallDelete]
-; код і вбудовані бібліотеки — начисто, щоб від старої версії не лишилось зайвих файлів; data не чіпаємо
+; код і вбудований Python — начисто, щоб від старої версії не лишилось зайвих файлів; data, renders і завантажений ffmpeg не чіпаємо
 Type: filesandordirs; Name: "{app}\app"
 Type: filesandordirs; Name: "{app}\runtime"
-Type: filesandordirs; Name: "{app}\ffmpeg"
 
 [Files]
-Source: "dist\ShortsMaker\*"; DestDir: "{app}"; Excludes: "\data\*,\renders\*,__pycache__\*,*.bat"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "dist\ShortsMaker\*"; DestDir: "{app}"; Excludes: "\data,\renders,__pycache__,*.bat"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{autoprograms}\ShortsMaker"; Filename: "{app}\ShortsMaker.exe"
@@ -58,5 +57,22 @@ Filename: "{app}\ShortsMaker.exe"; Description: "{cm:LaunchProgram,ShortsMaker}"
 Filename: "powershell.exe"; Parameters: "-NoProfile -Command ""Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -like '{app}\*' -or $_.CommandLine -like '*{app}\data\window*' } | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }"""; Flags: runhidden waituntilterminated; RunOnceId: "StopShortsMaker"
 
 [UninstallDelete]
-; разом з проєктами, моделями й завантаженим ШІ; готові шорти лишаються у «Відео\ShortsMaker»
-Type: filesandordirs; Name: "{app}"
+; проєкти, завантажені ffmpeg, бібліотеки, моделі й ШІ; готові шорти в renders лишаються
+Type: filesandordirs; Name: "{app}\data"
+Type: filesandordirs; Name: "{app}\ffmpeg"
+Type: filesandordirs; Name: "{app}\app"
+
+[Code]
+// тека без дозволу на запис (наприклад, Program Files) не підходить: програма зберігає туди шорти й проєкти
+function NextButtonClick(CurPageID: Integer): Boolean;
+var Probe: String;
+begin
+  Result := True;
+  if CurPageID <> wpSelectDir then Exit;
+  Probe := AddBackslash(WizardDirValue) + 'shortsmaker-write.tmp';
+  if ForceDirectories(WizardDirValue) and SaveStringToFile(Probe, '', False) then DeleteFile(Probe)
+  else begin
+    MsgBox('У цю теку не можна записувати без прав адміністратора. Обери іншу, наприклад на диску D: або у своїй теці користувача.', mbError, MB_OK);
+    Result := False;
+  end;
+end;

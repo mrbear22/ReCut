@@ -130,7 +130,9 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 #ctx .k{color:var(--dim);font-size:11px}
 #ctx hr{border:0;border-top:1px solid var(--line2);margin:4px 2px}
 #ctx .hd{padding:5px 8px 3px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);font-weight:600}
-#ctx .rw{display:flex;gap:2px;padding:2px 2px 4px}#ctx .rw button{display:block;flex:1;text-align:center;padding:5px 0;background:var(--s3)}
+#ctx .rw{display:flex;gap:2px;padding:2px 2px 4px}
+#ctx .rw button.sw{height:22px;padding:0;background:var(--sw,linear-gradient(135deg,transparent 46%,var(--mut) 47% 53%,transparent 54%) var(--s3));box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+#ctx .rw button.sw.on{box-shadow:inset 0 0 0 2px var(--hi)}#ctx .rw button.sw:hover{filter:brightness(1.15)}#ctx .rw button{display:block;flex:1;text-align:center;padding:5px 0;background:var(--s3)}
 .ctrl{display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums;color:var(--mut)}
 /* кліпи */
 #clips{display:flex;flex-direction:column;overflow:visible}
@@ -139,6 +141,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 #list{flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:1px;margin-top:8px}
 .clip{display:grid;grid-template-columns:auto 28px 64px 8px 64px 1fr auto auto;gap:5px;align-items:center;padding:5px 6px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--fast)}
 .clip:hover{background:var(--s2)}.clip.sel{background:var(--s3);box-shadow:inset 2px 0 0 var(--acc)}
+.clip[style*='--cc']{box-shadow:inset 3px 0 0 var(--cc)}.clip.sel[style*='--cc']{box-shadow:inset 3px 0 0 var(--cc),inset 0 0 0 1px var(--acc)}
 .clip.off b,.clip.off .d,.clip.off input.t{color:var(--dim)}
 .clip input[type=checkbox]{width:auto}
 .clip input.t{padding:3px 5px;font-variant-numeric:tabular-nums}.clip .d{color:var(--mut);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -501,8 +504,8 @@ const plans = {                                                   // етапи 
 };
 const planTotal = p => p.reduce((s, [, e]) => s + e, 0);
 // кожна довга операція — свій рядок у індикаторі згори: паралельні аналіз і субтитри не перебивають одне одного
-async function busy(btn, label, plan, start) {
-  const task = Math.random().toString(36).slice(2), total = planTotal(plan), seen = {};
+async function busy(btn, label, plan, start, key) {
+  const task = key || Math.random().toString(36).slice(2), total = planTotal(plan), seen = {};
   const row = document.createElement('div'); row.className = 'bt';
   row.innerHTML = `<i></i><b>${esc(label)}</b><span></span><span class="pb"><b></b></span>`;
   const txt = row.querySelector('span'), bar = row.querySelector('.pb b');
@@ -822,7 +825,7 @@ $('#cueDel').onclick = () => { if (selCue < 0) return; P.cues.splice(selCue, 1);
 const info = c => net(c).toFixed(1) + ' с' + (c.score != null ? ' · ' + c.score.toFixed(1) : '') + (c.why ? ' · ' + c.why : '');
 function renderList() {
   if (!P) return;
-  $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc(c.why)}">
+  $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc(c.why)}"${c.col ? ` style="--cc:${c.col}"` : ''}>
     <input type="checkbox" data-f="on" ${c.on ? 'checked' : ''} aria-label="Рендерити"><b>#${i + 1}</b>
     <input class="t" data-f="a" value="${fmt(c.a)}" aria-label="Початок"><span>–</span><input class="t" data-f="b" value="${fmt(c.b)}" aria-label="Кінець">
     <span class="d">${esc(info(c))}</span>
@@ -1232,8 +1235,8 @@ function drawTL() {
   // кліпи; у вибраному — смужки елементів
   P.clips.forEach((c, i) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
-    const s = i === sel, ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : PAL.blue; tx.font = font(11, 600);
-    rr(x0, CTOP, x1 - x0, cb - CTOP, 0); tx.fillStyle = !c.on ? PAL.offDk : s ? PAL.accDk : PAL.blueDk; tx.fill();
+    const s = i === sel, ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
+    rr(x0, CTOP, x1 - x0, cb - CTOP, 0); tx.fillStyle = !c.on ? PAL.offDk : c.col ? mixHex(c.col, PAL.bg, s ? .45 : .6) : s ? PAL.accDk : PAL.blueDk; tx.fill();
     tx.strokeStyle = col; tx.lineWidth = s ? 2 : 1; tx.stroke();
     for (const [u, v] of c.cut || []) {
       const a = X(Math.max(u, c.a)), b = X(Math.min(v, c.b)); if (b <= a) continue;
@@ -1487,7 +1490,7 @@ function tidyMenu(items) {                                        // без по
   if (out.at(-1) === '-') out.pop(); return out;
 }
 const menuHtml = (it, i) => it === '-' ? '<hr>' : it.hd ? `<div class="hd">${esc(it.hd)}</div>`
-  : it.row ? `<div class="rw">${it.row.map((b, j) => `<button data-i="${i}.${j}" title="${esc(b.title)}" aria-label="${esc(b.title)}" class="${b.on ? 'on' : ''}">${esc(b.ic)}</button>`).join('')}</div>`
+  : it.row ? `<div class="rw">${it.row.map((b, j) => `<button data-i="${i}.${j}" title="${esc(b.title)}" aria-label="${esc(b.title)}" class="${b.on ? 'on' : ''} ${'sw' in b ? 'sw' : ''}"${b.sw ? ` style="--sw:${b.sw}"` : ''}>${esc(b.ic || '')}</button>`).join('')}</div>`
   : `<button data-i="${i}" role="menuitem" class="${it.on ? 'on' : ''}" ${it.off ? 'disabled' : ''}><span>${esc(it.label)}</span><span class="k">${esc(it.key || '')}</span></button>`;
 function openMenu(e, items) {
   e.preventDefault(); e.stopPropagation(); menuItems = tidyMenu(items);
@@ -1518,10 +1521,13 @@ function dupClip(c) {                                             // копія 
   const len = c.b - c.a, a = Math.min(c.b, dur - len);
   P.clips.push({...structuredClone(c), a, b: a + len, cut: shiftCuts(c.cut, a - c.a)}); sel = P.clips.length - 1; commit();
 }
+const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червоний'], ['#d08a3c', 'Помаранчевий'], ['#c9ad45', 'Жовтий'],
+  ['#62a467', 'Зелений'], ['#4f94b8', 'Блакитний'], ['#8a70c4', 'Фіолетовий'], ['#c46a9e', 'Рожевий']];
 function clipMenu(i, t, at) {
   const c = P.clips[i], cut = (c.cut || []).find(([u, v]) => t >= u && t <= v);
   sel = i; selCue = -1; focus = 'clip'; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
   return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`},
+    {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: (c.col || null) === col, run: () => { c.col = col || undefined; commit(); }}))},
     cut && {label: 'Повернути вирізане', run: () => { c.cut = c.cut.filter(u => u !== cut); commit(); }},
     {label: 'Програти кліп', run: () => playClip(P.clips.indexOf(c))},
     {label: `Почати кліп ${at}`, key: 'I', off: t > c.b - 1, run: () => { c.a = t; commit(); }},
@@ -1683,7 +1689,7 @@ const TOUR = [
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>
     <span>${key('Ctrl')} + ${key('Z')}</span><span>скасувати</span></div>`],
-  ['#render', 'Рендер', '<p>Шорти зберігаються в теці <b>Відео\\ShortsMaker</b>.</p>'],
+  ['#render', 'Рендер', '<p>Шорти зберігаються в теці <b>renders</b> поруч із програмою.</p>'],
 ];
 let tourI = -1;
 function tour(i) {
@@ -1723,6 +1729,13 @@ function renderAll() { renderEls(); renderList(); $('#videoChip span').textConte
     $('#upd').hidden = !u.version; if (u.version) $('#upd').textContent = `Оновити до ${u.version}`;
   };
   setTimeout(checkUpdate, 4000);
+  (async function ffmpegRow() {                                    // перший запуск: ffmpeg завантажується у фоні — показуємо поступ
+    const s = await api('/api/status').catch(() => ({}));
+    if (s.ffmpeg !== false) return;
+    busy(document.createElement('button'), 'ffmpeg', [['ffmpeg', 60]], task => new Promise(done => {
+      const iv = setInterval(async () => { const t = await api('/api/status').catch(() => ({})); if (t.ffmpeg) { clearInterval(iv); done(); } }, 1000);
+    }), 'ffmpeg');
+  })();
   $('#upd').onclick = async () => {
     try {
       const r = await busy($('#upd'), 'Оновлення', [['update', 15]], task => api('/api/update/apply', {task}));
@@ -1732,12 +1745,12 @@ function renderAll() { renderEls(); renderList(); $('#videoChip span').textConte
       for (let i = 0; i < 60; i++) {                               // піднявся новий процес — перезавантажуємо сторінку
         await new Promise(r => setTimeout(r, 500));
         const v = (await api('/api/version').catch(() => ({}))).boot;
-        if (v && v !== was) return location.reload();
+        if (v && v !== was) { window.reloading = true; return location.reload(); }   // це не закриття вікна
       }
       msg('Не вдалося перезапустити. Закрий і відкрий програму.', 1);
     } catch (e) { msg('Оновлення: ' + e.message, 1); }
   };
-  addEventListener('pagehide', () => navigator.sendBeacon('/api/bye', JSON.stringify({page})));   // закрили вікно — програма зупиняється одразу
+  addEventListener('pagehide', () => window.reloading || navigator.sendBeacon('/api/bye', JSON.stringify({page})));   // закрили вікно — програма зупиняється одразу
   addEventListener('keydown', e => { if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.code === 'KeyR')) e.preventDefault(); }, true);   // перезавантаження сторінки = закриття вікна, тож його вимкнено
   const s = await api('/api/state'); cfg = s.cfg; renderPops(); setMode('short'); scaleUI();
   api('/api/fonts').then(f => $('#fontlist').innerHTML = f.map(n => `<option value="${esc(n)}">`).join(''));

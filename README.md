@@ -4,11 +4,10 @@
 
 ## Встановлення
 
-Завантаж **ShortsMaker-Setup.exe** з [Releases](https://github.com/mrbear22/ShortsMaker/releases/latest) і запусти. Права адміністратора не потрібні.
+Завантаж **ShortsMaker-Setup.exe** з [Releases](https://github.com/mrbear22/ShortsMaker/releases/latest), запусти й обери теку.
 Нові версії програма знаходить сама: у шапці з'являється кнопка «Оновити».
 
-- Готові шорти: `Відео\ShortsMaker\<проєкт>\`
-- Програма й дані (проєкти, моделі): `%LOCALAPPDATA%\Programs\ShortsMaker`
+Готові шорти лежать у теці програми: `renders\<проєкт>\`. Проєкти, моделі й налаштування — у `data\`.
 
 Важке завантажується лише коли вперше знадобиться: модель розпізнавання мови (1.6 ГБ), бібліотеки CUDA для NVIDIA (1.3 ГБ),
 локальний ШІ для описів (~5 ГБ). Усе працює локально й безкоштовно.
@@ -34,16 +33,16 @@
 
 Збірка (Git Bash, Inno Setup 6):
 
-    ./build.sh        →  dist/ShortsMaker-Setup.exe, dist/app.zip, dist/release.json
+    ./build.sh        →  dist/ShortsMaker-Setup.exe
 
-Новий реліз: підняти `VERSION` в `app/update.py` (і `RUNTIME`, якщо змінились Python, бібліотеки, ffmpeg чи `ShortsMaker.exe`), зібрати й викласти:
+Новий реліз: підняти `VERSION` в `app/shorts.py`, закомітити, зібрати й викласти:
 
-    gh release create v1.2.3 dist/ShortsMaker-Setup.exe dist/app.zip dist/release.json
+    gh release create v1.2.3 dist/ShortsMaker-Setup.exe
 
-Якщо `RUNTIME` той самий, програма оновлюється завантаженням лише `app.zip` (~100 КБ), інакше — тихо ставить новий інсталятор.
+Програма порівнює свій тег з новим релізом через GitHub. Змінились лише файли в `app/` — завантажує тільки їх;
+змінились `build.sh`, `installer.iss` чи `launcher/` — тихо ставить новий інсталятор.
 
 - `app/shorts.py` — сервер: проєкти, аналіз, розпізнавання мови, рендер
 - `app/ui.html`, `app/publish.js` — інтерфейс; `app/publish.py` — Buffer і сховище відео
-- `app/update.py` — оновлення з GitHub Releases
 - `cloudflare/worker.js` — сховище відео для Buffer (Cloudflare R2)
 - `launcher/` — `ShortsMaker.exe`; `installer.iss` — інсталятор

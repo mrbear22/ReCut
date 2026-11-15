@@ -2,36 +2,25 @@
 """ShortsMaker — горизонтальне відео / стрім -> вертикальні шорти.
 GUI відкривається вікном Edge (або в браузері). Дані: ../data (портативно) або ./data.
 """
-import base64, io, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.request, uuid, webbrowser, zipfile
+import base64, importlib, io, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.request, uuid, webbrowser, zipfile
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-import localai, publish, update
-
-def videos_dir():
-    """Системна тека «Відео» (зокрема перенесена в OneDrive чи на інший диск)."""
-    try:
-        import ctypes
-        buf, guid = ctypes.c_wchar_p(), (ctypes.c_byte * 16)(*uuid.UUID("18989B1D-99B5-455B-841C-AB7C74E4DDFC").bytes_le)
-        if ctypes.windll.shell32.SHGetKnownFolderPath(guid, 0, None, ctypes.byref(buf)) == 0:
-            p = Path(buf.value); ctypes.windll.ole32.CoTaskMemFree(buf); return p
-    except Exception: pass
-    return Path.home() / "Videos"
+import localai, publish
 
 HERE = Path(__file__).resolve().parent
 PACKAGED = (HERE.parent / "runtime").is_dir()                    # зібрана програма (інсталятор); інакше — запуск із сорсів
 ROOT = HERE.parent if PACKAGED else HERE
 DATA = ROOT / "data"; THUMBS, TRANS, PROJ, MODELS, MIXES = DATA / "thumbs", DATA / "transcripts", DATA / "projects", DATA / "models", DATA / "mixes"
-TMP, CUDA = DATA / "tmp", DATA / "cuda"
-RENDERS = videos_dir() / "ShortsMaker" if PACKAGED else ROOT / "renders"   # готові шорти — там, де користувач шукає відео, а не в теці програми
+TMP, RENDERS, CUDA, LIBS, FFDIR = DATA / "tmp", ROOT / "renders", DATA / "cuda", DATA / "libs", ROOT / "ffmpeg"
+sys.path.insert(0, str(LIBS))                                      # бібліотеки, завантажені, коли вперше знадобились
 for d in (THUMBS, TRANS, MODELS, MIXES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
 # портативно: тимчасові файли й кеш моделей — лише в теці програми, ніде більше в системі
 SYS_ENV = dict(os.environ)                                         # для вікна Edge: його тимчасові файли не мають жити в нашій теці (їх тримає BITS і програму не видалити)
 tempfile.tempdir = str(TMP); os.environ.update(TMP=str(TMP), TEMP=str(TMP), HF_HOME=str(DATA / "hf"), HF_HUB_DISABLE_TELEMETRY="1")
-if (ROOT / "ffmpeg").is_dir(): os.environ["PATH"] = str(ROOT / "ffmpeg") + os.pathsep + os.environ.get("PATH", "")
 
 def cuda_dirs():
     """Теки з DLL пакетів nvidia-*: встановлені в Python або завантажені програмою в data/cuda."""
@@ -83,11 +72,11 @@ def learn(kind, media_s, t0):
     if media_s > 5: CFG["speed"][kind] = round(media_s / max(.1, time.time() - t0), 2); save_cfg()
 
 def run(args, **kw): return subprocess.run(args, capture_output=True, **SP, **kw)
-def ff(*a): return subprocess.Popen(["ffmpeg", "-v", "error", *HW, *a, "-"], stdout=subprocess.PIPE, **SP).stdout
+def ff(*a): return subprocess.Popen([ffbin("ffmpeg"), "-v", "error", *HW, *a, "-"], stdout=subprocess.PIPE, **SP).stdout
 
 def probe(src):
     """(ширина, висота, тривалість, чи є звук)"""
-    j = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
+    j = json.loads(subprocess.check_output([ffbin("ffprobe"), "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
                                             "-of", "json", src], **SP))
     v = next(s for s in j["streams"] if s["codec_type"] == "video")
     return v["width"], v["height"], float(j["format"]["duration"]), sum(s["codec_type"] == "audio" for s in j["streams"])
@@ -103,7 +92,7 @@ def prepared(out, args):
     if out in FAILED: return None
     def make():
         tmp = out.with_name(out.stem + ".tmp" + out.suffix)
-        if run(["ffmpeg", "-y", "-v", "error", *args, str(tmp)]).returncode: FAILED.add(out); tmp.unlink(missing_ok=True)
+        if run([ffbin("ffmpeg"), "-y", "-v", "error", *args, str(tmp)]).returncode: FAILED.add(out); tmp.unlink(missing_ok=True)
         else: tmp.replace(out)
         PREPARING.discard(out)
     if out not in PREPARING: PREPARING.add(out); threading.Thread(target=make, daemon=True).start()
@@ -116,7 +105,7 @@ def preview_mix(src, n):
     return (prepared(MIXES / f"{preview_key(src)}.m4a", ["-i", src, "-vn", *all_audio(n), "-c:a", "aac", "-b:a", "160k"]) or "") if n > 1 else ""
 
 def container(src):
-    return subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=format_name", "-of", "csv=p=0", src], **SP, text=True).strip()
+    return subprocess.check_output([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=format_name", "-of", "csv=p=0", src], **SP, text=True).strip()
 
 PROXIES_KEPT = 3                                                    # копії займають місце як оригінал — тримаємо лише останні
 def preview_video(src):
@@ -134,7 +123,7 @@ def pick_encoder():
     key = (CFG["encoder"], CFG["quality"])
     if key not in _enc:
         for k in ([CFG["encoder"]] if CFG["encoder"] != "auto" else ENC):
-            if k == "cpu" or run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:d=0.2",
+            if k == "cpu" or run([ffbin("ffmpeg"), "-v", "error", "-f", "lavfi", "-i", "color=s=256x256:d=0.2",
                                   *ENC[k][:2], "-f", "null", "-"]).returncode == 0:
                 _enc[key] = k, [x.format(q=CFG["quality"]) for x in ENC[k]]; break
     return _enc[key]
@@ -279,6 +268,55 @@ def with_context(clips, segs):
 # Програма легка: модель (1.6 ГБ) і, лише для відеокарт NVIDIA, CUDA-бібліотеки (1.9 ГБ) завантажуються один раз у data/
 CUDA_PKGS, MODEL_BYTES = (("nvidia-cublas-cu12", ""), ("nvidia-cudnn-cu12", "9."), ("nvidia-cuda-nvrtc-cu12", "")), 1.62e9
 
+# ── важке завантажується, коли вперше знадобиться: ffmpeg одразу після першого запуску, решта — під свою дію ──
+FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"   # з libass для субтитрів
+STT_LIBS = ("faster-whisper==1.2.1 ctranslate2==4.9.0 onnxruntime==1.32.0 av==19.0.2 tokenizers==0.23.3 huggingface-hub==2.4.0 hf-xet==1.8.0 "
+            "anyio==4.16.0 click==8.5.1 colorama==0.4.6 filelock==4.2.10 flatbuffers==25.12.19 fsspec==2026.9.0 h11==0.16.0 httpcore2==2.16.0 "
+            "httpx2==2.16.0 idna==3.20 packaging==26.3 protobuf==7.36.2 pyyaml==6.0.3 tqdm==4.70.1 truststore==0.10.5 typing-extensions==4.16.0").split()
+CV_LIBS = ["opencv-python-headless==4.14.0.94"]
+LIB_LOCK = threading.Lock()                                        # паралельні аналіз і субтитри не качають те саме двічі
+
+def download(url, dst, text, stage):
+    t0 = time.time()
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=60) as r, open(dst, "wb") as out:
+        total, done = int(r.headers.get("Content-Length") or 0), 0
+        while chunk := r.read(1 << 20):
+            out.write(chunk); done += len(chunk); report(stage, text, done / total if total else None, t0)
+
+def ffbin(name):
+    """Шлях до ffmpeg/ffprobe. У зібраній програмі перший виклик завантажує ffmpeg у теку програми."""
+    if not PACKAGED: return name                                   # із сорсів — той, що в PATH
+    exe = FFDIR / f"{name}.exe"
+    with LIB_LOCK:
+        if not exe.is_file():
+            z = TMP / "ffmpeg.zip"; download(FFMPEG_URL, z, "Завантажую ffmpeg, 90 МБ", "ffmpeg")
+            part = FFDIR.with_name("ffmpeg.part"); shutil.rmtree(part, ignore_errors=True); part.mkdir()
+            with zipfile.ZipFile(z) as zf:
+                for n in zf.namelist():
+                    if "/bin/" in n and n.lower().endswith((".exe", ".dll")) and not n.lower().endswith("ffplay.exe"): (part / Path(n).name).write_bytes(zf.read(n))
+            shutil.rmtree(FFDIR, ignore_errors=True); part.rename(FFDIR); z.unlink(missing_ok=True)   # тека з'являється лише цілою
+    return str(exe)
+
+def need_libs(specs, module, text, stage="libs"):
+    """Колеса з PyPI (точні версії) -> data/libs, якщо модуля ще немає."""
+    with LIB_LOCK:
+        if importlib.util.find_spec(module): return
+        files = []
+        for spec in specs:
+            name, ver = spec.split("==")
+            urls = json.load(urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{ver}/json", timeout=30))["urls"]
+            files.append(next(f for f in urls if f["filename"].endswith("none-any.whl") or
+                              (f["filename"].endswith("win_amd64.whl") and re.search(r"-(cp312|cp3\d+-abi3|py3)-", f["filename"]))))
+        LIBS.mkdir(exist_ok=True); total, done, t0 = sum(f["size"] for f in files), 0, time.time()
+        for f in files:
+            whl = TMP / f["filename"]
+            with urllib.request.urlopen(f["url"], timeout=60) as r, open(whl, "wb") as out:
+                while chunk := r.read(1 << 20):
+                    out.write(chunk); done += len(chunk); report(stage, text, done / total, t0)
+            with zipfile.ZipFile(whl) as z: z.extractall(LIBS)
+            whl.unlink()
+        importlib.invalidate_caches()
+
 def fetch_cuda():
     """Колеса nvidia-* з PyPI -> data/cuda, з прогресом у інтерфейсі."""
     from packaging.version import Version
@@ -302,6 +340,7 @@ def fetch_cuda():
 _stt = []
 def stt_model():
     if not _stt:
+        need_libs(STT_LIBS, "faster_whisper", "Завантажую бібліотеки розпізнавання мови, 200 МБ", "stt")
         import ctranslate2
         from faster_whisper import WhisperModel
         gpu = ctranslate2.get_cuda_device_count() > 0
@@ -324,7 +363,7 @@ def stt_model():
 
 def whisper(src, t0, lang, tick, na):
     """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано)."""
-    r = run(["ffmpeg", "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *all_audio(na), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
+    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *all_audio(na), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
     if r.returncode: raise RuntimeError("Аудіо для розпізнавання: " + r.stderr.decode("utf-8", "replace")[-300:])
     segs, _ = stt_model().transcribe(np.frombuffer(r.stdout, np.int16).astype(np.float32) / 32768, language=lang or None,
                                      word_timestamps=True, vad_filter=True, condition_on_previous_text=False)   # VAD: без вигадок на музиці
@@ -420,12 +459,13 @@ def ai_moments(f, segs, model):
 # ── пошук вебкамери ──
 def detect_cam(src):
     """Обличчя (Haar) + статична зона навколо нього (кімната не змінюється, гра — так) + стійкі межі рамки."""
+    need_libs(CV_LIBS, "cv2", "Завантажую OpenCV, 40 МБ")
     import cv2
     sw, sh, dur, _ = probe(src); aw = 640; ah = ev(aw * sh / sw); n = 32
     casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     frames, faces = [], []
     for i in range(n):
-        raw = run(["ffmpeg", "-v", "error", "-ss", f"{dur * (0.04 + 0.92 * i / (n - 1)):.2f}", "-i", src, "-frames:v", "1",
+        raw = run([ffbin("ffmpeg"), "-v", "error", "-ss", f"{dur * (0.04 + 0.92 * i / (n - 1)):.2f}", "-i", src, "-frames:v", "1",
                    "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
         if len(raw) < aw * ah: continue
         g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
@@ -745,7 +785,7 @@ def render(pid, clips, elements, cues):
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
                 if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs), "utf-8")
                 inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
-                p = subprocess.Popen(["ffmpeg", "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
+                p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
                                       "-filter_complex", build_filter(sw, sh, elements, keep, na, inp, sizes, bool(subs)),
                                       "-map", "[v]", "-map", "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
@@ -756,7 +796,7 @@ def render(pid, clips, elements, cues):
                         JOB["pct"] = min(1.0, int(line[12:]) / 1e6 / net)
                 if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
                 thumb = THUMBS / f"{rec['id']}_{i:02d}.jpg"
-                run(["ffmpeg", "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
+                run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
                 rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=net)); save_rec()
     except Exception as e: JOB["err"] = str(e)
     finally: JOB["running"] = False
@@ -783,7 +823,47 @@ def ask_file(kind):
 AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP)
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
-UPD = update.Updater(HERE, TMP / "update", lambda *a: report_as("update", *a)) if PACKAGED else None   # із сорсів не оновлюємось
+# ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
+REPO, VERSION = "mrbear22/ShortsMaker", "1.0.0"                     # VERSION — тег релізу без «v»
+RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
+UPDATE = {}
+
+def github(path, raw=False):
+    url = f"https://raw.githubusercontent.com/{REPO}/{path}" if raw else f"https://api.github.com/repos/{REPO}/{path}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=30) as r:
+        return r.read() if raw else json.load(r)
+
+def check_update():
+    if not PACKAGED: return                                         # із сорсів не оновлюємось
+    try:
+        rel = github("releases/latest"); tag = rel["tag_name"]; num = lambda v: tuple(int(x) for x in v.lstrip("v").split(".") if x.isdigit())
+        if num(tag) <= num(VERSION): return
+        setup = next(a["browser_download_url"] for a in rel["assets"] if a["name"].lower().endswith(".exe"))
+        try: files = github(f"compare/v{VERSION}...{tag}")["files"]
+        except Exception: files = None                              # нашого тегу немає — лише інсталятором
+        full = files is None or any(f["filename"].startswith(RUNTIME_PATHS) for f in files)
+        UPDATE.update(version=tag.lstrip("v"), tag=tag, setup=setup, kind="full" if full else "app",
+                      files=[f for f in files or [] if f["filename"].startswith("app/")])
+    except Exception as e: print(datetime.now(), "update check:", ascii(e))
+
+def apply_update():
+    """'app' — файли з app/ вже замінено (беремо їх з репозиторію на тезі релізу); 'full' — шлях до інсталятора."""
+    u, say = UPDATE, lambda frac: report("update", f"Завантажую версію {UPDATE['version']}", frac)
+    if u.get("kind") == "full":
+        dst = TMP / f"ShortsMaker-Setup-{u['version']}.exe"
+        with urllib.request.urlopen(urllib.request.Request(u["setup"], headers={"User-Agent": "ShortsMaker"}), timeout=60) as r, open(dst, "wb") as f:
+            total, got = int(r.headers.get("Content-Length") or 0), 0
+            while chunk := r.read(256 * 1024): f.write(chunk); got += len(chunk); say(got / total if total else None)
+        return dst
+    new = {}
+    for i, f in enumerate(u["files"]):                               # спершу все завантажити, потім підмінити — без напівоновленої програми
+        if f["status"] != "removed": new[f["filename"][4:]] = github(f"{u['tag']}/{f['filename']}", raw=True)
+        say((i + 1) / len(u["files"]))
+    for f in u["files"]:
+        for old in (f.get("previous_filename"), f["filename"] if f["status"] == "removed" else None):
+            if old and old.startswith("app/"): (HERE / old[4:]).unlink(missing_ok=True)
+    for name, data in new.items(): (HERE / name).write_bytes(data)
+    return None
 
 def render_files(p, path):
     """Записи готового шорту в історії рендерів проєкту (той самий файл міг рендеритись кілька разів)."""
@@ -901,9 +981,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
-            if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS))
-            if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=update.VERSION, boot=STARTED))
-            if u.path == "/api/update": return self.reply(dict(current=update.VERSION, **((UPD and UPD.info) or {})))
+            if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()))
+            if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=VERSION, boot=STARTED))
+            if u.path == "/api/update": return self.reply(dict(current=VERSION, version=UPDATE.get("version")))
             if u.path == "/api/fonts": _fonts_ready.wait(30); return self.reply(list(FONTS))
             if u.path == "/api/projects":
                 ps = projects()
@@ -971,9 +1051,9 @@ class Handler(BaseHTTPRequestHandler):
                 cues = make_cues(transcript(d["video"], a0, a1, d.get("lang", ""))[0], max(1, int(d.get("words", 3))))
                 return self.reply(dict(cues=cues, speed=CFG["speed"]))
             if p == "/api/update/apply":
-                kind, setup = UPD.apply()
+                setup = apply_update()
                 threading.Thread(target=finish_update, args=(setup,), daemon=True).start()
-                return self.reply(dict(kind=kind))
+                return self.reply(dict(kind="full" if setup else "app"))
             if p == "/api/buffer/key": BUFFER.set_key(d.get("key", "")); return self.reply(dict(connected=bool(BUFFER.key)))
             if p == "/api/ai/setup": AI.begin_setup(); return self.reply(AI.setup_state)
             if p == "/api/caption": return self.reply(clip_caption(d["id"], d["path"]))
@@ -1039,7 +1119,7 @@ def watch_window(proc):
     t0 = time.time(); proc.wait()
     if time.time() - t0 > 5: quit_app()
 
-CODE_VERSION = uuid.uuid5(uuid.NAMESPACE_URL, "".join((HERE / n).read_text("utf-8") for n in update.APP_FILES if (HERE / n).is_file())).hex[:12]   # будь-який файл програми
+CODE_VERSION = uuid.uuid5(uuid.NAMESPACE_URL, "".join(f.read_text("utf-8") for f in sorted(HERE.glob("*.*")) if f.suffix in (".py", ".html", ".js"))).hex[:12]   # будь-який файл програми
 
 def port_owner(port):
     """PID процесу, що слухає порт (Windows)."""
@@ -1067,16 +1147,23 @@ def bind(tries=1):
         except OSError: time.sleep(.25 * (i < tries - 1))
     return None
 
-def main():
+def prepare_ffmpeg():
     global HW
+    CUR.task = "ffmpeg"                                           # рядок поступу, який інтерфейс показує сам
+    try:
+        if pick_encoder()[0] != "cpu": HW = ["-hwaccel", "auto"]
+    except Exception as e: print(datetime.now(), "ffmpeg:", ascii(e))
+    finally: TASKS.pop("ffmpeg", None)
+
+def main():
     CFG.update(rd(CFG_FILE, {})); migrate()
     url = f"http://127.0.0.1:{CFG['port']}"
     srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно
     threading.Thread(target=scan_fonts, daemon=True).start()
-    if pick_encoder()[0] != "cpu": HW = ["-hwaccel", "auto"]
-    print(datetime.now(), "start", url, "encoder:", pick_encoder()[0])
-    if UPD: threading.Thread(target=UPD.check, daemon=True).start()
+    threading.Thread(target=prepare_ffmpeg, daemon=True).start()   # перший запуск: ffmpeg завантажується, поки відкривається вікно
+    print(datetime.now(), "start", url)
+    threading.Thread(target=check_update, daemon=True).start()
     if "--restart" in sys.argv: threading.Thread(target=watchdog, daemon=True).start()   # після оновлення: вікно вже відкрите, воно перезавантажиться
     elif "--no-window" not in sys.argv:
         threading.Thread(target=watchdog, daemon=True).start()
