@@ -99,6 +99,8 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .ed{display:grid;grid-template-columns:clamp(300px,22vw,560px) 1fr clamp(340px,25vw,620px);gap:8px;padding:8px 8px 6px;min-height:0}
 #layers{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible}
 #layers .top{padding:10px 10px 8px}
+.el.away .nm{color:var(--mut)}.el.away .ic{opacity:.45}.el .nm em{font-style:normal;font-size:11px;color:var(--acc);margin-left:6px}
+.elgrp{margin:8px 2px 2px;padding:8px 6px 2px;border-top:1px solid var(--line2);font-size:11px;font-weight:600;color:var(--mut);letter-spacing:.04em;text-transform:uppercase}
 #els{display:flex;flex-direction:column;gap:1px;padding:0 6px 8px;max-height:38%;overflow:auto;flex:none}
 .el{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:5px 6px 5px 8px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--fast)}
 .el:hover{background:var(--s2)}.el.sel{background:var(--s3);box-shadow:inset 2px 0 0 var(--acc)}
@@ -171,10 +173,6 @@ footer{padding:0 8px 8px}
 .sep{width:1px;height:20px;background:var(--line2)}
 .tlwrap{position:relative}
 #tl{width:100%;display:block;border:1px solid #0e0d0c;border-radius:0 0 var(--r) var(--r);touch-action:none}
-#musEdit{position:absolute;display:none;z-index:3;align-items:center;gap:12px;padding:5px 10px;background:var(--s2);border:1px solid #8a70c4;border-radius:var(--r);box-shadow:var(--pop);white-space:nowrap;font-size:12.5px}
-#musEdit.on{display:flex}#musEdit b{max-width:160px;overflow:hidden;text-overflow:ellipsis;color:var(--hi)}#musEdit label{display:flex;align-items:center;gap:6px;margin:0;color:var(--mut)}
-#musEdit input[type=range]{width:110px}#musEdit output{min-width:38px;color:var(--fg);font-variant-numeric:tabular-nums}.mf{display:flex;align-items:center;gap:6px;color:var(--mut)}
-#musEdit .segb button{padding:3px 8px;font-size:12px}
 #cueEdit{position:absolute;display:none;width:380px;z-index:3;background:var(--s2);border:1px solid var(--green);border-radius:var(--r);box-shadow:var(--pop);padding:4px;gap:4px}#cueEdit.on{display:flex}
 .hints{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;color:var(--dim);font-size:12px}
 .hints span b{color:var(--mut);font-weight:600}
@@ -364,7 +362,6 @@ footer{padding:0 8px 8px}
   </div>
   <div class="tlwrap">
     <canvas id="tl"></canvas>
-    <span id="musEdit"><b id="musName"></b><label>Гучність <input type="range" id="musVol" min="0" max="200" step="5"><output id="musVolO"></output></label><span class="mf">Наростання <span class="segb" id="mus_fin"></span></span><span class="mf">Згасання <span class="segb" id="mus_fout"></span></span><button id="musDel" class="ghost" title="Видалити музику" aria-label="Видалити музику">✕</button></span>
     <span id="cueEdit"><input id="cueText" placeholder="Текст репліки" aria-label="Текст репліки"><button id="cueDel" class="ghost" title="Видалити репліку" aria-label="Видалити репліку">✕</button></span>
   </div>
   <div class="hints">
@@ -372,6 +369,7 @@ footer{padding:0 8px 8px}
     <span><kbd>Ctrl</kbd> + перетягування: область аналізу; затиснутий під час перетягування — без прилипання</span>
     <span><kbd>Shift</kbd> + перетягування: новий кліп або репліка</span>
     <span><kbd>Alt</kbd> + перетягування по кліпу: вирізати шматок</span>
+    <span>Елемент зі списку тягни на кліп, щоб додати його туди</span>
     <span>Права кнопка: дії з кліпом, реплікою чи елементом; смужку елемента можна розрізати чи сховати в окремому кліпі</span>
     <span>Смужка над таймлайном: висота, подвійний клік скидає</span>
     <span><kbd>Space</kbd> відтворення · <kbd>I</kbd> <kbd>O</kbd> межі кліпу · <kbd>Del</kbd> видалити · <kbd>Ctrl</kbd>+<kbd>C</kbd> <kbd>V</kbd> <kbd>D</kbd> копіювати · <kbd>Ctrl</kbd>+<kbd>Z</kbd> скасувати · колесо: масштаб</span>
@@ -452,6 +450,8 @@ const TYPES = {
   progress: T('Прогрес-бар', '▬', '#c9a75a', [], [['color', 'color', 'Колір'], ['h', 'range', 'Товщина', [4, 40, 1, 'px']], ['pos', 'seg', 'Де', [['top', 'Згори'], ['bottom', 'Знизу']]]]),
   bg:     T('Фон', '▦', '#7a756e', [], [['style', 'seg', 'Фон', [['blur', 'Розмите відео'], ['color', 'Колір']]], ['blur', 'range', 'Розмиття', [1, 30, 1, ''], e => e.style !== 'color'],
             ['dim', 'range', 'Затемнення', [0, 80, 1, '%', 100], e => e.style !== 'color'], ['color', 'color', 'Колір', null, e => e.style === 'color']]),
+  music:  T('Музика', '♪', '#8a70c4', [], [['path', 'audio', 'Трек'], ['vol', 'range', 'Гучність', [0, 200, 5, '%', 100]],
+            ['fin', 'seg', 'Наростання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]], ['fout', 'seg', 'Згасання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]]]),
   subs:   T('Субтитри', 'CC', '#6aa87a', ['size', 'w'], [['name', 'text', 'Спікер'], ['lang', 'seg', 'Мова мовлення', [['', 'Авто'], ['uk', 'Укр'], ['en', 'Англ']]],
             ['words', 'seg', 'Слів на екрані', [[1, '1'], [2, '2'], [3, '3'], [4, '4']]], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [30, 160, 1, 'px']],
             ['color', 'color', 'Колір'], ['karaoke', 'toggle', 'Підсвічувати слово, що звучить'], ['hl', 'color', 'Колір підсвітки', null, e => e.karaoke],
@@ -490,13 +490,15 @@ const CATALOG = [
     ['YouTube', 'логотип і назва каналу', {type: 'social', net: 'youtube', handle: '@channel', style: 'dark', size: 44, y: 1650, anim: 'pop'}],
     ['Instagram', 'логотип і @нік', {type: 'social', net: 'instagram', handle: '@nickname', style: 'brand', size: 44, y: 1650, anim: 'pop'}],
     ['Twitch', 'логотип і канал стрімів', {type: 'social', net: 'twitch', handle: 'twitch.tv/nickname', style: 'brand', size: 44, y: 1650, anim: 'pop'}],
-    ['Discord-сервер', 'логотип і запрошення', {type: 'social', net: 'discord', handle: 'discord.gg/invite', style: 'brand', size: 44, y: 1650, anim: 'pop'}]]]
+    ['Discord-сервер', 'логотип і запрошення', {type: 'social', net: 'discord', handle: 'discord.gg/invite', style: 'brand', size: 44, y: 1650, anim: 'pop'}]]],
+  ['Музика', [
+    ['Музика', 'трек з файлу, з хвилею на таймлайні', {type: 'music', vol: 1, fin: 0, fout: 1}]]]
 ];
 const SINGLE = ['bg'];
 const mk = p => ({id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, to: 0, ...structuredClone(p)});
 
 let audioTracks = 1, cfg = {}, P = null, dur = 0, S = {w: 1920, h: 1080}, curve = [], t0 = 0, lo = 0, hi = 1, step = .5;
-let sel = -1, selCue = -1, selMus = -1, selEl = null, stopAt = null, mode = 'short', drag = null, guide = null, pvGuides = [], view = {t0: 0, t1: 1}, TW = 0, TH = 0;
+let sel = -1, selCue = -1, selEl = null, stopAt = null, mode = 'short', drag = null, guide = null, pvGuides = [], view = {t0: 0, t1: 1}, TW = 0, TH = 0;
 const arts = new Map();
 const els = () => P ? P.elements : [];
 const elById = id => els().find(e => e.id === id);
@@ -626,7 +628,7 @@ $('#mreveal').onclick = () => api('/api/reveal', {path: $('#mv').dataset.path});
 
 async function openProject(p) {
   await api('/api/project/open', {id: p.id});
-  P = p; P.music ||= []; selMus = -1; sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
+  P = p; migrateMusic(); sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
   if (!P.clips.length && P.video) try { P.clips = JSON.parse(localStorage.getItem('clips:' + P.video)) || []; } catch (e) {}   // незбережені кліпи старих версій
   for (const e of P.elements) if (e.type === 'subs' && !['', 'uk', 'en'].includes(e.lang)) e.lang = '';   // мови без кнопки — автовизначення
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
@@ -673,6 +675,7 @@ function control(o, k, kind, label, opt) {
   else if (kind === 'file') c = `<div class="pick">${v ? `<img src="${fileUrl(v)}" alt="">` : ''}<span>${esc(v.split(/[\\/]/).pop()) || 'не обрано'}</span><button data-file="${k}">Обрати</button>${v ? `<button class="ghost" data-clear="${k}" aria-label="Прибрати">✕</button>` : ''}</div>`;
   else if (kind === 'emoji') c = `<input value="${esc(v)}" maxlength="8"><div class="emo">${['😂', '🤣', '🔥', '😱', '💀', '🤯', '👀', '😭', '❤️', '👍', '🎉', '💯'].map(x => `<button data-v="${x}">${x}</button>`).join('')}</div>`;
   else if (kind === 'area') c = `<textarea>${esc(v)}</textarea>`;
+  else if (kind === 'audio') c = `<div class="pick"><span>♪ ${esc(o.name || 'не обрано')}</span><button data-audio="1">Інший трек</button></div>`;
   else c = `<input value="${esc(v)}" ${kind === 'font' ? 'list="fontlist" placeholder="Системний"' : ''}>`;
   return `<div data-p="${k}" data-kind="${kind}"><label>${label}</label>${c}</div>`;
 }
@@ -685,21 +688,34 @@ function readControl(t, cur) {                                    // значе�
 }
 
 // ── шари й налаштування вибраного ──
+let listClip = null, dragEl = null, dropAt = null;
+function addToClip(el, c) {                                        // елемент зі списку покласти на кліп
+  const cur = c.segs?.[el.id], left = el.type === 'music' ? (el.dur || 1e9) - (el.off || 0) : 1e9;
+  if (el.solo ? !cur?.length : cur && !cur.length) (c.segs ||= {})[el.id] = [[0, left < net(c) - .05 ? Math.max(.2, left) : 0]];
+  sel = P.clips.indexOf(c); selEl = el.id; focus = 'el'; renderList(); renderEls(); save(); msg(`${TYPES[el.type].name}: додано в кліп #${sel + 1}`);
+}
 function renderEls() {
-  $('#els').innerHTML = els().slice().reverse().map(e => {
-    const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || e.handle || '';
-    return `<div class="el ${e.id === selEl ? 'sel' : ''} ${e.on ? '' : 'off'}" data-id="${e.id}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
-      <span class="nm">${Ty.name}${note ? `<small>${esc(note)}</small>` : ''}</span>
-      <span class="tl"><button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
+  const cc = P?.clips.length ? ctxClip() : null; listClip = cc;
+  const row = e => {
+    const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || e.handle || '', lane = !['subs', 'bg'].includes(e.type);
+    const here = !cc || (inClip(cc, e) && segsOf(cc, e).length > 0), where = lane && e.solo ? (!cc ? 'ще не в кліпах' : here ? 'цей кліп' : 'не в цьому кліпі') : '';
+    return `<div class="el ${e.id === selEl ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"
+      title="${lane ? 'Перетягни на кліп на таймлайні, щоб додати туди' : ''}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
+      <span class="nm">${Ty.name}${where ? `<em>${where}</em>` : ''}${note ? `<small>${esc(note)}</small>` : ''}</span>
+      <span class="tl">${lane && e.solo ? '<button data-a="all" title="Застосувати до всіх кліпів" aria-label="Застосувати до всіх кліпів">⇶</button>' : ''}<button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
       <button data-a="up" title="Вище" aria-label="Вище">↑</button><button data-a="down" title="Нижче" aria-label="Нижче">↓</button>
       <button data-a="del" title="Видалити" aria-label="Видалити">✕</button></span></div>`;
-  }).join('') || '<p class="mut" style="padding:4px 8px">Елементів немає</p>';
+  };
+  const list = els().slice().reverse(), subs = list.filter(e => e.type === 'subs');
+  $('#els').innerHTML = (list.filter(e => e.type !== 'subs').map(row).join('') || '<p class="mut" style="padding:4px 8px">Елементів немає</p>') +
+    (subs.length ? `<h5 class="elgrp">Субтитри</h5>${subs.map(row).join('')}` : '');
   renderProps(); renderCropBar(); fitTL();
 }
 $('#els').onclick = e => {
   const r = e.target.closest('.el'); if (!r) return;
   const i = els().findIndex(x => x.id === r.dataset.id), el = els()[i], a = e.target.closest('[data-a]')?.dataset.a;
   if (a === 'up' || a === 'down') return moveEl(el, a);
+  if (a === 'all') return setScope(el, null, false);
   if (a === 'eye') el.on = !el.on;
   else if (a === 'del') { if (!dropEl(el)) return; }
   else selEl = el.id;
@@ -728,31 +744,68 @@ $('#cat').onclick = e => {
   const {stack, ...p} = CATALOG[b.dataset.g][1][b.dataset.i][2];
   const one = SINGLE.includes(p.type) && els().find(x => x.type === p.type);
   if (one) { selEl = one.id; return renderEls(); }
-  const el = mk(p); if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
+  if (p.type === 'music') return addMusicEl();
+  const el = mk(p), c = P.clips.length ? ctxClip() : null;
+  if (!['subs', 'bg'].includes(p.type)) { el.solo = true; if (c) (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }
+  if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
   if (stack) arrange(); renderEls(); save();
 };
+function whenBox(el, c) {
+  if (el.solo && !c.segs?.[el.id]) return `<div class="when"><span>Цього елемента немає в кліпі #${P.clips.indexOf(c) + 1}.
+      <br>Перетягни його зі списку на потрібний кліп на таймлайні.</span></div>
+    <div class="when"><button data-act="add">Додати в цей кліп</button><button data-act="scope">Застосувати до всіх кліпів</button></div>`;
+  const own = c.over?.[el.id], tx = isArt(el) && TEXTK.some(k => el[k] != null) && (own || clipsWith(el) > 1);
+  const sg = segsOf(c, el), whole = sg.length === 1 && !sg[0][0] && !sg[0][1], f = v => v.toFixed(1) + ' с';
+  const shown = !sg.length ? 'сховано в цьому кліпі' : whole ? 'весь кліп' : sg.length > 1 ? `${sg.length} шматки` : `з ${f(sg[0][0] || 0)} до ${sg[0][1] ? f(sg[0][1]) : 'кінця'}`;
+  const music = el.type === 'music';
+  const inN = P.clips.map((x, i) => x.segs?.[el.id] ? '#' + (i + 1) : '').filter(Boolean);
+  return `<div class="when"><span>${!el.solo ? 'У всіх кліпах' : inN.length > 1 ? `У кліпах ${inN.join(', ')}` : 'Лише в цьому кліпі'} · видно ${shown}
+      <br>${music ? 'тягни смужку: краї обрізають, середина обирає момент треку' : 'тягни смужку в кліпі на таймлайні'}</span>
+      ${whole ? '' : '<button data-act="whole">Весь кліп</button>'}</div>
+    ${tx ? `<div class="when"><span>${own ? 'Текст цього кліпу свій' : 'Текст змінюється лише в цьому кліпі'}</span>${own ? '<button data-act="textall">Такий текст у всіх кліпах</button>' : ''}</div>` : ''}
+    <div class="when"><button data-act="scope">${el.solo ? 'Застосувати до всіх кліпів' : 'Лише в цьому кліпі'}</button></div>`;
+}
+const TEXTK = ['text', 'title', 'channel', 'name', 'handle', 'category', 'badge'];
+const clipsWith = el => el.solo ? P.clips.filter(c => c.segs?.[el.id]).length : P.clips.length;
+const eff = (el, c = clipAt(vid.currentTime) || (P.clips.length ? ctxClip() : null)) => { const o = c?.over?.[el.id]; return o ? {...el, ...o} : el; };
+function setProp(el, k, v) {                                       // текст елемента, що є в кількох кліпах, — свій для кожного кліпу
+  const c = P.clips.length ? ctxClip() : null;
+  if (c && isArt(el) && TEXTK.includes(k) && (c.over?.[el.id] || clipsWith(el) > 1)) ((c.over ||= {})[el.id] ||= {})[k] = v; else el[k] = v;
+}
+function textToAll(el) {                                           // текст цього кліпу — в усі
+  const c = ctxClip(), o = c?.over?.[el.id]; if (!o) return;
+  Object.assign(el, o); for (const x of P.clips) if (x.over) delete x.over[el.id]; renderEls(); save();
+}
+function setScope(el, c, solo) {                                  // спільний ↔ лише цей кліп
+  if (solo) { const sg = segsOf(c, el); for (const o of P.clips) if (o.segs) delete o.segs[el.id]; (c.segs ||= {})[el.id] = sg.length ? sg.map(x => [...x]) : [[0, 0]]; }
+  el.solo = solo; renderEls(); save();
+}
 function renderProps() {
   const el = elById(selEl), box = $('#props');
   if (!el) { box.innerHTML = '<p class="mut" style="margin:0">Обери елемент у списку або клікни його на прев\'ю. Тягни його мишею, кут — розмір.</p>'; return; }
   const Ty = TYPES[el.type], c = P.clips.length ? ctxClip() : null, n = c ? net(c) : 0;
   const timed = !['subs', 'bg'].includes(el.type);
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
-    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('') +
-    (timed ? `<div class="when"><span>Видно ${el.from || el.to ? `з ${(el.from || 0).toFixed(1)} с до ${el.to ? el.to.toFixed(1) + ' с' : 'кінця'}` : 'весь кліп'}
-      <br>тягни смужку в кліпі на таймлайні</span>${el.from || el.to ? '<button data-act="whole">Весь кліп</button>' : ''}</div>` : '');
+    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(c ? eff(el, c) : el, k, kind, label, opt)).join('') +
+    (timed && c ? whenBox(el, c) : '');
 }
 $('#props').addEventListener('input', e => {
   const el = elById(selEl), box = e.target.closest('[data-p]'); if (!el || !box) return;
   const k = box.dataset.p, v = readControl(e.target, el[k]); if (v === undefined) return;
-  el[k] = v; afterEdit(el, k);
+  setProp(el, k, v); afterEdit(el, k);
 });
 $('#props').addEventListener('click', async e => {
   const el = elById(selEl); if (!el) return; const t = e.target;
-  if (t.dataset.v != null && t.closest('[data-p]')) { const k = t.closest('[data-p]').dataset.p; el[k] = readControl(t, el[k]); afterEdit(el, k); return renderProps(); }
+  if (t.dataset.v != null && t.closest('[data-p]')) { const k = t.closest('[data-p]').dataset.p; setProp(el, k, readControl(t, el[k])); afterEdit(el, k); return renderProps(); }
   if (t.dataset.file) { const {path} = await api('/api/pick', {kind: 'image'}); if (!path) return; el[t.dataset.file] = path; await save(true); return renderProps(); }
   if (t.dataset.clear) { el[t.dataset.clear] = ''; afterEdit(el); return renderProps(); }
   if (t.dataset.act === 'detect') detectCam(el, t);
-  if (t.dataset.act === 'whole') { el.from = el.to = 0; save(); renderProps(); }
+  const c = P.clips.length ? ctxClip() : null;
+  if (t.dataset.act === 'whole') { if (c?.segs?.[el.id]) c.segs[el.id] = [[0, 0]]; else el.from = el.to = 0; save(); renderProps(); drawTL(); }
+  if (t.dataset.act === 'scope' && c) setScope(el, c, !el.solo);
+  if (t.dataset.act === 'add' && c) addToClip(el, c);
+  if (t.dataset.act === 'textall') { textToAll(el); renderProps(); }
+  if (t.dataset.audio) { const a = await pickAudio(); if (a) { Object.assign(el, a); renderEls(); save(); } }
 });
 function afterEdit(el, k) {
   if (el.type === 'progress' && k) el.y = el.pos === 'top' ? 0 : 1920 - el.h;
@@ -775,13 +828,17 @@ async function detectCam(cam, btn = {}) {
 // ── картинки елементів малює сервер тим самим кодом, що й у відео ──
 const artKey = el => JSON.stringify(el, (k, v) => ['x', 'y', 'from', 'to', 'anim', 'on', 'id'].includes(k) ? undefined : v);
 const isArt = el => !['video', 'cam', 'subs', 'bg', 'progress'].includes(el.type);
+const artCache = new Map();                                        // вміст → картинка: перемикання кліпів зі своїм текстом без перемальовування
 function ensureArt(el) {
-  const key = artKey(el), a = arts.get(el.id);
+  const key = artKey(el), hit = artCache.get(key);
+  if (hit) { arts.set(el.id, hit); return Promise.resolve(); }
+  const a = arts.get(el.id);
   if (a && (a.key === key || a.pending === key)) return a.ready;
   const ready = api('/api/element', el).then(r => new Promise(ok => {
     const img = new Image(); img.onload = () => {
       const cur = arts.get(el.id); if (cur && cur.pending !== key) return ok();
-      arts.set(el.id, {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]});
+      const v = {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]}; arts.set(el.id, v);
+      if (artCache.size > 300) artCache.clear(); artCache.set(key, v);
       if (el.x == null) { el.x = Math.round((1080 - r.w) / 2); save(); } ok();
     }; img.src = r.img;
   })).catch(e => msg('Елемент: ' + e.message, 1));
@@ -1022,30 +1079,30 @@ document.addEventListener('pointerdown', e => {                   // capture: с
   selEl = null; renderEls();
 }, true);
 document.addEventListener('pointerdown', e => {                   // клік деінде закриває редактор репліки; клік по іншій репліці відкриє її
-  if (selMus >= 0 && !e.target.closest('#musEdit,#ctx,#tl')) selectMus(-1);
   if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
   selCue = -1; $('#cueEdit').classList.remove('on'); drawTL();
 }, true);
 $('#layers').addEventListener('pointerdown', () => focus = 'el'); pv.addEventListener('pointerdown', () => focus = 'el');
 $('#list').addEventListener('pointerdown', () => focus = 'clip');
 function removeSel() {
-  if (focus === 'mus' && selMus >= 0) return removeMus();
   if (focus === 'cue' && selCue >= 0) return $('#cueDel').click();
   if (focus === 'el' && selEl) { if (dropEl(elById(selEl))) { renderEls(); fitTL(); save(); } return; }
   if (P.clips[sel]) { P.clips.splice(sel, 1); sel = -1; commit(); }
 }
 function copySel() {
   const [kind, v] = focus === 'cue' && P.cues[selCue] ? ['cue', P.cues[selCue]] : focus === 'el' && elById(selEl) ? ['el', elById(selEl)] : ['clip', P.clips[sel]];
-  if (!v) return; clipboard = {kind, v: structuredClone(v)};
+  if (!v) return; clipboard = {kind, v: structuredClone(v), segs: kind === 'el' && P.clips.length ? structuredClone(segsOf(ctxClip(), v)) : null};
   msg(`Скопійовано: ${kind === 'el' ? TYPES[v.type].name.toLowerCase() : kind === 'cue' ? 'репліку' : 'кліп'}`);
 }
 const shiftCuts = (cut, d) => (cut || []).map(([x, y]) => [x + d, y + d]);
-const duplicate = () => focus === 'cue' && P.cues[selCue] ? dupCue(P.cues[selCue]) : focus === 'mus' && P.music[selMus] ? dupMus(P.music[selMus]) : (copySel(), paste());
+const duplicate = () => focus === 'cue' && P.cues[selCue] ? dupCue(P.cues[selCue]) : (copySel(), paste());
 function paste(t = vid.currentTime) {                             // елемент — трохи зсунутим; кліп і репліку — на курсор
   if (!clipboard) return; const {kind, v} = clipboard, sh = t - (v.a ?? 0);
   if (kind === 'el') {
     if (SINGLE.includes(v.type) && els().some(e => e.type === v.type)) return msg(`${TYPES[v.type].name} може бути лише один`, 1);
-    const el = {...structuredClone(v), id: uid(), x: (v.x ?? 0) + 40, y: v.y + 40}; P.elements.push(el); selEl = el.id; focus = 'el'; renderEls(); return save();
+    const el = {...structuredClone(v), id: uid(), x: (v.x ?? 0) + 40, y: v.y + 40}, c = P.clips.length ? ctxClip() : null;
+    if (el.solo) { if (c) (c.segs ||= {})[el.id] = clipboard.segs?.length ? structuredClone(clipboard.segs) : [[0, 0]]; else el.solo = false; }
+    P.elements.push(el); selEl = el.id; focus = 'el'; renderEls(); return save();
   }
   if (kind === 'clip') {
     P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh)}); sel = P.clips.length - 1; focus = 'clip'; return commit();
@@ -1055,8 +1112,8 @@ function paste(t = vid.currentTime) {                             // елеме�
 
 // ── прев'ю: шорт ──
 function visible(el) {                                            // час «з/до» рахується від початку кліпу вже без пропусків
-  if (!el.on) return false;
-  const t = vid.currentTime, c = clipAt(t); if (!c) return true;
+  if (!el.on || el.type === 'music') return false;
+  const t = vid.currentTime, c = clipAt(t); if (!c) return !el.solo || el.id === selEl;
   const rel = toOut(c, t); return segsOf(c, el).some(([a, b]) => rel >= (a || 0) && (!b || rel < b));
 }
 function rectOf(el) {
@@ -1110,13 +1167,13 @@ function drawShort() {
     } else if (el.type === 'subs') drawSubs(el, k);
     else if (el.type === 'progress') { const c = clipAt(vid.currentTime); px.fillStyle = el.color; px.fillRect(0, el.y * k, (c ? toOut(c, vid.currentTime) / net(c) : .4) * pv.width, el.h * k); }
     else {
-      ensureArt(el); const a = arts.get(el.id); if (!a || !a.img) continue;
+      ensureArt(eff(el)); const a = arts.get(el.id); if (!a || !a.img) continue;
       const r = el[TYPES[el.type].size[0]] / a.v;
       px.drawImage(a.img, (el.x - a.pad * r) * k, (el.y - a.pad * r) * k, a.img.naturalWidth * r * k, a.img.naturalHeight * r * k);
     }
   }
   const el = elById(selEl), s = pvScale(), hs = HANDLE_PX * s;
-  if (el && el.type !== 'bg') {
+  if (el && el.type !== 'bg' && el.type !== 'music') {
     const b = rectOf(el); px.strokeStyle = px.fillStyle = TYPES[el.type].col;
     px.lineWidth = 2 * s; px.setLineDash([6 * s, 4 * s]); px.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k); px.setLineDash([]);
     if (TYPES[el.type].size.length) px.fillRect((b.x + b.w) * k - hs, (b.y + b.h) * k - hs, hs * 2, hs * 2);
@@ -1321,9 +1378,9 @@ $('#tlGrip').onpointerdown = e => { $('#tlGrip').setPointerCapture(e.pointerId);
 $('#tlGrip').onpointermove = e => { if (gripDrag) setTlHeight(gripDrag.h + gripDrag.y - e.clientY); };
 $('#tlGrip').onpointerup = () => { gripDrag = null; keepTlK(); };
 $('#tlGrip').ondblclick = () => { tlK = 1; scaleUI(); keepTlK(); };
-const laneEls = () => els().filter(e => !['subs', 'bg'].includes(e.type)).slice().reverse();
-const geo = () => { const cb = CTOP + CHEAD + Math.max(1, laneEls().length) * BAR + 6, rows = subRows().length, musY = cb + 6 + rows * CUE + 4;
-  return {cb, cueY: cb + 6, rows, musY, H: musY + CUE + 4}; };
+const laneEls = (c = P?.clips.length ? ctxClip() : null) => els().filter(e => !['subs', 'bg'].includes(e.type) && inClip(c, e)).slice().reverse();
+const geo = () => { const cb = CTOP + CHEAD + Math.max(1, laneEls().length) * BAR + 6, rows = subRows().length;
+  return {cb, cueY: cb + 6, rows, H: cb + 6 + rows * CUE + 4}; };
 const spAt = y => { const {cueY, rows} = geo(); return clamp(Math.floor((y - cueY) / CUE), 0, rows - 1); };   // рядок спікера під курсором
 const X = t => (t - view.t0) / (view.t1 - view.t0) * TW, Tt = x => view.t0 + x / TW * (view.t1 - view.t0);
 function fitTL() { const h = geo().H; if (tl.clientHeight !== h) { tl.style.height = h + 'px'; resizeTL(); } }
@@ -1333,7 +1390,8 @@ function clampView() { const span = Math.min(dur, Math.max(2, view.t1 - view.t0)
 const rr = (x, y, w, h, r) => { tx.beginPath(); tx.roundRect(x, y, Math.max(0, w), h, r); };
 // частини показу елемента в кліпі: [[з, до], …] — секунди від початку кліпу без пропусків, «до» 0 — до кінця.
 // Свої для кліпу (c.segs[id], [] — сховано в цьому кліпі) або спільні з елемента (from/to)
-const segsOf = (c, e) => c?.segs?.[e.id] ?? [[e.from || 0, e.to || 0]];
+const inClip = (c, e) => !e.solo || !!c?.segs?.[e.id];
+const segsOf = (c, e) => c?.segs?.[e.id] ?? (e.solo ? [] : [[e.from || 0, e.to || 0]]);
 const ownSegs = (c, e) => ((c.segs ||= {})[e.id] ||= segsOf(c, e).map(x => [...x]));   // перша зміна в кліпі — копія спільних
 const segSpan = (c, x) => [toSrc(c, x[0] || 0), x[1] ? toSrc(c, x[1]) : c.b];
 const barSpan = (c, e) => segSpan(c, segsOf(c, e)[0] || [0, 0]);
@@ -1360,23 +1418,6 @@ function curvePath() {                                            // «енер�
   }
   path.lineTo(TW, TH); path.closePath(); return path;
 }
-const MUS_COL = '#8a70c4';
-function drawMusic() {                                            // музика: шматки з назвою, рампами наростання/згасання й ручками на краях
-  const {musY} = geo(), y = musY, h = CUE;
-  tx.fillStyle = PAL.grid; tx.fillRect(0, y, TW, h); tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
-  if (!P.music.length) { tx.fillStyle = PAL.tick; tx.fillText('музика · права кнопка — додати', 8, y + h * .67); return; }
-  P.music.forEach((m, j) => {
-    const x0 = X(m.a), x1 = X(m.b); if (x1 < 0 || x0 > TW) return;
-    const on = j === selMus; rr(x0 + 1, y + 1, x1 - x0 - 2, h - 2, 0); tx.fillStyle = mixHex(MUS_COL, PAL.bg, on ? .5 : .72); tx.fill();
-    tx.strokeStyle = on ? PAL.acc : mixHex(MUS_COL, PAL.bg, .3); tx.lineWidth = on ? 2 : 1; tx.stroke();
-    tx.strokeStyle = mixHex(MUS_COL, '#ffffff', .35); tx.lineWidth = 1.5; tx.beginPath();          // рампи гучності
-    const fi = X(m.a + (m.fin || 0)) - x0, fo = x1 - X(m.b - (m.fout || 0));
-    tx.moveTo(x0 + 1, y + h - 2); tx.lineTo(x0 + 1 + fi, y + 3); tx.lineTo(x1 - 1 - fo, y + 3); tx.lineTo(x1 - 1, y + h - 2); tx.stroke();
-    if (x1 - x0 > 30) { tx.save(); tx.beginPath(); tx.rect(x0 + 6, y, x1 - x0 - 12, h); tx.clip(); tx.fillStyle = mixHex(MUS_COL, '#ffffff', .6);
-      tx.fillText(`♪ ${m.name}${(m.vol ?? 1) !== 1 ? ` · ${Math.round(m.vol * 100)}%` : ''}`, x0 + 8, y + h * .67); tx.restore(); }
-    if (x1 - x0 > 14) { tx.fillStyle = on ? PAL.acc : mixHex(MUS_COL, '#ffffff', .15); tx.fillRect(x0 + 1, y + 5, 3, h - 10); tx.fillRect(x1 - 4, y + 5, 3, h - 10); }
-  });
-}
 function drawTL() {
   tx.fillStyle = PAL.out; tx.fillRect(0, 0, TW, TH);
   if (!dur || !P) return;
@@ -1398,6 +1439,7 @@ function drawTL() {
     const s = i === sel, ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
     rr(x0, CTOP, x1 - x0, cb - CTOP, 0); tx.fillStyle = !c.on ? PAL.offDk : c.col ? mixHex(c.col, PAL.bg, s ? .45 : .6) : s ? PAL.accDk : PAL.blueDk; tx.fill();
     tx.strokeStyle = col; tx.lineWidth = s ? 2 : 1; tx.stroke();
+    if (c === dropAt) { rr(x0 + 1, CTOP + 1, x1 - x0 - 2, cb - CTOP - 2, 0); tx.strokeStyle = PAL.acc; tx.lineWidth = 3; tx.stroke(); }   // сюди ляже елемент зі списку
     for (const [u, v] of c.cut || []) {
       const a = X(Math.max(u, c.a)), b = X(Math.min(v, c.b)); if (b <= a) continue;
       tx.fillStyle = PAL.redDk; tx.fillRect(a, CTOP + 1, b - a, cb - CTOP - 2);
@@ -1420,12 +1462,13 @@ function drawTL() {
       segs.forEach(x => {
         const [sa, sb] = segSpan(c, x), a = X(sa), b = X(sb);
         rr(a + 1, y + 1, b - a - 2, BAR - 2, 0); tx.fillStyle = fill; tx.fill(); if (on) { tx.strokeStyle = '#fff'; tx.lineWidth = 1; tx.stroke(); }
+        if (e.type === 'music') drawWave(e, c, a, b, y, on ? 'rgba(21,20,19,.45)' : mixHex(Ty.col, '#ffffff', .25));
         if (own) { tx.fillStyle = on ? '#151413' : mixHex(Ty.col, '#ffffff', .3); tx.fillRect(a + 1, y + 2, 2, BAR - 4); tx.fillRect(b - 3, y + 2, 2, BAR - 4); }   // свої частини кліпу — з рисками
-        if (b - a > 40) { tx.save(); tx.beginPath(); tx.rect(a + 4, y, b - a - 8, BAR); tx.clip(); tx.fillStyle = ink; tx.fillText(Ty.name, a + 6, y + BAR * .73); tx.restore(); }
+        if (b - a > 40) { tx.save(); tx.beginPath(); tx.rect(a + 4, y, b - a - 8, BAR); tx.clip(); tx.fillStyle = ink;
+          tx.fillText(e.type === 'music' ? `♪ ${e.name}${(e.vol ?? 1) !== 1 ? ` · ${Math.round(e.vol * 100)}%` : ''}` : Ty.name, a + 6, y + BAR * .73); tx.restore(); }
       });
     });
   });
-  drawMusic();
   // репліки субтитрів — рядок унизу того самого полотна
   tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
   const spk = subRows(), many = spk.length > 1;
@@ -1487,15 +1530,6 @@ function hit(x, y) {
     if (Math.abs(X(rb) - x) < 7) return {region: 'b'};
     return {seek: true, scrub: true};
   }
-  if (y >= geo().musY) {                                          // рядок музики: краї — обрізати, середина — рухати
-    for (const j of [selMus, ...P.music.keys()]) {
-      const m = P.music[j]; if (!m) continue;
-      if (Math.abs(X(m.a) - x) < 6) return {mus: j, edge: 'a'};
-      if (Math.abs(X(m.b) - x) < 6) return {mus: j, edge: 'b'};
-    }
-    const j = P.music.findIndex(m => t >= m.a && t <= m.b);
-    return j >= 0 ? {mus: j, move: t - P.music[j].a} : {seek: true, lane: 'music'};
-  }
   if (y >= cueY) {
     const row = spAt(y), inRow = c => c && rowOf(c) === row;
     for (const j of [selCue, ...P.cues.keys()]) {
@@ -1537,9 +1571,9 @@ tl.onpointerdown = e => {
   if (e.button === 1) { e.preventDefault(); drag = {pan: e.offsetX, v: {...view}}; tl.style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
   drag = hit(e.offsetX, e.offsetY); drag.x0 = e.offsetX;
-  focus = drag.bar ? 'el' : drag.mus != null ? 'mus' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
+  focus = drag.bar ? 'el' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
   const t = Tt(e.offsetX), inLane = e.offsetY >= TICK + 2 && e.offsetY < geo().cueY;
-  if (e.shiftKey && e.offsetY >= geo().cueY && e.offsetY < geo().musY) {   // Shift+тягни в рядку реплік — нова репліка
+  if (e.shiftKey && e.offsetY >= geo().cueY) {   // Shift+тягни в рядку реплік — нова репліка
     const sid = subsEls()[spAt(e.offsetY)]?.id, q = {a: snap(t), b: snap(t), text: 'Текст', k: [], ...(sid ? {sid} : {})}; P.cues.push(q); drag = {createCue: q, t0: q.a}; focus = 'cue'; return;
   }
   if (e.shiftKey && inLane) {                                     // Shift+тягни — новий кліп
@@ -1555,14 +1589,20 @@ tl.onpointerdown = e => {
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek) seek(t);
-  else if (drag.mus != null) selectMus(drag.mus);
   else if (drag.cue != null) selectCue(drag.cue);
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
 };
+$('#els').addEventListener('dragstart', e => { const r = e.target.closest('.el'); if (!r) return; dragEl = r.dataset.id; e.dataTransfer.setData('text/plain', dragEl); e.dataTransfer.effectAllowed = 'copy'; });
+$('#els').addEventListener('dragend', () => { dragEl = dropAt = null; });
+tl.addEventListener('dragover', e => {
+  if (!elById(dragEl)) return; e.preventDefault(); const t = Tt(e.offsetX);
+  dropAt = P.clips.find(c => t >= c.a && t <= c.b) || null; e.dataTransfer.dropEffect = dropAt ? 'copy' : 'none';
+});
+tl.addEventListener('dragleave', () => { dropAt = null; });
+tl.addEventListener('drop', e => { e.preventDefault(); const el = elById(dragEl), c = dropAt; dragEl = dropAt = null; if (el && c) addToClip(el, c); });
 tl.oncontextmenu = e => {
   e.preventDefault(); if (!P || !dur) return;
   const t = clamp(Tt(e.offsetX), 0, dur), h = hit(e.offsetX, e.offsetY), inCues = e.offsetY >= geo().cueY;
-  if (e.offsetY >= geo().musY) return openMenu(e, h.mus != null ? musMenu(h.mus) : [{label: 'Додати музику тут', run: () => addMusic(t)}, {label: 'Перемотати сюди', run: () => seek(t)}]);
   openMenu(e, h.cue != null ? cueMenu(h.cue, t) : h.bar ? [...segItems(h.bar, h.c, t, h.seg), ...elMenu(h.bar, t, 'звідси')] : h.i != null ? clipMenu(h.i, t, 'тут') : laneMenu(t, inCues, inCues ? spAt(e.offsetY) : 0));
 };
 tl.onpointermove = e => {
@@ -1587,20 +1627,17 @@ tl.onpointermove = e => {
   if (drag.bar && drag.seg != null) {                             // частина елемента в цьому кліпі
     const e = drag.bar, c = drag.c, n = net(c), x = ownSegs(c, e)[drag.seg]; if (!x) return;
     const end = x[1] || n;
-    if (drag.edge === 'a') x[0] = clamp(toOut(c, snap(raw, x)), 0, end - .2);
-    else if (drag.edge === 'b') { const v = toOut(c, snap(raw, x)); x[1] = v >= n - .05 ? 0 : Math.max(v, (x[0] || 0) + .2); }
-    else {                                                       // «до кінця» лишається таким, поки смужка впирається в кінець
+    const mus = e.type === 'music', off = e.off || 0;
+    if (drag.edge === 'a') x[0] = clamp(toOut(c, snap(raw, x)), mus ? Math.max(0, -off) : 0, end - .2);
+    else if (drag.edge === 'b') { const v = Math.min(toOut(c, snap(raw, x)), mus ? (e.dur || 1e9) - off : 1e9); x[1] = v >= n - .05 ? 0 : Math.max(v, (x[0] || 0) + .2); }
+    else if (mus) {                                              // зсув треку під шматками
+      const sg = segsOf(c, e), lo = -Math.min(...sg.map(y => y[0] || 0)), hi = (e.dur || 1e9) - Math.max(...sg.map(y => y[1] || n));
+      drag.off0 ??= off; e.off = clamp(drag.off0 - (toOut(c, raw) - ((x[0] || 0) + drag.move)), lo, Math.max(lo, hi));
+    } else {                                                       // «до кінця» лишається таким, поки смужка впирається в кінець
       const len = end - (x[0] || 0), start = toSrc(c, clamp(toOut(c, raw) - drag.move, 0, n - len));
       const nf = clamp(toOut(c, snapSpan(start, toSrc(c, toOut(c, start) + len) - start, x)), 0, n - len);
       x[0] = nf; x[1] = nf + len < n - .05 ? nf + len : 0;
     }
-    return;
-  }
-  if (drag.mus != null) {
-    const m = P.music[drag.mus], left = m.a - (m.off || 0), right = m.a + (m.dur || 1e9) - (m.off || 0);   // межі самого треку на таймлайні
-    if (drag.edge === 'a') { const na = clamp(snap(raw, m), Math.max(0, left), m.b - .3); m.off = (m.off || 0) + na - m.a; m.a = na; }
-    else if (drag.edge === 'b') m.b = clamp(snap(raw, m), m.a + .3, Math.min(dur, right));
-    else { const len = m.b - m.a; m.a = clamp(snapSpan(raw - drag.move, len, m), 0, dur - len); m.b = m.a + len; }
     return;
   }
   if (drag.cue != null) {
@@ -1637,9 +1674,8 @@ tl.onpointerup = e => {
   if (drag && drag.i != null) commit();
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
   if (drag && drag.bar && drag.seg != null && drag.c.segs?.[drag.bar.id]) tidySegs(drag.c, drag.bar);
-  if (drag && drag.mus != null) overwrite('mus', P.music[drag.mus]);
   if (drag && drag.cue != null && P.cues[selCue]) overwrite('cue', P.cues[selCue]);
-  if (drag && (drag.region || drag.cue != null || drag.bar || drag.mus != null)) { save(); renderProps(); }
+  if (drag && (drag.region || drag.cue != null || drag.bar)) { save(); renderProps(); }
   drag = null; guide = null; tl.style.cursor = '';
 };
 tl.onwheel = e => {
@@ -1656,7 +1692,7 @@ tl.ondblclick = e => {                                            // привч�
 };
 // ── плашка області над таймлайном (дії + перетягування) і редактор репліки над реплікою ──
 const ovl = {}, ovlW = {};                                        // розміри плашок кешуються: читання з DOM щокадру гальмує
-for (const id of ['ract', 'cueEdit', 'musEdit']) new ResizeObserver(() => ovlW[id] = $('#' + id).offsetWidth).observe($('#' + id));
+for (const id of ['ract', 'cueEdit']) new ResizeObserver(() => ovlW[id] = $('#' + id).offsetWidth).observe($('#' + id));
 function place(id, props) {                                       // пишемо в DOM лише те, що змінилось
   const s = $('#' + id).style, last = ovl[id] ||= {};
   for (const [k, v] of Object.entries(props)) { const px_ = Math.round(v) + 'px'; if (last[k] !== px_) s[k] = last[k] = px_; }
@@ -1665,7 +1701,6 @@ function placeOverlays() {
   const on = !!(P && dur); if (ovl.on !== on) $('#rbar').classList.toggle('on', ovl.on = on); if (!on) return;
   const [ra, rb] = region(), xa = X(ra), l = clamp(xa, 0, TW), r = clamp(X(rb), 0, TW), c = P.cues[selCue];
   place('rband', {left: l, width: Math.max(0, r - l)}); place('ract', {left: clamp(xa, 0, Math.max(0, TW - (ovlW.ract || 0)))});
-  const m = P.music[selMus]; if (m) place('musEdit', {left: clamp(X(m.a), 0, Math.max(0, TW - (ovlW.musEdit || 0))), top: geo().musY - 50});
   if (c) place('cueEdit', {left: clamp(X(c.a), 0, Math.max(0, TW - (ovlW.cueEdit || 0))), top: geo().cueY + rowOf(c) * CUE - 46});
 }
 const barX = e => e.clientX - tl.getBoundingClientRect().left;
@@ -1683,21 +1718,22 @@ const musAud = new Map();                                         // id шмат
 function syncSound() {
   if (!P) return;
   const vv = Math.min(1, els().find(e => e.type === 'video')?.vol ?? 1); vid.volume = vv; mix.volume = vv;   // звук відео; понад 100% — лише в рендері
-  const t = vid.currentTime, play = !vid.paused;
-  for (const [id, a] of musAud) if (!P.music.some(m => m.id === id)) { a.pause(); musAud.delete(id); }
-  for (const m of P.music) {
-    let a = musAud.get(m.id); if (!a || a.dataset.path !== m.path) { a?.pause(); a = new Audio(fileUrl(m.path)); a.dataset.path = m.path; musAud.set(m.id, a); }
-    if (!play || t < m.a || t >= m.b) { if (!a.paused) a.pause(); continue; }
-    const want = (m.off || 0) + t - m.a;
-    if (a.paused || Math.abs(a.currentTime - want) > .25) a.currentTime = want;
+  const t = vid.currentTime, play = !vid.paused, c = clipAt(t), rel = c ? toOut(c, t) : 0, n = c ? net(c) : 0, live = new Set();
+  for (const e of c ? els().filter(e => e.type === 'music' && e.on && e.path) : []) {
+    const sg = segsOf(c, e), pos = (e.off || 0) + rel;
+    if (!play || !sg.some(([a, b]) => rel >= (a || 0) && rel < (b || n)) || pos < 0 || pos >= (e.dur || 1e9)) continue;
+    let a = musAud.get(e.id); if (!a || a.dataset.path !== e.path) { a?.pause(); a = new Audio(fileUrl(e.path)); a.dataset.path = e.path; musAud.set(e.id, a); }
+    live.add(e.id); if (a.paused || Math.abs(a.currentTime - pos) > .25) a.currentTime = pos;
     if (a.paused) a.play().catch(() => {});
-    const fi = m.fin ? clamp((t - m.a) / m.fin, 0, 1) : 1, fo = m.fout ? clamp((m.b - t) / m.fout, 0, 1) : 1;
-    a.volume = clamp((m.vol ?? 1) * fi * fo, 0, 1);
+    const s0 = Math.min(...sg.map(x => x[0] || 0)), s1 = Math.max(...sg.map(x => x[1] || n));
+    a.volume = clamp((e.vol ?? 1) * (e.fin ? clamp((rel - s0) / e.fin, 0, 1) : 1) * (e.fout ? clamp((s1 - rel) / e.fout, 0, 1) : 1), 0, 1);
   }
+  for (const [id, a] of musAud) { if (!live.has(id) && !a.paused) a.pause(); if (!elById(id)) musAud.delete(id); }
 }
 (function loop() {
   if ($('#editor').classList.contains('on')) {
     if (stopAt != null && vid.currentTime >= stopAt) { vid.pause(); stopAt = null; }
+    if (P && (P.clips.length ? ctxClip() : null) !== listClip) renderEls();   // інший кліп — свій список елементів
     if (P && !vid.paused) {                                        // програвання перестрибує пропуски, як у рендері
       const t = vid.currentTime, c = P.clips.find(c => c.on && t >= c.a && t < c.b), u = c && (c.cut || []).find(([x, y]) => t >= x && t < y);
       if (u) vid.currentTime = u[1];
@@ -1755,7 +1791,7 @@ const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червон�
 function clipMenu(i, t, at) {
   const c = P.clips[i], cut = (c.cut || []).find(([u, v]) => t >= u && t <= v);
   sel = i; selCue = -1; focus = 'clip'; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
-  return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`},
+  return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`}, {label: 'Додати музику в кліп', run: () => addMusicEl(c)},
     {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: (c.col || null) === col, run: () => { c.col = col || undefined; commit(); }}))},
     cut && {label: 'Повернути вирізане', run: () => { c.cut = c.cut.filter(u => u !== cut); commit(); }},
     {label: 'Програти кліп', run: () => playClip(P.clips.indexOf(c))},
@@ -1786,61 +1822,68 @@ function mergeCues(q, nx) {
   q.k = timed(q) && timed(nx) ? [...q.k, ...nx.k] : []; q.text = `${q.text} ${nx.text}`.trim(); q.b = nx.b;
   P.cues.splice(P.cues.indexOf(nx), 1); selectCue(P.cues.indexOf(q), false); save();
 }
-const FADES = [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']];
-async function addMusic(t) {
-  const {path} = await api('/api/pick', {kind: 'audio'}); if (!path) return;
-  const {dur: d} = await api('/api/audio?p=' + encodeURIComponent(path)).catch(() => ({dur: 0})); if (!d) return msg('Не вдалося прочитати аудіофайл', 1);
-  P.music.push({id: uid(), path, name: path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''), a: t, b: Math.min(dur, t + d), off: 0, dur: d, vol: 1, fin: 0, fout: 1});
-  selectMus(P.music.length - 1); fitTL(); save();
+async function pickAudio() {
+  const {path} = await api('/api/pick', {kind: 'audio'}); if (!path) return null;
+  const {dur: d} = await api('/api/audio?p=' + encodeURIComponent(path)).catch(() => ({dur: 0}));
+  if (!d) { msg('Не вдалося прочитати аудіофайл', 1); return null; }
+  return {path, name: path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''), dur: d, off: 0};
 }
-function selectMus(j) {
-  selMus = j; if (j >= 0) { selCue = -1; $('#cueEdit').classList.remove('on'); focus = 'mus'; }
-  const m = P.music[j]; $('#musEdit').classList.toggle('on', !!m); if (!m) return;
-  $('#musName').textContent = m.name; $('#musVol').value = Math.round((m.vol ?? 1) * 100); $('#musVolO').textContent = Math.round((m.vol ?? 1) * 100) + '%';
-  for (const k of ['fin', 'fout']) $(`#mus_${k}`).innerHTML = FADES.map(([v, l]) => `<button data-f="${k}" data-v="${v}" class="${(m[k] || 0) === v ? 'on' : ''}">${l}</button>`).join('');
+async function addMusicEl(c = P.clips.length ? ctxClip() : null) {   // музика живе всередині кліпу
+  if (!c) return msg('Спершу додай кліп: музика накладається на кліп', 1);
+  const a = await pickAudio(); if (!a) return;
+  const el = {...mk({type: 'music', vol: 1, fin: 0, fout: 1}), ...a, solo: true};
+  P.elements.push(el); (c.segs ||= {})[el.id] = [[0, a.dur < net(c) - .05 ? a.dur : 0]];
+  selEl = el.id; focus = 'el'; renderEls(); save(true); loadPeaks(el.path);
 }
-$('#musVol').oninput = e => { const m = P.music[selMus]; if (!m) return; m.vol = e.target.value / 100; $('#musVolO').textContent = e.target.value + '%'; save(); };
-$('#musEdit').onclick = e => {
-  const m = P.music[selMus], b = e.target.closest('[data-f]'); if (!m) return;
-  if (b) { m[b.dataset.f] = +b.dataset.v; selectMus(selMus); save(); }
-  if (e.target.closest('#musDel')) removeMus();
-};
-function removeMus() { if (selMus < 0) return; P.music.splice(selMus, 1); selectMus(-1); save(); }
-const musMenu = j => { const m = P.music[j]; selectMus(j); return [{hd: `♪ ${m.name}`},
-  {label: 'З початку треку', off: !m.off, run: () => { m.b = Math.min(dur, m.a + Math.min(m.b - m.a + m.off, m.dur || 1e9)); m.off = 0; save(); }},
-  {label: 'Програти звідси', run: () => { seek(m.a); vid.play(); }},
-  {label: 'Дублювати після нього', key: 'Ctrl+D', run: () => dupMus(m)},
-  '-', {label: 'Видалити музику', key: 'Del', run: removeMus}]; };
+const peaks = new Map();                                          // трек → гучність, 50 значень на секунду
+function loadPeaks(path) {
+  if (peaks.has(path)) return; peaks.set(path, null);
+  api('/api/peaks?p=' + encodeURIComponent(path)).then(r => peaks.set(path, {rate: r.rate, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))}))
+    .catch(() => peaks.delete(path));
+}
+function drawWave(e, c, a, b, y, col) {                            // хвиля під шматком: що саме з треку грає в цьому місці
+  const pk = peaks.get(e.path); if (!pk) return loadPeaks(e.path);
+  const mid = y + BAR / 2, h = BAR / 2 - 3, off = e.off || 0; tx.fillStyle = col;
+  for (let x = Math.max(a + 2, 0); x < Math.min(b - 2, TW); x += 2) {
+    const i0 = Math.floor((off + toOut(c, Tt(x))) * pk.rate), i1 = Math.max(i0 + 1, Math.floor((off + toOut(c, Tt(x + 2))) * pk.rate));
+    let v = 0; for (let i = Math.max(0, i0); i < Math.min(i1, pk.v.length); i++) v = Math.max(v, pk.v[i]);
+    const hh = Math.max(.5, v / 255 * h); tx.fillRect(x, mid - hh, 1.4, hh * 2);
+  }
+}
 function overwrite(kind, it) {                                     // те, що поклали зверху, підрізає перекрите в тому ж рядку
   if (!it) return;
-  const list = kind === 'mus' ? P.music : kind === 'cue' ? P.cues : P.clips, MIN = kind === 'clip' ? 1 : .2;
+  const list = kind === 'cue' ? P.cues : P.clips, MIN = kind === 'clip' ? 1 : .2;
   const same = o => o !== it && (kind !== 'cue' || rowOf(o) === rowOf(it)) && o.a < it.b - .01 && o.b > it.a + .01;
   const cutsIn = (o, a, b) => (o.cut || []).filter(([u, v]) => v > a && u < b).map(([u, v]) => [Math.max(u, a), Math.min(v, b)]);
   for (const o of list.filter(same)) {
     if (o.a >= it.a - .01 && o.b <= it.b + .01) { list.splice(list.indexOf(o), 1); continue; }     // повністю під новим — геть
     if (o.a < it.a && o.b > it.b) {                               // новий усередині — старий ділиться на два (у репліки лишається початок)
       if (kind !== 'cue' && o.b - it.b >= MIN) {
-        const r = {...structuredClone(o), id: kind === 'mus' ? uid() : o.id, a: it.b};
-        if (kind === 'mus') r.off = (o.off || 0) + it.b - o.a; if (kind === 'clip') { r.cut = cutsIn(o, it.b, o.b); delete r.id; }
+        const r = {...structuredClone(o), a: it.b};
+        if (kind === 'clip') { r.cut = cutsIn(o, it.b, o.b); delete r.id; }
         list.push(r);
       }
       o.b = it.a;
     } else if (o.a < it.a) o.b = it.a;                            // зачепили кінець
-    else { if (kind === 'mus') o.off = (o.off || 0) + it.b - o.a; o.a = it.b; }   // зачепили початок
+    else o.a = it.b;                                             // зачепили початок
     if (kind === 'clip') o.cut = cutsIn(o, o.a, o.b);
     if (o.b - o.a < MIN) list.splice(list.indexOf(o), 1);
   }
   if (kind === 'cue') { P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(it); }
-  if (kind === 'mus') selMus = P.music.indexOf(it);
   if (kind === "clip") sel = P.clips.indexOf(it);
 }
 function dupCue(q) {                                              // копія одразу після оригіналу
   const len = q.b - q.a, a = Math.min(q.b, dur - len), r = {...structuredClone(q), a, b: a + len};
   if (r.k) r.k = r.k.map(v => v + a - q.a); P.cues.push(r); overwrite('cue', r); selectCue(P.cues.indexOf(r), false); save();
 }
-function dupMus(m) {
-  const len = m.b - m.a, a = Math.min(m.b, dur - len), r = {...structuredClone(m), id: uid(), a, b: a + len};
-  P.music.push(r); overwrite('mus', r); selectMus(P.music.indexOf(r)); save();
+function migrateMusic() {                                         // музика з окремої доріжки (1.3) → елементи всередині кліпів
+  for (const m of P.music || []) for (const c of P.clips) {
+    const s = Math.max(m.a, c.a), e = Math.min(m.b, c.b); if (e - s < .2) continue;
+    const r0 = toOut(c, s), r1 = toOut(c, e), n = net(c);
+    const el = {...mk({type: 'music'}), path: m.path, name: m.name, dur: m.dur, vol: m.vol ?? 1, fin: m.fin || 0, fout: m.fout || 0, off: (m.off || 0) + s - m.a - r0, solo: true};
+    P.elements.push(el); (c.segs ||= {})[el.id] = [[r0, r1 >= n - .05 ? 0 : r1]];
+  }
+  P.music = [];
 }
 function moveCue(q, el) { q.sid = el.id; selectCue(P.cues.indexOf(q), false); renderEls(); fitTL(); drawTL(); save(); }
 function cueMenu(j, t) {
@@ -1887,7 +1930,15 @@ function alignEl(el, how) { const p = ALIGN[how](rectOf(el)); for (const k in p)
 const pickEl = el => { selEl = el.id; focus = 'el'; renderEls(); };
 function timingItems(el, t, where) {                              // з якого й до якого моменту кліпу видно елемент
   const c = P.clips.length ? ctxClip() : null; if (!c || ['subs', 'bg'].includes(el.type)) return [];
+  if (el.solo && !c.segs?.[el.id]) return ['-', {label: `Додати в кліп #${P.clips.indexOf(c) + 1}`, run: () => addToClip(el, c)}, {label: 'Застосувати до всіх кліпів', run: () => setScope(el, c, false)}];
   const rel = toOut(c, clamp(t, c.a, c.b)), n = net(c), done = () => { save(); renderProps(); };
+  if (c.segs?.[el.id]) {                                          // свої частини в цьому кліпі
+    const set = L => { c.segs[el.id] = L; done(); };
+    return ['-', {hd: 'Коли видно'},
+      {label: `Показувати ${where}`, off: rel >= n - .2, run: () => { const L = c.segs[el.id].filter(([, b]) => (b || n) > rel + .2).map(([a, b]) => [Math.max(a || 0, rel), b]); set(L.length ? L : [[rel, 0]]); }},
+      {label: `Ховати ${where}`, off: rel <= .2, run: () => set(c.segs[el.id].filter(([a]) => (a || 0) < rel - .2).map(([a, b]) => [a, (b || n) > rel ? rel : b]))},
+      {label: 'Видно весь кліп', run: () => set([[0, 0]])}];
+  }
   return ['-', {hd: 'Коли видно'},
     {label: `Показувати ${where}`, off: rel >= n - .2, run: () => { el.from = rel; if (el.to && el.to <= rel + .2) el.to = 0; done(); }},
     {label: `Ховати ${where}`, off: rel <= (el.from || 0) + .2, run: () => { el.to = rel >= n - .05 ? 0 : rel; done(); }},
@@ -1908,20 +1959,23 @@ function segItems(e, c, t, k) {                                  // сховат
     x && {label: 'Розрізати тут', off: rel <= (x[0] || 0) + .2 || rel >= (x[1] || n) - .2,
           run: () => { const y = ownSegs(c, e)[k], end = y[1]; y[1] = rel; c.segs[e.id].push([rel, end]); done(); }},
     x && {label: 'Прибрати цей шматок', run: () => { ownSegs(c, e).splice(k, 1); done(); }},
-    segs.length ? {label: 'Сховати в цьому кліпі', run: () => { (c.segs ||= {})[e.id] = []; done(); }}
-                : {label: 'Показати в цьому кліпі', run: () => { c.segs[e.id] = [[0, 0]]; done(); }},
-    own && {label: 'Як у всіх кліпах', run: () => { delete c.segs[e.id]; done(); }},
-    own && segs.length === 1 && {label: 'Так у всіх кліпах', run: () => { [e.from, e.to] = segs[0]; for (const o of P.clips) if (o.segs) delete o.segs[e.id]; done(); }},
+    e.type === 'music' && {label: 'З початку треку', off: (e.off || 0) === -(segs[0]?.[0] || 0), run: () => { e.off = -(segs[0]?.[0] || 0); done(); }},
+    e.solo ? {label: 'Прибрати з цього кліпу', run: () => { delete c.segs[e.id]; if (selEl === e.id) selEl = null; renderEls(); done(); }}
+      : segs.length ? {label: 'Сховати в цьому кліпі', run: () => { (c.segs ||= {})[e.id] = []; done(); }}
+      : {label: 'Показати в цьому кліпі', run: () => { c.segs[e.id] = [[0, 0]]; done(); }},
+    !e.solo && own && {label: 'Як у всіх кліпах', run: () => { delete c.segs[e.id]; done(); }},
+    !e.solo && own && segs.length === 1 && {label: 'Так у всіх кліпах', run: () => { [e.from, e.to] = segs[0]; for (const o of P.clips) if (o.segs) delete o.segs[e.id]; done(); }},
+    e.solo ? {label: 'Застосувати до всіх кліпів', run: () => setScope(e, c, false)} : {label: 'Лише в цьому кліпі', run: () => setScope(e, c, true)},
     '-'];
 }
 function elMenu(el, t = vid.currentTime, where = 'з поточного кадру') {
   pickEl(el); const isSrc = el.type === 'video' || el.type === 'cam';
   return [{hd: TYPES[el.type].name},
-    !['bg', 'progress'].includes(el.type) && {row: ALIGN_ROW.map(([k, ic, title]) => ({ic, title, run: () => alignEl(el, k)}))},
+    !['bg', 'progress', 'music'].includes(el.type) && {row: ALIGN_ROW.map(([k, ic, title]) => ({ic, title, run: () => alignEl(el, k)}))},
     ['video', 'cam', 'subs', 'image'].includes(el.type) && {label: 'На всю ширину', run: () => { el.x = 0; el.w = 1080; save(); }},
     isSrc && {label: 'Кадрувати джерело', run: () => setMode('src')},
     el.type === 'cam' && {label: 'Знайти вебкамеру автоматично', run: () => detectCam(el)},
-    ...timingItems(el, t, where), ...layerItems(el), '-',
+    ...timingItems(el, t, where), ...(el.type === 'music' ? [] : layerItems(el)), '-',
     {label: el.on ? 'Сховати' : 'Показати', run: () => { el.on = !el.on; renderEls(); save(); }},
     {label: 'Копіювати', key: 'Ctrl+C', run: copySel},
     {label: 'Дублювати', key: 'Ctrl+D', off: SINGLE.includes(el.type), run: duplicate},
@@ -1987,7 +2041,7 @@ const TOUR = [
     <span>${key('Alt')} + перетягування по кліпу</span><span>вирізати шматок</span>
     <span>Права кнопка</span><span>дії з кліпом чи реплікою</span></div>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
-  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, субтитри тощо. Налаштування — ліворуч.</p>'],
+  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні, а <b>⇶</b> додає його в усі кліпи. Текст у кожному кліпі свій.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>

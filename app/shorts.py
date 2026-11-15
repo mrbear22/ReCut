@@ -827,11 +827,14 @@ def when(e):
     return ":enable='" + "+".join(f"between(t,{a},{b or 1e9})" for a, b in segs) + "'"
 
 def clip_elements(elements, c):
-    """Елементи для кліпу: свої частини показу кліпу (segs) замість спільних з/до; сховані в кліпі — геть."""
-    own, out = c.get("segs") or {}, []
+    """Елементи для кліпу: свій текст кліпу (over), свої частини показу (segs) замість спільних з/до;
+    сховані в кліпі й ті, яких у кліп не додали, — геть."""
+    own, over, out = c.get("segs") or {}, c.get("over") or {}, []
     for e in elements:
         segs = own.get(e["id"])
-        if segs is None: out.append(e)
+        if over.get(e["id"]): e = dict(e, **over[e["id"]])
+        if segs is None:
+            if not e.get("solo"): out.append(e)
         elif segs: out.append(dict(e, segs=segs, **{"from": segs[0][0], "to": segs[-1][1]}))   # анімація — на першому вході й останньому виході
     return out
 
@@ -849,7 +852,7 @@ def overlay_art(e, i, size, last, nxt):
 
 def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     """na: скільки звукових доріжок; inp: (id елемента, роль) -> номер входу ffmpeg; sizes: id -> розмір картинки елемента."""
-    els = [e for e in elements if on(e) and e["type"] not in ("subs", "bg")]; vids = [e for e in els if e["type"] in ("video", "cam")]
+    els = [e for e in elements if on(e) and e["type"] not in ("subs", "bg", "music")]; vids = [e for e in els if e["type"] in ("video", "cam")]
     bg = next((e for e in elements if e["type"] == "bg" and on(e)), {}); net = sum(e - s for s, e in keep)
     f, src, audio, asrc = [], "0:v", int(na > 0), "0:a"
     if na > 1: f.append("".join(f"[0:a:{i}]" for i in range(na)) + f"amix=inputs={na}:normalize=0[am]"); asrc = "am"   # звучать усі доріжки
@@ -885,19 +888,31 @@ def out_pos(x, keep):
     """Час у готовому кліпі для моменту x джерела (вирізані пропуски не рахуються)."""
     return sum(min(x, e) - s for s, e in keep if x > s)
 
-def music_parts(music, keep):
-    """Шматки музики, що потрапляють у кліп: (файл, з якої секунди файлу, де в кліпі, скільки, гучність, наростання, згасання).
-    Музика грає суцільно — вирізані пропуски відео її не рвуть."""
-    a, b, out = keep[0][0], keep[-1][1], []
-    for m in music:
-        s, e = max(float(m["a"]), a), min(float(m["b"]), b)
-        if e - s < .05 or not Path(m.get("path", "")).is_file(): continue
-        at, length = out_pos(s, keep), out_pos(e, keep) - out_pos(s, keep)
-        if length < .05: continue
-        fin = float(m.get("fin") or 0) if s <= float(m["a"]) + .01 else 0                  # наростання — лише якщо початок музики в кліпі
-        fout = float(m.get("fout") or 0) if e >= float(m["b"]) - .01 else .05             # згасання — лише на кінці музики; інакше без клацання
-        out.append((m["path"], float(m.get("off") or 0) + s - float(m["a"]), at, length, float(m.get("vol", 1)), min(fin, length / 2), min(fout, length / 2)))
+def music_parts(els, net):
+    """Шматки музики кліпу: (файл, з якої секунди файлу, де в кліпі, скільки, гучність, наростання, згасання).
+    Момент треку = зсув треку + час у кліпі, тож розрізані шматки грають у такт, ніби трек не переривався."""
+    out = []
+    for e in els:
+        if e["type"] != "music" or not on(e) or not Path(e.get("path", "")).is_file(): continue
+        off, dur, vol = float(e.get("off") or 0), float(e.get("dur") or 1e9), float(e.get("vol", 1))
+        segs = [(float(a or 0), float(b or 0) or net) for a, b in e.get("segs") or [(e.get("from"), e.get("to"))]]
+        for k, (a, b) in enumerate(segs):
+            a, b = max(a, -off, 0), min(b, net, dur - off)
+            if b - a < .05: continue
+            fin = float(e.get("fin") or 0) if k == 0 else .02                       # усередині — лише проти клацання
+            fout = max(float(e.get("fout") or 0) if k == len(segs) - 1 else 0, .03)
+            out.append((e["path"], off + a, a, b - a, vol, min(fin, (b - a) / 2), min(fout, (b - a) / 2)))
     return out
+
+PEAKS = {}
+def peaks(path, rate=50):
+    """Гучність треку для хвилі на таймлайні: rate значень на секунду, 0–255, base64."""
+    if path not in PEAKS:
+        raw, step = run([ffbin("ffmpeg"), "-v", "error", "-i", path, "-ac", "1", "-ar", str(rate * 40), "-f", "u8", "-"]).stdout, 40
+        v = [max(abs(x - 128) for x in raw[i:i + step]) for i in range(0, len(raw), step)]
+        top = max(v, default=0) or 1
+        PEAKS[path] = dict(rate=rate, b64=base64.b64encode(bytes(min(255, x * 255 // top) for x in v)).decode())
+    return PEAKS[path]
 
 def audio_filter(main, parts, first_input, video_vol, net):
     """Звук кліпу: звук відео з потрібною гучністю + шматки музики з фейдами. Повертає (фільтри, мітка виходу)."""
@@ -913,7 +928,7 @@ def audio_filter(main, parts, first_input, video_vol, net):
     f.append("".join(mix) + f"amix=inputs={len(mix)}:normalize=0:duration=longest,atrim=0:{net:.3f}[aout]")   # мікс не довший за кліп
     return f, "aout"
 
-def render(pid, clips, elements, cues, music=()):
+def render(pid, clips, elements, cues):
     try:
         pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder()
         subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
@@ -943,15 +958,20 @@ def render(pid, clips, elements, cues, music=()):
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
                 if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all), "utf-8")
-                inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
-                parts = music_parts(music, keep)
+                cp, csz = list(pngs), dict(sizes)                 # свій текст у кліпі — своя картинка
+                for e in cel:
+                    if (c.get("over") or {}).get(e["id"]) and (e["id"], "art") in inp:
+                        img = art(e)[0]; f = Path(tmp, f"{e['id']}_art_{i}.png"); img.save(f); csz[e["id"]] = img.size
+                        cp[inp[e["id"], "art"] - 1] = (e["id"], "art", str(f))
+                inputs = [x for _, role, p in cp for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
+                parts = music_parts(cel, net)
                 inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
                 vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
                 main = ("ca" if len(keep) > 1 else "am" if na > 1 else "0:a") if na else None
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs)), *afx]),
+                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, csz, bool(subs)), *afx]),
                                       "-map", "[v]", "-map", f"[{alabel}]" if alabel else "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
@@ -990,7 +1010,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.4.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.5.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1166,6 +1186,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/media": return self.reply(dict(connected=bool(MEDIA.base)))
             if u.path == "/api/buffer/schema": return self.reply(BUFFER.schema_summary())
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
+            if u.path == "/api/peaks": return self.reply(peaks(q["p"]))
             if u.path == "/api/audio":                            # тривалість музичного файлу
                 r = run([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", q["p"]])
                 return self.reply(dict(dur=float(r.stdout.decode().strip() or 0)))
@@ -1241,7 +1262,7 @@ class Handler(BaseHTTPRequestHandler):
                 update_project(d["id"], lambda pr: pr.update(clips=d["clips"], elements=d["elements"], cues=d["cues"], music=d.get("music", [])))
                 JOB.update(running=True, i=0, n=sum(c.get("on", True) for c in d["clips"]), pct=0.0, err="", out="",
                            id=uuid.uuid4().hex[:10], project=d["id"])
-                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"], d.get("music", [])), daemon=True).start()
+                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"]), daemon=True).start()
                 return self.reply(JOB)
             if p == "/api/reveal":
                 if d["path"] not in allowed_files(): return self.reply({"error": "заборонено"}, code=403)
