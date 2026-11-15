@@ -110,6 +110,12 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .el .tl button{padding:1px 6px;background:none;border-color:transparent;color:var(--mut)}.el .tl button:hover{background:var(--s4);color:var(--hi)}
 #props{border-top:1px solid var(--line);padding:12px;overflow:auto;flex:1;min-height:0}
 #props .hd{display:flex;align-items:center;gap:8px}#props .hd b{font-size:14px;font-weight:600;color:var(--hi)}
+#keys{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}#keys.on{display:flex}
+#keys .kbox{width:min(880px,calc(100vw - 32px));max-height:86vh;overflow:auto;padding:18px 22px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop)}
+#keys .khead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}#keys h3{margin:0;font-size:15px;text-transform:none;letter-spacing:0}
+#keysBody{columns:2 380px;column-gap:36px}#keysBody section{break-inside:avoid;margin-bottom:16px}
+#keysBody h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);font-weight:600}
+#keysBody dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0;font-size:13px}#keysBody dt{white-space:nowrap;text-align:right}#keysBody dd{margin:0;color:var(--fg)}
 #imp{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}#imp.on{display:flex}
 #imp .ibox{width:440px;max-height:80vh;display:flex;flex-direction:column;gap:12px;padding:18px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop)}
 #imp h3{margin:0;font-size:15px;text-transform:none;letter-spacing:0}#imp h4{margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);font-weight:600}
@@ -179,8 +185,6 @@ footer{padding:0 8px 8px}
 .tlwrap{position:relative}
 #tl{width:100%;display:block;border:1px solid #0e0d0c;border-radius:0 0 var(--r) var(--r);touch-action:none}
 #cueEdit{position:absolute;display:none;width:380px;z-index:3;background:var(--s2);border:1px solid var(--green);border-radius:var(--r);box-shadow:var(--pop);padding:4px;gap:4px}#cueEdit.on{display:flex}
-.hints{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;color:var(--dim);font-size:12px}
-.hints span b{color:var(--mut);font-weight:600}
 #vid{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 /* туторіал */
 #tour{position:fixed;inset:0;z-index:40;display:none}#tour.on{display:block}
@@ -302,6 +306,7 @@ footer{padding:0 8px 8px}
   <div id="busy" role="status" aria-live="polite"></div>
   <button id="upd" class="ghost" hidden></button>
   <button id="support" class="ghost" data-link="patreon" title="ShortsMaker безкоштовний; підтримати автора на Patreon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1z"/></svg>Підтримати</button>
+  <button id="keysBtn" class="ghost" title="Клавіші (?)">Клавіші</button>
   <button id="help" class="ghost" title="Довідка" aria-label="Довідка">?</button>
 </header>
 <div id="tour" role="dialog" aria-modal="true" aria-labelledby="tourTitle"><div id="tourHole"></div>
@@ -371,17 +376,6 @@ footer{padding:0 8px 8px}
     <canvas id="tl"></canvas>
     <span id="cueEdit"><input id="cueText" placeholder="Текст репліки" aria-label="Текст репліки"><button id="cueDel" class="ghost" title="Видалити репліку" aria-label="Видалити репліку">✕</button></span>
   </div>
-  <div class="hints">
-    <span>Клік по шкалі часу: перемотка</span>
-    <span><kbd>Ctrl</kbd> + перетягування: область аналізу; затиснутий під час перетягування — без прилипання</span>
-    <span><kbd>Shift</kbd> + перетягування: новий кліп або репліка</span>
-    <span><kbd>Alt</kbd> + перетягування по кліпу: вирізати шматок</span>
-    <span>Елемент зі списку тягни на кліп, щоб додати його туди</span>
-    <span>Права кнопка: дії з кліпом, реплікою чи елементом; смужку елемента можна розрізати чи сховати в окремому кліпі</span>
-    <span>Смужка над таймлайном: висота, подвійний клік скидає</span>
-    <span><kbd>Space</kbd> відтворення · <kbd>B</kbd> розрізати вибране · <kbd>Q</kbd> <kbd>W</kbd> початок і кінець вибраного на курсор · <kbd>I</kbd> <kbd>O</kbd> межі області · <kbd>N</kbd> новий кліп · <kbd>M</kbd> музика в кліп</span>
-    <span><kbd>Del</kbd> прибрати з кліпу · <kbd>Ctrl</kbd>+<kbd>Del</kbd> видалити повністю · <kbd>Ctrl</kbd>+<kbd>C</kbd> <kbd>V</kbd> <kbd>D</kbd> копіювати · <kbd>Ctrl</kbd>+<kbd>Z</kbd> скасувати · <kbd>H</kbd> сховати · колесо: масштаб · решта клавіш — у правій кнопці</span>
-  </div>
  </footer>
 </section>
 
@@ -411,6 +405,7 @@ footer{padding:0 8px 8px}
 
 <datalist id="fontlist"></datalist>
 <div id="ctx" role="menu"></div>
+<div id="keys" role="dialog" aria-label="Клавіші"><div class="kbox"><div class="khead"><h3>Клавіші</h3><button id="keysClose" class="ghost" aria-label="Закрити">✕</button></div><div id="keysBody"></div></div></div>
 <div id="imp" role="dialog" aria-label="Імпорт з іншого проєкту"><div class="ibox">
   <h3>Імпорт з іншого проєкту</h3>
   <select id="impProj" aria-label="Проєкт"></select>
@@ -2112,11 +2107,7 @@ const TOUR = [
   [null, 'ShortsMaker', '<p>Основні інструменти. Довідка знову — кнопка <b>?</b> угорі.</p>'],
   ['#videoChip', 'Відео', '<p>Запис стріму, з якого робимо шорти.</p>'],
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
-  ['#tl', 'Клавіші на таймлайні', `<div class="combo">
-    <span>${key('Ctrl')} + перетягування</span><span>нова область аналізу</span>
-    <span>${key('Shift')} + перетягування</span><span>новий кліп; у рядку реплік унизу нова репліка</span>
-    <span>${key('Alt')} + перетягування по кліпу</span><span>вирізати шматок</span>
-    <span>Права кнопка</span><span>дії з кліпом чи реплікою</span></div>`],
+  ['#keysBtn', 'Клавіші', `<p>Усі клавіші — тут або ${key('?')}.</p>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
   ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Перемикач <b>Глобальний</b> робить елемент частиною всіх кліпів. Для іншого тексту чи треку додай новий елемент.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
@@ -2152,6 +2143,30 @@ addEventListener('keydown', e => {
   e.preventDefault(); e.stopImmediatePropagation();
 }, true);
 const tourSeen = () => { try { return !!localStorage.getItem('tour'); } catch (e) { return true; } };
+
+const KEYS = [
+  ['Відтворення', [['Space', 'грати / пауза'], ['Shift+Space', 'програти вибраний кліп чи репліку'], ['← →', 'на 1 с'], ['Shift+← →', 'на 5 с'], ['Клік по шкалі часу', 'перемотати']]],
+  ['Розрізати й обрізати', [['B', 'розрізати вибране під курсором'], ['Q', 'початок вибраного — на курсор'], ['W', 'кінець вибраного — на курсор'],
+    ['I', 'початок області аналізу'], ['O', 'кінець області аналізу'], ['Alt+перетягування', 'вирізати шматок кліпу']]],
+  ['Створити', [['N', 'новий кліп'], ['M', 'музика в кліп'], ['Shift+перетягування', 'новий кліп; у рядку реплік — репліка'], ['Ctrl+перетягування', 'нова область аналізу'],
+    ['Рядок зі списку на кліп', 'додати елемент у кліп']]],
+  ['Вибране', [['Del', 'прибрати з кліпу (глобальний — сховати)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
+    ['H', 'сховати / показати елемент'], ['G', 'глобальний / ні'], ['] / [', 'шар вище / нижче'], ['Shift+] / Shift+[', 'на передній / задній план'], ['Esc', 'зняти вибір']]],
+  ['Кліпи й репліки', [['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
+  ['Перетягування', [['Ctrl', 'без прилипання'], ['Shift', 'зберегти пропорції в прев\'ю'], ['Колесо', 'масштаб таймлайна чи прев\'ю'], ['Затиснуте колесо', 'рухати прев\'ю'], ['Права кнопка', 'усі дії з тим, що під курсором']]],
+  ['Загальне', [['Ctrl+Z', 'скасувати'], ['Ctrl+Y / Ctrl+Shift+Z', 'повторити'], ['?', 'це вікно']]],
+];
+const kbd = k => k.split(' / ').map(alt => alt.split('+').map(x => /^(Space|Shift|Ctrl|Alt|Del|Esc|Enter|\S{1,2}|← →)$/.test(x) ? `<kbd>${esc(x)}</kbd>` : esc(x)).join('+')).join(' / ');
+$('#keysBody').innerHTML = KEYS.map(([g, list]) => `<section><h4>${g}</h4><dl>${list.map(([k, d]) => `<dt>${kbd(k)}</dt><dd>${d}</dd>`).join('')}</dl></section>`).join('');
+const toggleKeys = on => $('#keys').classList.toggle('on', on ?? !$('#keys').classList.contains('on'));
+$('#keysBtn').onclick = () => toggleKeys(true);
+$('#keysClose').onclick = () => toggleKeys(false);
+$('#keys').onclick = e => { if (e.target.id === 'keys') toggleKeys(false); };
+addEventListener('keydown', e => {
+  const on = $('#keys').classList.contains('on');
+  if (on && e.key === 'Escape') { toggleKeys(false); e.preventDefault(); e.stopImmediatePropagation(); return; }
+  if (e.key === '?' && !e.target.matches?.('input,textarea,select')) { toggleKeys(); e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
 
 function renderAll() { renderEls(); renderList(); $('#videoChip span').textContent = P && P.video ? P.video.split(/[\\/]/).pop() : 'Обрати відео'; $('#cueEdit').classList.remove('on'); }
 
