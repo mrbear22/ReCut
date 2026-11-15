@@ -37,7 +37,7 @@ if sys.stdout is None or sys.executable.lower().endswith("pythonw.exe"):
 SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без вікон консолі для ffmpeg
 
 CFG_FILE, HIST_FILE = DATA / "settings.json", DATA / "history.json"
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", project="", defaults=[], port=8765,
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], port=8765,
            speed=dict(scan=5.0, stt=10.0))          # секунд відео за секунду роботи; уточнюється після кожного запуску
 LEGACY = ("video", "preview", "logo", "font", "style", "title", "channel", "category", "badge", "layout", "region", "ai_key", "lang")
 W, H = 1080, 1920
@@ -1008,7 +1008,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.8.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.8.1"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 

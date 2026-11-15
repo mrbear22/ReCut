@@ -461,8 +461,7 @@ const TYPES = {
             ['dim', 'range', 'Затемнення', [0, 80, 1, '%', 100], e => e.style !== 'color'], ['color', 'color', 'Колір', null, e => e.style === 'color']]),
   music:  T('Музика', '♪', '#8a70c4', [], [['path', 'audio', 'Трек'], ['vol', 'range', 'Гучність', [0, 200, 5, '%', 100]],
             ['fin', 'seg', 'Наростання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]], ['fout', 'seg', 'Згасання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]]]),
-  subs:   T('Субтитри', 'CC', '#6aa87a', ['size', 'w'], [['name', 'text', 'Спікер'], ['lang', 'seg', 'Мова мовлення', [['', 'Авто'], ['uk', 'Укр'], ['en', 'Англ']]],
-            ['words', 'seg', 'Слів на екрані', [[1, '1'], [2, '2'], [3, '3'], [4, '4']]], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [30, 160, 1, 'px']],
+  subs:   T('Субтитри', 'CC', '#6aa87a', ['size', 'w'], [['name', 'text', 'Спікер'], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [30, 160, 1, 'px']],
             ['color', 'color', 'Колір'], ['karaoke', 'toggle', 'Підсвічувати слово, що звучить'], ['hl', 'color', 'Колір підсвітки', null, e => e.karaoke],
             ['upper', 'toggle', 'ВЕЛИКІ ЛІТЕРИ'], ['outline', 'range', 'Обведення', [0, 16, 1, 'px']], ['anim', 'seg', 'Поява фрази', ANIM.slice(0, 3)]]),
 };
@@ -639,7 +638,8 @@ async function openProject(p) {
   await api('/api/project/open', {id: p.id});
   P = p; migrateMusic(); sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
   if (!P.clips.length && P.video) try { P.clips = JSON.parse(localStorage.getItem('clips:' + P.video)) || []; } catch (e) {}   // незбережені кліпи старих версій
-  for (const e of P.elements) if (e.type === 'subs' && !['', 'uk', 'en'].includes(e.lang)) e.lang = '';   // мови без кнопки — автовизначення
+  const oldLang = subsEls()[0]?.lang;                                // мова й слів на екрані були в елементі «Субтитри» — тепер біля генерації
+  if (oldLang && ['uk', 'en'].includes(oldLang) && !cfg.stt_lang) { cfg.stt_lang = oldLang; api('/api/config', {stt_lang: oldLang}).catch(() => {}); }
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
 }
 async function pickVideo() {
@@ -653,7 +653,9 @@ $('#videoChip').onclick = () => P && pickVideo();
 function renderPops() {
   $('#rPop').innerHTML = control(cfg, 'quality', 'seg', 'Якість', [[26, 'Швидко'], [21, 'Добре'], [17, 'Найкраще']]) +
     control(cfg, 'encoder', 'seg', 'Кодування', [['auto', 'Авто'], ['nvenc', 'NVIDIA'], ['amf', 'AMD'], ['qsv', 'Intel'], ['cpu', 'Процесор']]);
-  $('#sPop').innerHTML = control(cfg, 'stt_model', 'seg', 'Модель розпізнавання', [['large-v3-turbo', 'Швидка'], ['large-v3', 'Точна']]);
+  $('#sPop').innerHTML = control(cfg, 'stt_lang', 'seg', 'Мова мовлення', [['', 'Авто'], ['uk', 'Укр'], ['en', 'Англ']]) +
+    control(cfg, 'sub_words', 'seg', 'Слів на екрані', [[1, '1'], [2, '2'], [3, '3'], [4, '4']]) +
+    control(cfg, 'stt_model', 'seg', 'Модель розпізнавання', [['large-v3-turbo', 'Швидка'], ['large-v3', 'Точна']]);
   $$('[data-c]').forEach(el => { if (document.activeElement !== el) el.type === 'checkbox' ? el.checked = !!cfg[el.dataset.c] : el.value = cfg[el.dataset.c]; });
 }
 for (const id of ['#rPop', '#sPop']) { $(id).addEventListener('input', e => setCfg(e.target)); $(id).addEventListener('click', e => { if (e.target.dataset.v != null) setCfg(e.target); }); }
@@ -667,7 +669,7 @@ async function setCfg(t) {
   const v = readControl(t, cfg[k]); if (v === undefined) return;
   cfg[k] = v; if (k === 'min_len' && cfg.max_len < v) cfg.max_len = v; if (k === 'max_len' && cfg.min_len > v) cfg.min_len = v;
   if (t.dataset.v != null) renderPops();
-  cfg = await api('/api/config', {n_clips: cfg.n_clips, min_len: cfg.min_len, max_len: cfg.max_len, stt: cfg.stt, quality: cfg.quality, encoder: cfg.encoder, stt_model: cfg.stt_model});
+  cfg = await api('/api/config', {n_clips: cfg.n_clips, min_len: cfg.min_len, max_len: cfg.max_len, stt: cfg.stt, quality: cfg.quality, encoder: cfg.encoder, stt_model: cfg.stt_model, stt_lang: cfg.stt_lang, sub_words: cfg.sub_words});
 }
 $('#rSet').onclick = e => togglePop('#rPop', e);
 $('#sSet').onclick = e => togglePop('#sPop', e);
@@ -974,7 +976,7 @@ function momentsNote(found, [ra, rb]) {                          // чому з�
 }
 async function analyze(suggest) {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
-  const proj = P, body = {video: P.video, region: region(), suggest, lang: subsEl()?.lang || ''}; msg('');
+  const proj = P, body = {video: P.video, region: region(), suggest, lang: cfg.stt_lang || ''}; msg('');
   try {
     await forProject(proj, 'analyze', () => busy($('#reanalyze'), tag('Аналіз', proj), plans.analyze(suggest), task => api('/api/analyze', {...body, task})), (pr, r, open) => {
       pr.region = r.region; pr.scan = {region: r.region, step: r.step, curve: r.curve}; cfg.speed = r.speed;
@@ -991,10 +993,10 @@ async function analyze(suggest) {
 $('#reanalyze').onclick = () => analyze(true);
 async function makeSubs() {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
-  const st = ensureSubs(); save();
+  ensureSubs(); save();
   const proj = P, spans = [region(), ...P.clips.map(c => [c.a, c.b])].sort((x, y) => x[0] - y[0]).reduce((m, s) => {   // область і всі кліпи, злиті
     const l = m.at(-1); if (l && s[0] <= l[1]) l[1] = Math.max(l[1], s[1]); else m.push([...s]); return m; }, []);
-  const inSpans = c => spans.some(([a, b]) => c.a < b && c.b > a), body = {video: P.video, region: region(), spans, words: st.words || 3, lang: st.lang || ''};
+  const inSpans = c => spans.some(([a, b]) => c.a < b && c.b > a), body = {video: P.video, region: region(), spans, words: cfg.sub_words || 3, lang: cfg.stt_lang || ''};
   try {
     await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task})), (pr, r, open) => {
       cfg.speed = r.speed;
