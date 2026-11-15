@@ -361,9 +361,11 @@ def stt_model():
             except RuntimeError as e: print("stt:", dev, "недоступно:", e)                # нема CUDA-бібліотек — рахуємо на CPU
     return _stt[0]
 
-def whisper(src, t0, lang, tick, na):
-    """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано)."""
-    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *all_audio(na), "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
+def whisper(src, t0, lang, tick, na, track=None):
+    """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано).
+    track — одна звукова доріжка (окремий спікер), None — усі зведені."""
+    audio = ["-map", f"0:a:{track}"] if track is not None else all_audio(na)
+    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
     if r.returncode: raise RuntimeError("Аудіо для розпізнавання: " + r.stderr.decode("utf-8", "replace")[-300:])
     segs, _ = stt_model().transcribe(np.frombuffer(r.stdout, np.int16).astype(np.float32) / 32768, language=lang or None,
                                      word_timestamps=True, vad_filter=True, condition_on_previous_text=False)   # VAD: без вигадок на музиці
@@ -372,18 +374,18 @@ def whisper(src, t0, lang, tick, na):
         sg.append([s.text.strip(), t0 + s.start, t0 + s.end]); words += [[w.word.strip(), t0 + w.start, t0 + w.end] for w in s.words]; tick(s.end)
     return dict(words=words, segs=sg, len=len(r.stdout) / 32000)
 
-def transcript(src, a0, a1, lang):
-    """(слова, речення) в [a0, a1]: шматки по CHUNK с кешуються на диску."""
-    na = probe(src)[3]                                         # кілька доріжок розпізнаються зведеними — окремий кеш
-    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}|{STT_MODEL}|{lang}" + f"|mix{na}" * (na > 1)).hex[:16]
+def transcript(src, a0, a1, lang, track=None, label="Розпізнаю мову"):
+    """(слова, речення) в [a0, a1]: шматки по CHUNK с кешуються на диску. track — лише одна звукова доріжка."""
+    na = probe(src)[3]                                         # зведені доріжки й кожна окремо — різний кеш
+    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}|{STT_MODEL}|{lang}" + (f"|track{track}" if track is not None else f"|mix{na}" * (na > 1))).hex[:16]
     path = lambda k: TRANS / f"{tag}_{k}.json"
     ks = range(int(a0 // CHUNK), int(np.ceil(a1 / CHUNK))); todo = [k for k in ks if not path(k).is_file()]; words, segs = [], []
     with STT_LOCK:
         if todo: stt_model()
         t0, done = time.time(), 0.0
         for k in todo:
-            tick = lambda s: report("stt", "Розпізнаю мову", min(.99, (done + s) / (len(todo) * CHUNK)), t0)
-            t = whisper(src, k * CHUNK, lang, tick, na); path(k).write_text(json.dumps(t, ensure_ascii=False), "utf-8"); done += t["len"]
+            tick = lambda s: report("stt", label, min(.99, (done + s) / (len(todo) * CHUNK)), t0)
+            t = whisper(src, k * CHUNK, lang, tick, na, track); path(k).write_text(json.dumps(t, ensure_ascii=False), "utf-8"); done += t["len"]
         learn("stt", done, t0)
     for k in ks: t = json.loads(path(k).read_text("utf-8")); words += t["words"]; segs += t["segs"]
     inside = lambda x: x[2] > a0 and x[1] < a1
@@ -680,29 +682,36 @@ def kept(a, b, cuts):
 
 ass_col = lambda c: f"&H00{c[5:7]}{c[3:5]}{c[1:3]}&".upper()     # #rrggbb -> ASS &H00BBGGRR&
 
-def subs_ass(cues, keep, el):
-    """ASS кліпу з доріжки субтитрів; стиль — елемент «Субтитри»; час — уже без вирізаних пропусків."""
-    size = float(el.get("size", 84)); x, y, w = float(el["x"]), float(el["y"]), float(el.get("w", 900)); hl, base = ass_col(el.get("hl", "#ffcc33")), ass_col(el.get("color", "#ffffff"))
+def cue_owner(c, subs_all):
+    """Елемент «Субтитри», якому належить репліка (кожен спікер — свій елемент); без позначки — першому."""
+    return next((e for e in subs_all if e["id"] == c.get("sid")), subs_all[0] if subs_all else None)
+
+def subs_ass(cues, keep, subs_all):
+    """ASS кліпу: кожен увімкнений елемент «Субтитри» — свій стиль і місце, зі своїми репліками; час — уже без вирізаних пропусків."""
     ts = lambda t: f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"
-    intro = {"pop": r"\fscx80\fscy80\t(0,90,\fscx100\fscy100)", "fade": r"\fad(150,0)"}.get(el.get("anim", "pop"), "")
-    lines = []
-    for c in cues:
-        text = re.sub(r"[{}\\]", "", c["text"].upper() if el.get("upper") else c["text"]); words = text.split()
-        if not words: continue
-        k = c.get("k") if len(c.get("k") or []) == len(words) else [c["a"] + i * (c["b"] - c["a"]) / len(words) for i in range(len(words))]
-        spans = list(zip(k, k[1:] + [c["b"]], range(len(words)))) if el.get("karaoke", True) else [(c["a"], c["b"], -1)]
-        first = True
-        for s, e, i in spans:
-            body = " ".join(f"{{\\1c{hl}}}{t}{{\\1c{base}}}" if j == i else t for j, t in enumerate(words)); off = 0.0
-            for s0, s1 in keep:                                        # репліка через вирізаний пропуск ділиться на шматки
-                a, b = max(s, s0) - s0 + off, min(e, s1) - s0 + off; off += s1 - s0
-                if b - a < 0.02: continue
-                lines.append(f"Dialogue: 0,{ts(a)},{ts(b)},S,,0,0,0,,{{\\an5\\pos({x + w / 2:.0f},{y + size * 0.7:.0f}){intro * first}}}{body}"); first = False
+    styles, lines = [], []
+    for n, el in enumerate(subs_all):
+        if not on(el): continue
+        size = float(el.get("size", 84)); x, y, w = float(el["x"]), float(el["y"]), float(el.get("w", 900))
+        hl, base = ass_col(el.get("hl", "#ffcc33")), ass_col(el.get("color", "#ffffff"))
+        intro = {"pop": r"\fscx80\fscy80\t(0,90,\fscx100\fscy100)", "fade": r"\fad(150,0)"}.get(el.get("anim", "pop"), "")
+        styles.append(f"Style: S{n},{pick_font(el.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,"
+                      f"{float(el.get('outline', 6)):.1f},{size * 0.04:.1f},5,{max(0, x):.0f},{max(0, W - x - w):.0f},0,1")
+        for c in (c for c in cues if cue_owner(c, subs_all) is el):
+            text = re.sub(r"[{}\\]", "", c["text"].upper() if el.get("upper") else c["text"]); words = text.split()
+            if not words: continue
+            k = c.get("k") if len(c.get("k") or []) == len(words) else [c["a"] + i * (c["b"] - c["a"]) / len(words) for i in range(len(words))]
+            spans = list(zip(k, k[1:] + [c["b"]], range(len(words)))) if el.get("karaoke", True) else [(c["a"], c["b"], -1)]
+            first = True
+            for s0_, e_, i in spans:
+                body = " ".join(f"{{\\1c{hl}}}{t}{{\\1c{base}}}" if j == i else t for j, t in enumerate(words)); off = 0.0
+                for s0, s1 in keep:                                    # репліка через вирізаний пропуск ділиться на шматки
+                    a, b = max(s0_, s0) - s0 + off, min(e_, s1) - s0 + off; off += s1 - s0
+                    if b - a < 0.02: continue
+                    lines.append(f"Dialogue: 0,{ts(a)},{ts(b)},S{n},,0,0,0,,{{\\an5\\pos({x + w / 2:.0f},{y + size * 0.7:.0f}){intro * first}}}{body}"); first = False
     return (f"[Script Info]\nScriptType: v4.00+\nPlayResX: {W}\nPlayResY: {H}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
-            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-            f"Style: S,{pick_font(el.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,"
-            f"{float(el.get('outline', 6)):.1f},{size * 0.04:.1f},5,{max(0, x):.0f},{max(0, W - x - w):.0f},0,1\n\n[Events]\n"
+            "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n" + "\n".join(styles) + "\n\n[Events]\n"
             "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n" + "\n".join(lines) + "\n")
 
 def when(e):
@@ -759,7 +768,7 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
 def render(pid, clips, elements, cues):
     try:
         pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder()
-        subs = next((e for e in elements if e["type"] == "subs" and on(e)), None)
+        subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
         name = re.sub(r'[<>:"/\\|?*]+', " ", pr["name"] or Path(src).stem).strip(" .") or "shorts"
         out = RENDERS / name; out.mkdir(parents=True, exist_ok=True); used = set()   # тека проєкту; той самий кліп — той самий файл
         rec = dict(id=JOB["id"], date=time.time(), out=str(out), files=[])
@@ -775,7 +784,8 @@ def render(pid, clips, elements, cues):
                     if mask: add(e, "mask", mask)
                     if ring: add(e, "ring", ring)
             inp = {(eid, role): n for n, (eid, role, _) in enumerate(pngs, 1)}
-            if subs: shutil.copy(pick_font(subs.get("font"))[1], tmp)
+            for e in subs_all:
+                if on(e): shutil.copy(pick_font(e.get("font"))[1], tmp)
             for i, c in enumerate([c for c in clips if c.get("on", True)], 1):
                 keep = kept(float(c["a"]), float(c["b"]), c.get("cut", []))
                 if not keep: raise RuntimeError(f"Кліп {i} вирізано повністю")
@@ -783,7 +793,7 @@ def render(pid, clips, elements, cues):
                 ca = float(c["a"]); stem = base = f"{name} {int(ca // 60):02d}-{int(ca % 60):02d}"
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
-                if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs), "utf-8")
+                if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all), "utf-8")
                 inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
@@ -824,7 +834,7 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.0.3"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.0.4"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1046,10 +1056,12 @@ class Handler(BaseHTTPRequestHandler):
                     clips = (ai_moments(f, segs, m) if m else []) or with_context(suggest(f), segs)
                 return self.reply(dict(dur=f["dur"], sw=f["sw"], sh=f["sh"], step=B, region=f["region"], curve=np.round(f["ex"], 2).tolist(),
                                        clips=clips, speed=CFG["speed"]))
-            if p == "/api/subs":
-                a0, a1 = d["region"]; report("", "")
-                cues = make_cues(transcript(d["video"], a0, a1, d.get("lang", ""))[0], max(1, int(d.get("words", 3))))
-                return self.reply(dict(cues=cues, speed=CFG["speed"]))
+            if p == "/api/subs":                                  # кілька звукових доріжок (OBS) — кожна окремим спікером
+                a0, a1 = d["region"]; report("", ""); na = probe(d["video"])[3]; cues = []
+                for sp, track in enumerate(range(na) if na > 1 else [None]):
+                    words = transcript(d["video"], a0, a1, d.get("lang", ""), track, f"Розпізнаю доріжку {sp + 1} з {na}" if na > 1 else "Розпізнаю мову")[0]
+                    cues += [dict(c, sp=sp) for c in make_cues(words, max(1, int(d.get("words", 3))))]
+                return self.reply(dict(cues=sorted(cues, key=lambda c: c["a"]), tracks=max(1, na), speed=CFG["speed"]))
             if p == "/api/update/apply":
                 setup = apply_update()
                 threading.Thread(target=finish_update, args=(setup,), daemon=True).start()
