@@ -2,6 +2,8 @@
 
 Вертикальні шорти зі стрімів: пошук моментів, субтитри, плашки й вебкамера, рендер і черга публікацій у TikTok та YouTube через Buffer.
 
+Програма повністю безкоштовна. Якщо вона тобі допомагає — підтримай розробку на [Patreon](https://www.patreon.com/miishanii).
+
 ## Встановлення
 
 Завантаж **ShortsMaker-Setup.exe** з [Releases](https://github.com/mrbear22/ShortsMaker/releases/latest), запусти й обери теку.
