@@ -337,29 +337,93 @@ def fetch_cuda():
         whl.unlink()
     use_cuda_dlls()
 
-_stt = []
+# ── розпізнавання мови — в окремому процесі: збій відеокарти (скидання драйвера) вбиває лише його, а не всю програму ──
+class SttWorker:
+    def __init__(self): self.proc, self.device, self.gpu_failures = None, None, 0
+
+    def alive(self): return self.proc is not None and self.proc.poll() is None
+
+    def start(self, device):
+        exe = Path(sys.executable); py = exe.with_name("python.exe") if exe.with_name("python.exe").is_file() else exe   # pythonw не дає stdout
+        self.proc = subprocess.Popen([str(py), str(Path(__file__)), "--stt-worker", device], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=open(DATA / "stt.log", "a", encoding="utf-8"), **SP)
+        self.device = device; msg = self.read()
+        if "error" in msg: self.stop(); raise RuntimeError(msg["error"])
+
+    def stop(self):
+        if self.alive(): self.proc.kill()
+        self.proc = None
+
+    def read(self):
+        line = self.proc.stdout.readline()
+        if not line: self.proc.wait(); raise ChildProcessError(f"процес розпізнавання впав (код {self.proc.returncode})")
+        return json.loads(line)
+
+    def transcribe(self, pcm, lang, tick):
+        job = TMP / f"stt_{uuid.uuid4().hex}.pcm"; job.write_bytes(pcm)
+        try:
+            self.proc.stdin.write((json.dumps({"pcm": str(job), "lang": lang}) + "\n").encode()); self.proc.stdin.flush()
+            while True:
+                msg = self.read()
+                if "tick" in msg: tick(msg["tick"])
+                elif "error" in msg: raise RuntimeError(msg["error"])
+                else: return msg["result"]
+        finally: job.unlink(missing_ok=True)
+
+STT = SttWorker()
+
 def stt_model():
-    if not _stt:
-        need_libs(STT_LIBS, "faster_whisper", "Завантажую бібліотеки розпізнавання мови, 200 МБ", "stt")
-        import ctranslate2
+    """Бібліотеки, CUDA й модель — один раз; далі процес розпізнавання, що вже завантажив модель."""
+    if STT.alive(): return STT
+    need_libs(STT_LIBS, "faster_whisper", "Завантажую бібліотеки розпізнавання мови, 200 МБ", "stt")
+    import ctranslate2
+    gpu = ctranslate2.get_cuda_device_count() > 0 and STT.gpu_failures < 2   # двічі впала відеокарта — до перезапуску програми лише процесор
+    if gpu and not any(b.parent.name == "cublas" for b in cuda_dirs()):
+        try: fetch_cuda()
+        except OSError as e: print("CUDA не завантажено, розпізнаю на процесорі:", e); gpu = False   # без інтернету — повільніше, але працює
+    loading = not any(MODELS.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
+    def watch():                                               # прогрес першого завантаження моделі — за розміром теки
+        CUR.task = task
+        while loading and not STT.alive():
+            got = sum(f.stat().st_size for f in MODELS.rglob("*") if f.is_file())
+            report("stt", "Завантажую модель мовлення, 1.6 ГБ", min(.99, got / MODEL_BYTES), t0); time.sleep(1)
+    if loading: threading.Thread(target=watch, daemon=True).start()
+    for dev in ["cuda"] * max(0, 2 - STT.gpu_failures) * gpu + ["cpu"]:   # відеокарта — дві спроби: скидання драйвера буває разовим
+        try: STT.start(dev); return STT
+        except (RuntimeError, ChildProcessError) as e:
+            print(datetime.now(), "stt:", dev, "недоступно:", ascii(e)); STT.gpu_failures += dev == "cuda"
+    raise RuntimeError("Розпізнавання мови не запускається")
+
+def stt_run(pcm, lang, tick):
+    """Шматок аудіо → речення зі словами. Процес на відеокарті впав — ще раз (скидання драйвера буває разове), потім на процесорі."""
+    for _ in range(3):
+        w = stt_model()
+        try: return w.transcribe(pcm, lang, tick)
+        except ChildProcessError as e:
+            print(datetime.now(), "stt:", w.device, ascii(e)); STT.stop()
+            if w.device != "cuda": raise RuntimeError("Розпізнавання мови аварійно зупинилось") from e
+            STT.gpu_failures += 1
+            report("stt", "Збій відеокарти — продовжую" + (" на процесорі" if STT.gpu_failures >= 2 else ""), None)
+    raise RuntimeError("Розпізнавання мови аварійно зупинилось")
+
+def stt_worker(device):
+    """Окремий процес: модель у пам'яті, завдання — рядки JSON у stdin, відповіді — у stdout."""
+    out, sys.stdout = sys.stdout, sys.stderr                  # сторонні print-и бібліотек не ламають протокол
+    send = lambda m: (out.write(json.dumps(m) + "\n"), out.flush())
+    try:
         from faster_whisper import WhisperModel
-        gpu = ctranslate2.get_cuda_device_count() > 0
-        if gpu and not any(b.parent.name == "cublas" for b in cuda_dirs()):
-            try: fetch_cuda()
-            except OSError as e: print("CUDA не завантажено, розпізнаю на процесорі:", e)   # без інтернету — повільніше, але працює
-        loading = not any(MODELS.rglob("model.bin")); t0 = time.time()
-        task = getattr(CUR, "task", None)
-        def watch():                                           # прогрес першого завантаження моделі — за розміром теки
-            CUR.task = task                                    # поступ іде в ту саму операцію, що й розпізнавання
-            while loading and not _stt:
-                got = sum(f.stat().st_size for f in MODELS.rglob("*") if f.is_file())
-                report("stt", "Завантажую модель мовлення, 1.6 ГБ", min(.99, got / MODEL_BYTES), t0); time.sleep(1)
-        threading.Thread(target=watch, daemon=True).start()
-        for dev, ct in (("cuda", "float16"),) * gpu + (("cpu", "int8"),):
-            m = WhisperModel(STT_MODEL, device=dev, compute_type=ct, download_root=str(MODELS)); loading = False
-            try: list(m.transcribe(np.zeros(16000, np.float32), vad_filter=False)[0]); _stt.append(m); break
-            except RuntimeError as e: print("stt:", dev, "недоступно:", e)                # нема CUDA-бібліотек — рахуємо на CPU
-    return _stt[0]
+        m = WhisperModel(STT_MODEL, device=device, compute_type="float16" if device == "cuda" else "int8", download_root=str(MODELS))
+        list(m.transcribe(np.zeros(16000, np.float32), vad_filter=False)[0])   # пробний прохід: несправна CUDA впаде тут, а не на відео
+    except Exception as e: return send({"error": str(e)[:300]})
+    send({"ready": device})
+    for line in sys.stdin:
+        try:
+            job = json.loads(line); audio = np.fromfile(job["pcm"], np.int16).astype(np.float32) / 32768
+            segs, _ = m.transcribe(audio, language=job["lang"] or None, word_timestamps=True, vad_filter=True, condition_on_previous_text=False)   # VAD: без вигадок на музиці
+            res = []
+            for sg in segs: res.append([sg.text.strip(), sg.start, sg.end, [[w.word.strip(), w.start, w.end] for w in sg.words]]); send({"tick": sg.end})
+            send({"result": res})
+        except Exception as e: send({"error": str(e)[:300]})
 
 def whisper(src, t0, lang, tick, na, track=None):
     """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано).
@@ -367,11 +431,9 @@ def whisper(src, t0, lang, tick, na, track=None):
     audio = ["-map", f"0:a:{track}"] if track is not None else all_audio(na)
     r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
     if r.returncode: raise RuntimeError("Аудіо для розпізнавання: " + r.stderr.decode("utf-8", "replace")[-300:])
-    segs, _ = stt_model().transcribe(np.frombuffer(r.stdout, np.int16).astype(np.float32) / 32768, language=lang or None,
-                                     word_timestamps=True, vad_filter=True, condition_on_previous_text=False)   # VAD: без вигадок на музиці
     words, sg = [], []
-    for s in segs:
-        sg.append([s.text.strip(), t0 + s.start, t0 + s.end]); words += [[w.word.strip(), t0 + w.start, t0 + w.end] for w in s.words]; tick(s.end)
+    for text, a, b, ws in stt_run(r.stdout, lang, tick):
+        sg.append([text, t0 + a, t0 + b]); words += [[w, t0 + wa, t0 + wb] for w, wa, wb in ws]
     return dict(words=words, segs=sg, len=len(r.stdout) / 32000)
 
 def transcript(src, a0, a1, lang, track=None, label="Розпізнаю мову"):
@@ -834,7 +896,7 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.0.8"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.0.9"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1183,4 +1245,5 @@ def main():
     srv.serve_forever()
 
 if __name__ == "__main__":
-    main()
+    if "--stt-worker" in sys.argv: stt_worker(sys.argv[sys.argv.index("--stt-worker") + 1])
+    else: main()
