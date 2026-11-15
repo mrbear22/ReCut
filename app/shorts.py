@@ -827,12 +827,10 @@ def when(e):
     return ":enable='" + "+".join(f"between(t,{a},{b or 1e9})" for a, b in segs) + "'"
 
 def clip_elements(elements, c):
-    """Елементи для кліпу: свій текст кліпу (over), свої частини показу (segs) замість спільних з/до;
-    сховані в кліпі й ті, яких у кліп не додали, — геть."""
-    own, over, out = c.get("segs") or {}, c.get("over") or {}, []
+    """Елементи для кліпу: свої частини показу (segs) замість спільних з/до; сховані в кліпі й ті, яких у кліп не додали, — геть."""
+    own, out = c.get("segs") or {}, []
     for e in elements:
         segs = own.get(e["id"])
-        if over.get(e["id"]): e = dict(e, **over[e["id"]])
         if segs is None:
             if not e.get("solo"): out.append(e)
         elif segs: out.append(dict(e, segs=segs, **{"from": segs[0][0], "to": segs[-1][1]}))   # анімація — на першому вході й останньому виході
@@ -958,12 +956,7 @@ def render(pid, clips, elements, cues):
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
                 if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all), "utf-8")
-                cp, csz = list(pngs), dict(sizes)                 # свій текст у кліпі — своя картинка
-                for e in cel:
-                    if (c.get("over") or {}).get(e["id"]) and (e["id"], "art") in inp:
-                        img = art(e)[0]; f = Path(tmp, f"{e['id']}_art_{i}.png"); img.save(f); csz[e["id"]] = img.size
-                        cp[inp[e["id"], "art"] - 1] = (e["id"], "art", str(f))
-                inputs = [x for _, role, p in cp for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
+                inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
                 parts = music_parts(cel, net)
                 inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
                 vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
@@ -971,7 +964,7 @@ def render(pid, clips, elements, cues):
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, csz, bool(subs)), *afx]),
+                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs)), *afx]),
                                       "-map", "[v]", "-map", f"[{alabel}]" if alabel else "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
@@ -1010,7 +1003,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.5.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.5.1"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 

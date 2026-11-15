@@ -754,7 +754,6 @@ function whenBox(el, c) {
   if (el.solo && !c.segs?.[el.id]) return `<div class="when"><span>Цього елемента немає в кліпі #${P.clips.indexOf(c) + 1}.
       <br>Перетягни його зі списку на потрібний кліп на таймлайні.</span></div>
     <div class="when"><button data-act="add">Додати в цей кліп</button><button data-act="scope">Застосувати до всіх кліпів</button></div>`;
-  const own = c.over?.[el.id], tx = isArt(el) && TEXTK.some(k => el[k] != null) && (own || clipsWith(el) > 1);
   const sg = segsOf(c, el), whole = sg.length === 1 && !sg[0][0] && !sg[0][1], f = v => v.toFixed(1) + ' с';
   const shown = !sg.length ? 'сховано в цьому кліпі' : whole ? 'весь кліп' : sg.length > 1 ? `${sg.length} шматки` : `з ${f(sg[0][0] || 0)} до ${sg[0][1] ? f(sg[0][1]) : 'кінця'}`;
   const music = el.type === 'music';
@@ -762,19 +761,7 @@ function whenBox(el, c) {
   return `<div class="when"><span>${!el.solo ? 'У всіх кліпах' : inN.length > 1 ? `У кліпах ${inN.join(', ')}` : 'Лише в цьому кліпі'} · видно ${shown}
       <br>${music ? 'тягни смужку: краї обрізають, середина обирає момент треку' : 'тягни смужку в кліпі на таймлайні'}</span>
       ${whole ? '' : '<button data-act="whole">Весь кліп</button>'}</div>
-    ${tx ? `<div class="when"><span>${own ? 'Текст цього кліпу свій' : 'Текст змінюється лише в цьому кліпі'}</span>${own ? '<button data-act="textall">Такий текст у всіх кліпах</button>' : ''}</div>` : ''}
     <div class="when"><button data-act="scope">${el.solo ? 'Застосувати до всіх кліпів' : 'Лише в цьому кліпі'}</button></div>`;
-}
-const TEXTK = ['text', 'title', 'channel', 'name', 'handle', 'category', 'badge'];
-const clipsWith = el => el.solo ? P.clips.filter(c => c.segs?.[el.id]).length : P.clips.length;
-const eff = (el, c = clipAt(vid.currentTime) || (P.clips.length ? ctxClip() : null)) => { const o = c?.over?.[el.id]; return o ? {...el, ...o} : el; };
-function setProp(el, k, v) {                                       // текст елемента, що є в кількох кліпах, — свій для кожного кліпу
-  const c = P.clips.length ? ctxClip() : null;
-  if (c && isArt(el) && TEXTK.includes(k) && (c.over?.[el.id] || clipsWith(el) > 1)) ((c.over ||= {})[el.id] ||= {})[k] = v; else el[k] = v;
-}
-function textToAll(el) {                                           // текст цього кліпу — в усі
-  const c = ctxClip(), o = c?.over?.[el.id]; if (!o) return;
-  Object.assign(el, o); for (const x of P.clips) if (x.over) delete x.over[el.id]; renderEls(); save();
 }
 function setScope(el, c, solo) {                                  // спільний ↔ лише цей кліп
   if (solo) { const sg = segsOf(c, el); for (const o of P.clips) if (o.segs) delete o.segs[el.id]; (c.segs ||= {})[el.id] = sg.length ? sg.map(x => [...x]) : [[0, 0]]; }
@@ -786,17 +773,17 @@ function renderProps() {
   const Ty = TYPES[el.type], c = P.clips.length ? ctxClip() : null, n = c ? net(c) : 0;
   const timed = !['subs', 'bg'].includes(el.type);
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
-    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(c ? eff(el, c) : el, k, kind, label, opt)).join('') +
+    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('') +
     (timed && c ? whenBox(el, c) : '');
 }
 $('#props').addEventListener('input', e => {
   const el = elById(selEl), box = e.target.closest('[data-p]'); if (!el || !box) return;
   const k = box.dataset.p, v = readControl(e.target, el[k]); if (v === undefined) return;
-  setProp(el, k, v); afterEdit(el, k);
+  el[k] = v; afterEdit(el, k);
 });
 $('#props').addEventListener('click', async e => {
   const el = elById(selEl); if (!el) return; const t = e.target;
-  if (t.dataset.v != null && t.closest('[data-p]')) { const k = t.closest('[data-p]').dataset.p; setProp(el, k, readControl(t, el[k])); afterEdit(el, k); return renderProps(); }
+  if (t.dataset.v != null && t.closest('[data-p]')) { const k = t.closest('[data-p]').dataset.p; el[k] = readControl(t, el[k]); afterEdit(el, k); return renderProps(); }
   if (t.dataset.file) { const {path} = await api('/api/pick', {kind: 'image'}); if (!path) return; el[t.dataset.file] = path; await save(true); return renderProps(); }
   if (t.dataset.clear) { el[t.dataset.clear] = ''; afterEdit(el); return renderProps(); }
   if (t.dataset.act === 'detect') detectCam(el, t);
@@ -804,7 +791,6 @@ $('#props').addEventListener('click', async e => {
   if (t.dataset.act === 'whole') { if (c?.segs?.[el.id]) c.segs[el.id] = [[0, 0]]; else el.from = el.to = 0; save(); renderProps(); drawTL(); }
   if (t.dataset.act === 'scope' && c) setScope(el, c, !el.solo);
   if (t.dataset.act === 'add' && c) addToClip(el, c);
-  if (t.dataset.act === 'textall') { textToAll(el); renderProps(); }
   if (t.dataset.audio) { const a = await pickAudio(); if (a) { Object.assign(el, a); renderEls(); save(); } }
 });
 function afterEdit(el, k) {
@@ -828,17 +814,13 @@ async function detectCam(cam, btn = {}) {
 // ── картинки елементів малює сервер тим самим кодом, що й у відео ──
 const artKey = el => JSON.stringify(el, (k, v) => ['x', 'y', 'from', 'to', 'anim', 'on', 'id'].includes(k) ? undefined : v);
 const isArt = el => !['video', 'cam', 'subs', 'bg', 'progress'].includes(el.type);
-const artCache = new Map();                                        // вміст → картинка: перемикання кліпів зі своїм текстом без перемальовування
 function ensureArt(el) {
-  const key = artKey(el), hit = artCache.get(key);
-  if (hit) { arts.set(el.id, hit); return Promise.resolve(); }
-  const a = arts.get(el.id);
+  const key = artKey(el), a = arts.get(el.id);
   if (a && (a.key === key || a.pending === key)) return a.ready;
   const ready = api('/api/element', el).then(r => new Promise(ok => {
     const img = new Image(); img.onload = () => {
       const cur = arts.get(el.id); if (cur && cur.pending !== key) return ok();
-      const v = {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]}; arts.set(el.id, v);
-      if (artCache.size > 300) artCache.clear(); artCache.set(key, v);
+      arts.set(el.id, {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]});
       if (el.x == null) { el.x = Math.round((1080 - r.w) / 2); save(); } ok();
     }; img.src = r.img;
   })).catch(e => msg('Елемент: ' + e.message, 1));
@@ -1167,7 +1149,7 @@ function drawShort() {
     } else if (el.type === 'subs') drawSubs(el, k);
     else if (el.type === 'progress') { const c = clipAt(vid.currentTime); px.fillStyle = el.color; px.fillRect(0, el.y * k, (c ? toOut(c, vid.currentTime) / net(c) : .4) * pv.width, el.h * k); }
     else {
-      ensureArt(eff(el)); const a = arts.get(el.id); if (!a || !a.img) continue;
+      ensureArt(el); const a = arts.get(el.id); if (!a || !a.img) continue;
       const r = el[TYPES[el.type].size[0]] / a.v;
       px.drawImage(a.img, (el.x - a.pad * r) * k, (el.y - a.pad * r) * k, a.img.naturalWidth * r * k, a.img.naturalHeight * r * k);
     }
@@ -2041,7 +2023,7 @@ const TOUR = [
     <span>${key('Alt')} + перетягування по кліпу</span><span>вирізати шматок</span>
     <span>Права кнопка</span><span>дії з кліпом чи реплікою</span></div>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
-  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні, а <b>⇶</b> додає його в усі кліпи. Текст у кожному кліпі свій.</p>'],
+  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні, а <b>⇶</b> додає його в усі кліпи. Для іншого тексту чи треку додай новий елемент.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>
