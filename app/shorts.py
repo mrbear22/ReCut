@@ -901,7 +901,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
             if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS))
-            if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=update.VERSION))
+            if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=update.VERSION, boot=STARTED))
             if u.path == "/api/update": return self.reply(dict(current=update.VERSION, **((UPD and UPD.info) or {})))
             if u.path == "/api/fonts": _fonts_ready.wait(30); return self.reply(list(FONTS))
             if u.path == "/api/projects":
@@ -1038,7 +1038,7 @@ def watch_window(proc):
     t0 = time.time(); proc.wait()
     if time.time() - t0 > 5: quit_app()
 
-CODE_VERSION = uuid.uuid5(uuid.NAMESPACE_URL, Path(__file__).read_text("utf-8")).hex[:12]
+CODE_VERSION = uuid.uuid5(uuid.NAMESPACE_URL, "".join((HERE / n).read_text("utf-8") for n in update.APP_FILES if (HERE / n).is_file())).hex[:12]   # будь-який файл програми
 
 def port_owner(port):
     """PID процесу, що слухає порт (Windows)."""
@@ -1070,7 +1070,7 @@ def main():
     global HW
     CFG.update(rd(CFG_FILE, {})); migrate()
     url = f"http://127.0.0.1:{CFG['port']}"
-    srv = bind() or (stop_old_server(url) and bind(tries=20))
+    srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно
     threading.Thread(target=scan_fonts, daemon=True).start()
     if pick_encoder()[0] != "cpu": HW = ["-hwaccel", "auto"]

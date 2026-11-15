@@ -1728,10 +1728,10 @@ function renderAll() { renderEls(); renderList(); $('#videoChip span').textConte
       const r = await busy($('#upd'), 'Оновлення', [['update', 15]], task => api('/api/update/apply', {task}));
       if (r.kind === 'full') return msg('Встановлюю оновлення. Програма відкриється сама.');
       msg('Перезапускаю…');
-      const was = (await api('/api/version').catch(() => ({}))).version;
-      for (let i = 0; i < 60; i++) {                               // нова версія піднялась — перезавантажуємо сторінку
+      const was = (await api('/api/version').catch(() => ({}))).boot;
+      for (let i = 0; i < 60; i++) {                               // піднявся новий процес — перезавантажуємо сторінку
         await new Promise(r => setTimeout(r, 500));
-        const v = (await api('/api/version').catch(() => ({}))).version;
+        const v = (await api('/api/version').catch(() => ({}))).boot;
         if (v && v !== was) return location.reload();
       }
       msg('Не вдалося перезапустити. Закрий і відкрий програму.', 1);
