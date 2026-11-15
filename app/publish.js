@@ -9,6 +9,7 @@ const ICON = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   tiktok: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.2 3h3a4.6 4.6 0 0 0 3.8 3.9v3a7.6 7.6 0 0 1-3.8-1.1v6.4a5.8 5.8 0 1 1-5.8-5.8c.3 0 .6 0 .9.1v3.1a2.8 2.8 0 1 0 1.9 2.6z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   youtube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.6 2.6 0 0 0 2.4 7.2 27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8zM10 15V9l5.2 3z"/></svg>',
 };
 const newSeed = () => 1 + Math.floor(Math.random() * 1e6);
@@ -133,28 +134,57 @@ function pubTargetsHtml(f) {
       title="${missing ? `${s.name} ще не підключено в Buffer` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : ''}</button>`;
   }).join('');
 }
-// ── коли: два списки — день і час; без клавіатури ──
-const PUB_DAYS = 21, TIME_STEP = 15;                               // днів у списку; крок часу, хв
+// ── коли: кнопка «Завтра · 16:40»; клік — панель з днями, годинами й хвилинами, усе мишею ──
+const PUB_DAYS = 14, MIN_STEP = 15;                                // днів у календарі; крок у списку часу, хв
 const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-function dayOptions(t) {                                          // сьогодні, завтра, далі дні тижня; обраний день — навіть якщо далі за список
-  const today = dayStart(new Date()), days = [...Array(PUB_DAYS).keys()].map(i => { const d = new Date(today); d.setDate(today.getDate() + i); return d; });
-  if (t && !days.some(d => +d === +dayStart(t))) days.push(dayStart(t));
-  const name = d => { const n = Math.round((d - today) / 864e5); return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'}); };
-  return days.map(d => `<option value="${+d}" ${t && +d === +dayStart(t) ? 'selected' : ''}>${name(d)}</option>`).join('');
-}
-function timeOptions(t) {                                         // кожні 15 хв; час з розкладу (напр. 16:40) — теж у списку; минуле сьогодні — сіре
-  const mins = new Set([...Array(24 * 60 / TIME_STEP).keys()].map(i => i * TIME_STEP)); if (t) mins.add(t.getHours() * 60 + t.getMinutes());
-  const base = t ? dayStart(t) : dayStart(new Date()), soon = Date.now() + PUB_MIN_GAP;
-  return [...mins].sort((x, y) => x - y).map(m => { const d = new Date(+base + m * 60e3);
-    return `<option value="${m}" ${t && m === t.getHours() * 60 + t.getMinutes() ? 'selected' : ''} ${d < soon ? 'disabled' : ''}>${hhmm(d)}</option>`; }).join('');
+function dayName(d) {
+  const n = Math.round((dayStart(d) - dayStart(new Date())) / 864e5);
+  return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'});
 }
 function pubWhenHtml(f, d) {
   const late = d && d.t - Date.now() < PUB_MIN_GAP;
-  return `<div class="pwhen ${late ? 'bad' : ''}"><select data-a="day" aria-label="День">${dayOptions(d?.t)}</select>
-      <select data-a="time" aria-label="Час">${timeOptions(d?.t)}</select>
-      ${d?.own ? '<button class="ghost ptxt" data-a="auto" title="Повернути час з розкладу">Як у розкладі</button>' : '<small>за розкладом</small>'}</div>`;
+  return `<button class="pwhen ${late ? 'bad' : ''} ${d?.own ? 'own' : ''}" data-a="whenpick" title="${d?.own ? 'Свій час' : 'Час за розкладом'}">
+      ${ICON.clock}<span>${d ? `${dayName(d.t)} · ${hhmm(d.t)}` : 'Коли?'}</span></button>`;
 }
+const whenPop = Object.assign(document.createElement('div'), {id: 'whenPop', className: 'whenpop'}); document.body.append(whenPop);
+let whenFor = null;                                               // path шорту, чий час зараз обираємо
+function renderWhenPop() {
+  const d = pubDates()[whenFor]; if (!d) return closeWhenPop();
+  const t = d.t, today = dayStart(new Date()), soon = Date.now() + PUB_MIN_GAP;
+  const at = (day, h, m) => { const x = new Date(day); x.setHours(h, m, 0, 0); return x; };
+  const days = [...Array(PUB_DAYS).keys()].map(i => { const x = new Date(today); x.setDate(today.getDate() + i); return x; });
+  const times = t => {                                            // кожні 15 хв + поточний час з розкладу (напр. 16:40)
+    const ms = new Set([...Array(24 * 60 / MIN_STEP).keys()].map(i => i * MIN_STEP)); ms.add(t.getHours() * 60 + t.getMinutes());
+    return [...ms].sort((x, y) => x - y).map(m => [m, at(t, 0, m)]);
+  };
+  whenPop.innerHTML = `<div class="wp-body"><div class="wp-days">${days.map(x => `<button data-day="${+x}" class="${+x === +dayStart(t) ? 'on' : ''} ${+x === +today ? 'today' : ''}">
+        <small>${x.toLocaleDateString('uk-UA', {weekday: 'short'})}</small><b>${x.getDate()}</b></button>`).join('')}</div>
+    <div class="wp-times">${times(t).map(([m, x]) => `<button data-min="${m}" class="${m === t.getHours() * 60 + t.getMinutes() ? 'on' : ''}" ${x < soon ? 'disabled' : ''}>${hhmm(x)}</button>`).join('')}</div>
+    </div><div class="wp-foot">${d.own ? '<button class="ghost" data-auto>Як у розкладі</button>' : '<small>за розкладом</small>'}<span class="grow"></span><button class="pri" data-done>Готово</button></div>`;
+}
+const scrollTimes = () => { const on = whenPop.querySelector('.wp-times .on'); if (on) on.parentElement.scrollTop = on.offsetTop - on.parentElement.clientHeight / 2 + on.offsetHeight / 2; };
+function openWhenPop(path, btn) {
+  whenFor = path; renderWhenPop(); whenPop.classList.add('on'); scrollTimes();
+  const r = btn.getBoundingClientRect(), w = whenPop.offsetWidth, h = whenPop.offsetHeight;
+  whenPop.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px';
+  whenPop.style.top = (r.bottom + 6 + h < innerHeight ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
+}
+function closeWhenPop() { whenFor = null; whenPop.classList.remove('on'); }
+whenPop.onclick = e => {
+  const b = e.target.closest('button'); if (!b || !whenFor) return;
+  if (b.dataset.done != null) return closeWhenPop();
+  if (b.dataset.auto != null) { pubSetPost(whenFor, {when: null}); return renderWhenPop(); }
+  const t = new Date(pubDates()[whenFor].t);
+  if (b.dataset.day) { const d = new Date(+b.dataset.day); t.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); }
+  if (b.dataset.min) t.setHours(0, +b.dataset.min, 0, 0);
+  if (t - Date.now() < PUB_MIN_GAP) t.setTime(Math.ceil((Date.now() + PUB_MIN_GAP) / (MIN_STEP * 60e3)) * MIN_STEP * 60e3);   // минуле — найближчий можливий час
+  const keep = whenPop.querySelector('.wp-times')?.scrollTop;    // список часу не стрибає після кліку
+  pubSetPost(whenFor, {when: t.toISOString()}); renderWhenPop();
+  if (b.dataset.min) whenPop.querySelector('.wp-times').scrollTop = keep; else scrollTimes();
+};
+document.addEventListener('pointerdown', e => { if (whenFor && !e.target.closest('#whenPop,[data-a=whenpick]')) closeWhenPop(); });
+addEventListener('keydown', e => { if (e.key === 'Escape' && whenFor) closeWhenPop(); });
 function pubQueueBtn(f) {
   const sending = pub.sending.has(f.path), d = pubDates()[f.path], late = d && d.t - Date.now() < PUB_MIN_GAP;
   const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.media?.connected ? 'Сховище відео для Buffer не налаштоване в цій версії' : !pubTargetChannels(f).length ? 'Обери, куди публікувати' : late ? 'Цей час уже минув' : '';
@@ -199,7 +229,7 @@ function pubSetPost(path, post) {                                 // збере�
 $('#pubGrid').onclick = e => {
   const card = e.target.closest('.pc'), btn = e.target.closest('[data-a]'); if (!card || !btn) return;
   const path = card.dataset.path, a = btn.dataset.a, f = pubFile(path);
-  if (a === 'day' || a === 'time') return;
+  if (a === 'whenpick') return whenFor === path ? closeWhenPop() : openWhenPop(path, btn);
   if (a === 'play') { $('#mv').src = fileUrl(path); $('#mv').dataset.path = path; $('#modal').classList.add('on'); return $('#mv').play(); }
   if (a === 'reveal') return api('/api/reveal', {path});
   if (a === 'ai') return captionMany([path]);
@@ -209,13 +239,6 @@ $('#pubGrid').onclick = e => {
   pubToggle(path);
 };
 const parseTags = s => [...new Set(s.split(/[\s,]+/).map(t => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))];
-$('#pubGrid').onchange = e => {                                   // день або час: новий момент = обраний день + обрані хвилини від півночі
-  const a = e.target.dataset.a; if (a !== 'day' && a !== 'time') return;
-  const card = e.target.closest('.pc'), day = +card.querySelector('[data-a=day]').value, min = +card.querySelector('[data-a=time]').value;
-  let t = new Date(day + min * 60e3);
-  if (t - Date.now() < PUB_MIN_GAP) t = new Date(Math.ceil((Date.now() + PUB_MIN_GAP) / (TIME_STEP * 60e3)) * TIME_STEP * 60e3);   // сьогоднішнє минуле — найближчий можливий
-  pubSetPost(card.dataset.path, {when: t.toISOString()});
-};
 $('#pubGrid').oninput = e => {
   const card = e.target.closest('.pc'), k = e.target.dataset.f; if (!card || !k) return;
   const f = pubFile(card.dataset.path); f.post ||= {};
