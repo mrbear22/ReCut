@@ -120,7 +120,8 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .segb{display:inline-flex;gap:2px;padding:2px;background:#121110;border:1px solid var(--line);border-radius:var(--r-sm)}
 .segb button{border:0;background:none;color:var(--mut);border-radius:3px;padding:5px 12px}.segb button:hover{color:var(--fg);background:var(--s2)}.segb button.on{background:var(--s4);color:var(--hi)}
 .chip{display:inline-flex;gap:6px;align-items:center;max-width:280px}.chip span{overflow:hidden;text-overflow:ellipsis}
-.cv{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center;background:#0f0e0d;border-radius:var(--r)}
+.cv{flex:1;min-height:0;width:100%;position:relative;overflow:hidden;background:#0f0e0d;border-radius:var(--r)}.cv #pv{position:absolute}
+#pvZoom{position:absolute;right:8px;bottom:8px;z-index:2;padding:3px 9px;font-size:12px;font-variant-numeric:tabular-nums;background:rgba(20,19,18,.85);color:var(--fg)}
 #pv{display:block;background:#000;touch-action:none}
 #cropBar .segb button{padding:5px 9px}
 /* контекстне меню */
@@ -327,7 +328,7 @@ footer{padding:0 8px 8px}
       <button class="ghost" data-crop="cy" title="По центру вертикально">↕</button>
       <span class="mut"><kbd>Shift</kbd> — пропорції · <kbd>Ctrl</kbd> — без магнетизму · ПКМ — ще дії</span>
     </div>
-    <div class="cv"><canvas id="pv" class="short" width="540" height="960"></canvas></div>
+    <div class="cv"><canvas id="pv" class="short" width="540" height="960"></canvas><button id="pvZoom" class="ghost" hidden title="Вписати у вікно"></button></div>
     <div class="ctrl"><button id="play" class="ghost" aria-label="Програти">▶</button><span id="time">0:00.0 / 0:00.0</span></div>
   </section>
 
@@ -805,18 +806,40 @@ function arrange() {
 }
 $('#arrange').onclick = () => { if (P) { arrange(); save(); } };
 function setMode(m) {
-  mode = m; pv.className = m; $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  mode = m; pv.className = m; pvZoom = 1; pvPan = {x: 0, y: 0};   // інший кадр — знову вписаний $$('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
   if (m === 'src' && !cropEl() && srcEls()[0]) { selEl = srcEls()[0].id; renderEls(); }
   renderCropBar(); fitCanvas();
 }
 $$('[data-mode]').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 // полотно завжди має пропорції того, що показує (шорт 9:16 або кадр джерела), і чітке на будь-якому екрані
+// ── прев'ю: вписане у вікно; колесо — зум до курсора, затиснуте колесо — рух, бейдж у куті — назад до вписаного ──
+let pvZoom = 1, pvPan = {x: 0, y: 0};                             // зсув центру кадру від центру вікна, екранні px
+const PV_ZOOM_MAX = 8, PV_BACKING_MAX = 4320;                      // найбільший зум; ширина полотна в пікселях (далі — розтягнення)
 function fitCanvas() {
-  const box = $('.cv'), a = mode === 'short' ? 9 / 16 : S.w / S.h, d = devicePixelRatio || 1;
-  const w = Math.floor(Math.min(box.clientWidth, box.clientHeight * a)), h = Math.floor(w / a);
-  if (w < 10 || h < 10) return;
-  pv.style.width = w + 'px'; pv.style.height = h + 'px'; pv.width = Math.round(w * d); pv.height = Math.round(h * d);
+  const box = $('.cv'), a = mode === 'short' ? 9 / 16 : S.w / S.h, d = devicePixelRatio || 1, bw = box.clientWidth, bh = box.clientHeight;
+  const w0 = Math.floor(Math.min(bw, bh * a)), h0 = Math.floor(w0 / a);
+  if (w0 < 10 || h0 < 10) return;
+  const w = Math.round(w0 * pvZoom), h = Math.round(h0 * pvZoom), mx = Math.max(0, (w - bw) / 2), my = Math.max(0, (h - bh) / 2);
+  pvPan.x = clamp(pvPan.x, -mx, mx); pvPan.y = clamp(pvPan.y, -my, my);   // кадр не тікає з вікна
+  pv.style.width = w + 'px'; pv.style.height = h + 'px'; pv.style.left = (bw - w) / 2 + pvPan.x + 'px'; pv.style.top = (bh - h) / 2 + pvPan.y + 'px';
+  const k = Math.min(d, PV_BACKING_MAX / w); pv.width = Math.round(w * k); pv.height = Math.round(h * k);   // чітко, а не розтягнута картинка
+  $('#pvZoom').hidden = pvZoom === 1; $('#pvZoom').textContent = `${Math.round(pvZoom * 100)}%`;
 }
+$('.cv').addEventListener('wheel', e => {                         // зум до точки під курсором
+  if (!P) return; e.preventDefault();
+  const r = $('.cv').getBoundingClientRect(), cx = e.clientX - r.left - r.width / 2, cy = e.clientY - r.top - r.height / 2;
+  const z = clamp(pvZoom * Math.exp(-e.deltaY * .0015), 1, PV_ZOOM_MAX), f = z / pvZoom;
+  pvPan = {x: cx - (cx - pvPan.x) * f, y: cy - (cy - pvPan.y) * f}; pvZoom = z; fitCanvas();
+}, {passive: false});
+let pvPanDrag = null;
+$('.cv').addEventListener('pointerdown', e => {                   // затиснуте колесо — рухати збільшений кадр
+  if (e.button !== 1) return; e.preventDefault(); try { $('.cv').setPointerCapture(e.pointerId); } catch (err) {}
+  pvPanDrag = {x: e.clientX - pvPan.x, y: e.clientY - pvPan.y}; $('.cv').style.cursor = 'grabbing';
+});
+$('.cv').addEventListener('pointermove', e => { if (pvPanDrag) { pvPan = {x: e.clientX - pvPanDrag.x, y: e.clientY - pvPanDrag.y}; fitCanvas(); } });
+$('.cv').addEventListener('pointerup', () => { pvPanDrag = null; $('.cv').style.cursor = ''; });
+$('.cv').addEventListener('auxclick', e => e.button === 1 && e.preventDefault());   // без автопрокрутки браузера
+$('#pvZoom').onclick = () => { pvZoom = 1; pvPan = {x: 0, y: 0}; fitCanvas(); };
 new ResizeObserver(fitCanvas).observe($('.cv'));
 const pvScale = () => pv.width / (pv.clientWidth || 1);          // пікселів полотна на екранний піксель
 const shortUnits = n => n * 1080 / (pv.clientWidth || 1);         // екранні пікселі → одиниці шорту (1080 по ширині)

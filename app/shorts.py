@@ -639,15 +639,19 @@ def make_card(el):
 def make_text(el):
     """Текст: з плашкою-фоном (заклик, нікнейм, LIVE) або з обведенням просто поверх відео."""
     f = ImageFont.truetype(pick_font(el.get("font"))[1], max(8, round(float(el.get("size", 72)))))
-    lines = (el.get("text") or " ").split("\n"); lh = round(f.size * 1.25); tw = max(f.getlength(l) for l in lines)
+    lines = (el.get("text") or " ").split("\n"); lh = round(f.size * 1.25)
+    ink = [f.getbbox(l or " ", anchor="ls") for l in lines]          # видимі межі гліфів: у піксельних шрифтах відступ символу ≠ малюнок
+    widths = [x1 - x0 for x0, _, x1, _ in ink]; tw = max(widths)
     bg = el.get("bgOn"); px, py = (round(f.size * .5), round(f.size * .25)) if bg else (0, 0); stroke = 0 if bg else max(1, f.size // 12)
     cw, ch = round(tw) + 2 * px + 2 * stroke, lh * len(lines) + 2 * py
     img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
     if bg:                                                        # фон по контуру рядків, як у TikTok: кожен рядок — своєї ширини
-        shape = text_shape(img.size, [f.getlength(l) for l in lines], px, py, lh, round(f.size * .3))
+        shape = text_shape(img.size, widths, px, py, lh, round(f.size * .3))
         shadow_of(img, shape); img.paste(Image.new("RGBA", img.size, el.get("bg", "#000000")), (0, 0), shape)
-    for i, l in enumerate(lines):
-        d.text((PAD + cw / 2, PAD + py + i * lh + lh / 2), l, font=f, fill=el.get("color", "#ffffff"), anchor="mm",
+    asc, desc = f.getmetrics()
+    for i, l in enumerate(lines):                                 # центр видимого малюнка рядка — точно посередині фону
+        x0, _, x1, _ = ink[i]; base = PAD + py + i * lh + lh / 2 + (asc - desc) / 2
+        d.text((PAD + cw / 2 - (x0 + x1) / 2, base), l, font=f, fill=el.get("color", "#ffffff"), anchor="ls",
                stroke_width=stroke, stroke_fill="black")
     return img, cw, ch
 
@@ -937,7 +941,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.2.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.2.1"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
