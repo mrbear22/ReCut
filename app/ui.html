@@ -1511,6 +1511,7 @@ function drawTL() {
   tx.font = font(11); tx.fillStyle = PAL.ruler; tx.fillRect(0, 0, TW, TICK); tx.fillStyle = PAL.line; tx.fillRect(0, TICK, TW, 1);   // шкала часу
   for (let t = Math.ceil(view.t0 / tick) * tick; t < view.t1; t += tick) { const x = X(t); tx.fillStyle = PAL.tick; tx.fillRect(x, TICK - 5, 1, 5); tx.fillStyle = PAL.text; tx.fillText(fmt(t).replace(/\.\d$/, ''), x + 4, TICK * .72); }
   // кліпи; у вибраному — смужки елементів
+  if (!P.clips.length) { tx.font = font(clamp(Math.round(CUE * .5), 12, 17)); tx.fillStyle = PAL.tick; tx.fillText('кліпи · Shift + перетягування — новий кліп, або «Знайти моменти»', 8, (CTOP + cb) / 2 + 5); }
   P.clips.forEach((c, i) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
     const s = i === sel, ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
@@ -1548,10 +1549,12 @@ function drawTL() {
   });
   // репліки субтитрів — рядок унизу того самого полотна
   tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
-  const spk = subRows(), many = spk.length > 1;
-  spk.forEach((x, r) => {                                         // підпис рядка спікера — під репліками
+  const spk = subRows(), named = subsEls().length > 0;
+  spk.forEach((x, r) => {                                         // назва доріжки — під репліками; порожня доріжка — як почати
+    const ty = cueY + r * CUE + CUE * .67, nm = named ? subName(x, r) : 'субтитри';
     if (r % 2) { tx.fillStyle = PAL.grid; tx.fillRect(0, cueY + r * CUE, TW, CUE); }
-    if (many) { tx.fillStyle = mixHex(x.color, PAL.bg, x.on === false ? .8 : .55); tx.fillText(subName(x, r), 8, cueY + r * CUE + CUE * .67); }
+    tx.fillStyle = named ? mixHex(x.color, PAL.bg, x.on === false ? .8 : .55) : PAL.tick; tx.fillText(nm, 8, ty);
+    if (!P.cues.some(c => rowOf(c) === r)) { tx.fillStyle = PAL.tick; tx.fillText('Shift + перетягування — нова репліка', 8 + tx.measureText(nm).width + 14, ty); }
   });
   P.cues.forEach((c, j) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
