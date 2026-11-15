@@ -80,7 +80,6 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .pick{display:flex;gap:8px;align-items:center}.pick img{width:44px;height:44px;object-fit:cover;border-radius:var(--r-sm);background:#121110;border:1px solid var(--line2)}
 .pick span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mut);font-size:12px}
 .emo{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}.emo button{font-size:18px;padding:2px 6px;background:#121110}
-.when{margin-top:14px;padding:9px 10px;background:#121110;border-radius:var(--r-sm);color:var(--mut);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:6px}
 /* проєкти */
 #home{grid-template-rows:auto 1fr;padding:22px 26px;gap:18px;overflow:hidden}
 .hh{display:flex;justify-content:space-between;align-items:center}.hh h2{margin:0;font-size:21px;font-weight:650;letter-spacing:-.01em;color:var(--hi)}
@@ -756,19 +755,6 @@ $('#cat').onclick = e => {
   if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
   if (stack) arrange(); renderEls(); save();
 };
-function whenBox(el, c) {
-  if (el.solo && !c.segs?.[el.id]) return `<div class="when"><span>Цього елемента немає в кліпі #${P.clips.indexOf(c) + 1}.
-      <br>Перетягни його зі списку на потрібний кліп на таймлайні.</span></div>
-    <div class="when"><button data-act="add">Додати в цей кліп</button><button data-act="scope">Застосувати до всіх кліпів</button></div>`;
-  const sg = segsOf(c, el), whole = sg.length === 1 && !sg[0][0] && !sg[0][1], f = v => v.toFixed(1) + ' с';
-  const shown = !sg.length ? 'сховано в цьому кліпі' : whole ? 'весь кліп' : sg.length > 1 ? `${sg.length} шматки` : `з ${f(sg[0][0] || 0)} до ${sg[0][1] ? f(sg[0][1]) : 'кінця'}`;
-  const music = el.type === 'music';
-  const inN = P.clips.map((x, i) => x.segs?.[el.id] ? '#' + (i + 1) : '').filter(Boolean);
-  return `<div class="when"><span>${!el.solo ? 'У всіх кліпах' : inN.length > 1 ? `У кліпах ${inN.join(', ')}` : 'Лише в цьому кліпі'} · видно ${shown}
-      <br>${music ? 'тягни смужку: краї обрізають, середина обирає момент треку' : 'тягни смужку в кліпі на таймлайні'}</span>
-      ${whole ? '' : '<button data-act="whole">Весь кліп</button>'}</div>
-    <div class="when"><button data-act="scope">${el.solo ? 'Застосувати до всіх кліпів' : 'Лише в цьому кліпі'}</button></div>`;
-}
 function setScope(el, c, solo) {                                  // спільний ↔ лише цей кліп
   if (solo) { const sg = segsOf(c, el); for (const o of P.clips) if (o.segs) delete o.segs[el.id]; (c.segs ||= {})[el.id] = sg.length ? sg.map(x => [...x]) : [[0, 0]]; }
   el.solo = solo; renderEls(); save();
@@ -776,11 +762,9 @@ function setScope(el, c, solo) {                                  // спіль�
 function renderProps() {
   const el = elById(selEl), box = $('#props');
   if (!el) { box.innerHTML = '<p class="mut" style="margin:0">Обери елемент у списку або клікни його на прев\'ю. Тягни його мишею, кут — розмір.</p>'; return; }
-  const Ty = TYPES[el.type], c = P.clips.length ? ctxClip() : null, n = c ? net(c) : 0;
-  const timed = !['subs', 'bg'].includes(el.type);
+  const Ty = TYPES[el.type];
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
-    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('') +
-    (timed && c ? whenBox(el, c) : '');
+    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
 }
 $('#props').addEventListener('input', e => {
   const el = elById(selEl), box = e.target.closest('[data-p]'); if (!el || !box) return;
@@ -793,10 +777,6 @@ $('#props').addEventListener('click', async e => {
   if (t.dataset.file) { const {path} = await api('/api/pick', {kind: 'image'}); if (!path) return; el[t.dataset.file] = path; await save(true); return renderProps(); }
   if (t.dataset.clear) { el[t.dataset.clear] = ''; afterEdit(el); return renderProps(); }
   if (t.dataset.act === 'detect') detectCam(el, t);
-  const c = P.clips.length ? ctxClip() : null;
-  if (t.dataset.act === 'whole') { if (c?.segs?.[el.id]) c.segs[el.id] = [[0, 0]]; else el.from = el.to = 0; save(); renderProps(); drawTL(); }
-  if (t.dataset.act === 'scope' && c) setScope(el, c, !el.solo);
-  if (t.dataset.act === 'add' && c) addToClip(el, c);
   if (t.dataset.audio) { const a = await pickAudio(); if (a) { Object.assign(el, a); renderEls(); save(); } }
 });
 function afterEdit(el, k) {
