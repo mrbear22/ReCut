@@ -37,13 +37,14 @@ if sys.stdout is None or sys.executable.lower().endswith("pythonw.exe"):
 SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без вікон консолі для ffmpeg
 
 CFG_FILE, HIST_FILE = DATA / "settings.json", DATA / "history.json"
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, project="", defaults=[], port=8765,
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", project="", defaults=[], port=8765,
            speed=dict(scan=5.0, stt=10.0))          # секунд відео за секунду роботи; уточнюється після кожного запуску
 LEGACY = ("video", "preview", "logo", "font", "style", "title", "channel", "category", "badge", "layout", "region", "ai_key", "lang")
 W, H = 1080, 1920
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
-STT_MODEL, OLLAMA = "large-v3-turbo", "http://127.0.0.1:11434/api/"
+STT_MODELS, OLLAMA = {"large-v3-turbo": 1.62e9, "large-v3": 3.09e9}, "http://127.0.0.1:11434/api/"   # модель розпізнавання -> розмір
+sttm = lambda: CFG.get("stt_model") if CFG.get("stt_model") in STT_MODELS else "large-v3-turbo"
 ART = ("card", "stream", "text", "image", "chat", "alert", "shape", "emoji", "social")   # елементи, що малюються картинкою поверх відео
 PAD = 40                                       # поле під тінь навколо плашки
 ENC = {"nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "{q}", "-b:v", "0", "-pix_fmt", "yuv420p"],
@@ -266,7 +267,7 @@ def with_context(clips, segs):
 
 # ── локальне розпізнавання мови (faster-whisper, як в AutoSubs) ──
 # Програма легка: модель (1.6 ГБ) і, лише для відеокарт NVIDIA, CUDA-бібліотеки (1.9 ГБ) завантажуються один раз у data/
-CUDA_PKGS, MODEL_BYTES = (("nvidia-cublas-cu12", ""), ("nvidia-cudnn-cu12", "9."), ("nvidia-cuda-nvrtc-cu12", "")), 1.62e9
+CUDA_PKGS = (("nvidia-cublas-cu12", ""), ("nvidia-cudnn-cu12", "9."), ("nvidia-cuda-nvrtc-cu12", ""))
 
 # ── важке завантажується, коли вперше знадобиться: ffmpeg одразу після першого запуску, решта — під свою дію ──
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"   # з libass для субтитрів
@@ -339,13 +340,14 @@ def fetch_cuda():
 
 # ── розпізнавання мови — в окремому процесі: збій відеокарти (скидання драйвера) вбиває лише його, а не всю програму ──
 class SttWorker:
-    def __init__(self): self.proc, self.device, self.gpu_failures = None, None, 0
+    def __init__(self): self.proc, self.device, self.model, self.gpu_failures = None, None, None, 0
 
     def alive(self): return self.proc is not None and self.proc.poll() is None
 
-    def start(self, device):
+    def start(self, device, model):
         exe = Path(sys.executable); py = exe.with_name("python.exe") if exe.with_name("python.exe").is_file() else exe   # pythonw не дає stdout
-        self.proc = subprocess.Popen([str(py), str(Path(__file__)), "--stt-worker", device], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self.model = model
+        self.proc = subprocess.Popen([str(py), str(Path(__file__)), "--stt-worker", device, model], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=open(DATA / "stt.log", "a", encoding="utf-8"), **SP)
         self.device = device; msg = self.read()
         if "error" in msg: self.stop(); raise RuntimeError(msg["error"])
@@ -374,22 +376,25 @@ STT = SttWorker()
 
 def stt_model():
     """Бібліотеки, CUDA й модель — один раз; далі процес розпізнавання, що вже завантажив модель."""
-    if STT.alive(): return STT
+    model = sttm()
+    if STT.alive() and STT.model == model: return STT
+    STT.stop()                                                 # обрали іншу модель — інший процес
     need_libs(STT_LIBS, "faster_whisper", "Завантажую бібліотеки розпізнавання мови, 200 МБ", "stt")
     import ctranslate2
     gpu = ctranslate2.get_cuda_device_count() > 0 and STT.gpu_failures < 2   # двічі впала відеокарта — до перезапуску програми лише процесор
     if gpu and not any(b.parent.name == "cublas" for b in cuda_dirs()):
         try: fetch_cuda()
         except OSError as e: print("CUDA не завантажено, розпізнаю на процесорі:", e); gpu = False   # без інтернету — повільніше, але працює
-    loading = not any(MODELS.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
+    mdir = lambda: [d for d in MODELS.glob(f"models--*faster-whisper-{model}") if d.is_dir()]
+    loading = not any(f for d in mdir() for f in d.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
     def watch():                                               # прогрес першого завантаження моделі — за розміром теки
         CUR.task = task
         while loading and not STT.alive():
-            got = sum(f.stat().st_size for f in MODELS.rglob("*") if f.is_file())
-            report("stt", "Завантажую модель мовлення, 1.6 ГБ", min(.99, got / MODEL_BYTES), t0); time.sleep(1)
+            got = sum(f.stat().st_size for d in mdir() for f in d.rglob("*") if f.is_file())
+            report("stt", f"Завантажую модель мовлення, {STT_MODELS[model] / 1e9:.1f} ГБ", min(.99, got / STT_MODELS[model]), t0); time.sleep(1)
     if loading: threading.Thread(target=watch, daemon=True).start()
     for dev in ["cuda"] * max(0, 2 - STT.gpu_failures) * gpu + ["cpu"]:   # відеокарта — дві спроби: скидання драйвера буває разовим
-        try: STT.start(dev); return STT
+        try: STT.start(dev, model); return STT
         except (RuntimeError, ChildProcessError) as e:
             print(datetime.now(), "stt:", dev, "недоступно:", ascii(e)); STT.gpu_failures += dev == "cuda"
     raise RuntimeError("Розпізнавання мови не запускається")
@@ -406,13 +411,13 @@ def stt_run(pcm, lang, tick):
             report("stt", "Збій відеокарти — продовжую" + (" на процесорі" if STT.gpu_failures >= 2 else ""), None)
     raise RuntimeError("Розпізнавання мови аварійно зупинилось")
 
-def stt_worker(device):
+def stt_worker(device, model):
     """Окремий процес: модель у пам'яті, завдання — рядки JSON у stdin, відповіді — у stdout."""
     out, sys.stdout = sys.stdout, sys.stderr                  # сторонні print-и бібліотек не ламають протокол
     send = lambda m: (out.write(json.dumps(m) + "\n"), out.flush())
     try:
         from faster_whisper import WhisperModel
-        m = WhisperModel(STT_MODEL, device=device, compute_type="float16" if device == "cuda" else "int8", download_root=str(MODELS))
+        m = WhisperModel(model, device=device, compute_type="float16" if device == "cuda" else "int8", download_root=str(MODELS))
         list(m.transcribe(np.zeros(16000, np.float32), vad_filter=False)[0])   # пробний прохід: несправна CUDA впаде тут, а не на відео
     except Exception as e: return send({"error": str(e)[:300]})
     send({"ready": device})
@@ -439,7 +444,7 @@ def whisper(src, t0, lang, tick, na, track=None):
 def transcript(src, a0, a1, lang, track=None, label="Розпізнаю мову"):
     """(слова, речення) в [a0, a1]: шматки по CHUNK с кешуються на диску. track — лише одна звукова доріжка."""
     na = probe(src)[3]                                         # зведені доріжки й кожна окремо — різний кеш
-    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}|{STT_MODEL}|{lang}" + (f"|track{track}" if track is not None else f"|mix{na}" * (na > 1))).hex[:16]
+    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}|{sttm()}|{lang}" + (f"|track{track}" if track is not None else f"|mix{na}" * (na > 1))).hex[:16]
     path = lambda k: TRANS / f"{tag}_{k}.json"
     ks = range(int(a0 // CHUNK), int(np.ceil(a1 / CHUNK))); todo = [k for k in ks if not path(k).is_file()]; words, segs = [], []
     with STT_LOCK:
@@ -1003,7 +1008,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.7.5"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.8.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1369,5 +1374,5 @@ def main():
     srv.serve_forever()
 
 if __name__ == "__main__":
-    if "--stt-worker" in sys.argv: stt_worker(sys.argv[sys.argv.index("--stt-worker") + 1])
+    if "--stt-worker" in sys.argv: i = sys.argv.index("--stt-worker"); stt_worker(sys.argv[i + 1], (sys.argv[i + 2:] or ["large-v3-turbo"])[0])
     else: main()

@@ -167,7 +167,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .foot .split .pri{padding:10px}
 .bar{height:4px;background:var(--s4);border-radius:2px;overflow:hidden;margin-top:8px}#prog{height:100%;width:0;background:var(--acc);transition:width .3s var(--ease)}
 #msg{color:var(--mut);margin-top:6px;min-height:18px;word-break:break-word}#msg.err{color:var(--red)}
-#rPop{right:0;left:0;bottom:calc(100% + 6px)}
+#rPop{right:0;left:0;bottom:calc(100% + 6px)}#sPop{left:0;bottom:calc(100% + 6px);width:300px;cursor:default}
 footer{padding:0 8px 8px}
 #tlGrip{height:12px;margin-bottom:-4px;cursor:ns-resize;display:flex;align-items:center;justify-content:center;touch-action:none}
 #tlGrip::before{content:'';width:48px;height:4px;border-radius:2px;background:var(--line2);transition:background var(--fast),width var(--fast)}
@@ -368,7 +368,7 @@ footer{padding:0 8px 8px}
       <label class="inl"><input type="number" min="1" max="30" data-c="n_clips"> кліпів по <input type="number" min="5" max="180" data-c="min_len">–<input type="number" min="5" max="300" data-c="max_len"> с</label>
       <label class="inl" title="Враховувати сказане: точніше, але довше"><input type="checkbox" data-c="stt"> за змістом мови</label>
       <span class="sep"></span>
-      <button id="mkSubs">Згенерувати субтитри</button>
+      <span class="split anchor"><button id="mkSubs">Згенерувати субтитри</button><button id="sSet" title="Модель розпізнавання" aria-label="Модель розпізнавання">⚙</button><div class="pop" id="sPop"></div></span>
       <button id="toRegion" class="ghost" title="Показати всю область" aria-label="Показати всю область">⤢</button>
     </div>
   </div>
@@ -653,9 +653,10 @@ $('#videoChip').onclick = () => P && pickVideo();
 function renderPops() {
   $('#rPop').innerHTML = control(cfg, 'quality', 'seg', 'Якість', [[26, 'Швидко'], [21, 'Добре'], [17, 'Найкраще']]) +
     control(cfg, 'encoder', 'seg', 'Кодування', [['auto', 'Авто'], ['nvenc', 'NVIDIA'], ['amf', 'AMD'], ['qsv', 'Intel'], ['cpu', 'Процесор']]);
+  $('#sPop').innerHTML = control(cfg, 'stt_model', 'seg', 'Модель розпізнавання', [['large-v3-turbo', 'Швидка'], ['large-v3', 'Точна']]);
   $$('[data-c]').forEach(el => { if (document.activeElement !== el) el.type === 'checkbox' ? el.checked = !!cfg[el.dataset.c] : el.value = cfg[el.dataset.c]; });
 }
-$('#rPop').addEventListener('input', e => setCfg(e.target)); $('#rPop').addEventListener('click', e => { if (e.target.dataset.v != null) setCfg(e.target); });
+for (const id of ['#rPop', '#sPop']) { $(id).addEventListener('input', e => setCfg(e.target)); $(id).addEventListener('click', e => { if (e.target.dataset.v != null) setCfg(e.target); }); }
 $$('[data-c]').forEach(el => el.addEventListener('change', async () => {
   const k = el.dataset.c; cfg[k] = el.type === 'checkbox' ? el.checked : clamp(+el.value || 0, +el.min, +el.max);
   if (k === 'min_len' && cfg.max_len < cfg[k]) cfg.max_len = cfg[k]; if (k === 'max_len' && cfg.min_len > cfg[k]) cfg.min_len = cfg[k];
@@ -666,9 +667,10 @@ async function setCfg(t) {
   const v = readControl(t, cfg[k]); if (v === undefined) return;
   cfg[k] = v; if (k === 'min_len' && cfg.max_len < v) cfg.max_len = v; if (k === 'max_len' && cfg.min_len > v) cfg.min_len = v;
   if (t.dataset.v != null) renderPops();
-  cfg = await api('/api/config', {n_clips: cfg.n_clips, min_len: cfg.min_len, max_len: cfg.max_len, stt: cfg.stt, quality: cfg.quality, encoder: cfg.encoder});
+  cfg = await api('/api/config', {n_clips: cfg.n_clips, min_len: cfg.min_len, max_len: cfg.max_len, stt: cfg.stt, quality: cfg.quality, encoder: cfg.encoder, stt_model: cfg.stt_model});
 }
 $('#rSet').onclick = e => togglePop('#rPop', e);
+$('#sSet').onclick = e => togglePop('#sPop', e);
 
 // ── контроли: повзунок, перемикач, вибір, кольори, файл ──
 function control(o, k, kind, label, opt) {
@@ -1794,7 +1796,7 @@ function placeOverlays() {
 }
 const barX = e => e.clientX - tl.getBoundingClientRect().left;
 $('#rbar').onpointerdown = e => {
-  if (!P || !dur || !e.target.closest('#rband,#ract') || e.target.closest('button,input,label')) return;
+  if (!P || !dur || !e.target.closest('#rband,#ract') || e.target.closest('button,input,label,.pop')) return;
   $('#rbar').setPointerCapture(e.pointerId); P.region = region(); drag = {band: true, off: Tt(barX(e)) - P.region[0], r0: [...P.region]};
 };
 $('#rbar').onpointermove = e => {
