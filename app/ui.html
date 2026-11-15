@@ -990,7 +990,9 @@ $('#reanalyze').onclick = () => analyze(true);
 async function makeSubs() {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
   const st = ensureSubs(); save();
-  const proj = P, [ra, rb] = region(), body = {video: P.video, region: [ra, rb], words: st.words || 3, lang: st.lang || ''};
+  const proj = P, spans = [region(), ...P.clips.map(c => [c.a, c.b])].sort((x, y) => x[0] - y[0]).reduce((m, s) => {   // область і всі кліпи, злиті
+    const l = m.at(-1); if (l && s[0] <= l[1]) l[1] = Math.max(l[1], s[1]); else m.push([...s]); return m; }, []);
+  const inSpans = c => spans.some(([a, b]) => c.a < b && c.b > a), body = {video: P.video, region: region(), spans, words: st.words || 3, lang: st.lang || ''};
   try {
     await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task})), (pr, r, open) => {
       cfg.speed = r.speed;
@@ -999,8 +1001,9 @@ async function makeSubs() {
         while (subsEls(pr.elements).length < r.tracks) addSubsEl(pr.elements, `Доріжка ${subsEls(pr.elements).length + 1}`);
       }
       const own = subsEls(pr.elements); r.cues.forEach(c => { if (own[c.sp]) c.sid = own[c.sp].id; delete c.sp; });
-      pr.cues = [...pr.cues.filter(c => c.b <= ra || c.a >= rb), ...r.cues].sort((x, y) => x.a - y.a);
-      if (open) { renderEls(); selCue = -1; msg(`Субтитри: ${r.cues.length} реплік`); } else msg(`${projName(pr)}: субтитри готові (${r.cues.length} реплік)`);
+      pr.cues = [...pr.cues.filter(c => !inSpans(c)), ...r.cues].sort((x, y) => x.a - y.a);
+      const note = r.cues.length ? `${r.cues.length} реплік` : 'мови не чути ні в області, ні в кліпах';
+      if (open) { renderEls(); selCue = -1; msg(`Субтитри: ${note}`, !r.cues.length); } else msg(`${projName(pr)}: субтитри — ${note}`, !r.cues.length);
       return ['cues', 'elements'];
     });
   } catch (e) { msg(`Субтитри (${projName(proj)}): ` + e.message, 1); }

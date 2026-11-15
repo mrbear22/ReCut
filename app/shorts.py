@@ -1003,7 +1003,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.7.4"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.7.5"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1234,10 +1234,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(dict(dur=f["dur"], sw=f["sw"], sh=f["sh"], step=B, region=f["region"], curve=np.round(f["ex"], 2).tolist(),
                                        clips=clips, speed=CFG["speed"]))
             if p == "/api/subs":                                  # кілька звукових доріжок (OBS) — кожна окремим спікером
-                a0, a1 = d["region"]; report("", ""); na = probe(d["video"])[3]; cues = []
+                spans = d.get("spans") or [d["region"]]; report("", ""); na = probe(d["video"])[3]; cues = []   # область і кліпи поза нею
                 for sp, track in enumerate(range(na) if na > 1 else [None]):
-                    words = transcript(d["video"], a0, a1, d.get("lang", ""), track, f"Розпізнаю доріжку {sp + 1} з {na}" if na > 1 else "Розпізнаю мову")[0]
-                    cues += [dict(c, sp=sp) for c in make_cues(words, max(1, int(d.get("words", 3))))]
+                    words = {}
+                    for a0, a1 in spans:
+                        for w in transcript(d["video"], a0, a1, d.get("lang", ""), track, f"Розпізнаю доріжку {sp + 1} з {na}" if na > 1 else "Розпізнаю мову")[0]: words[w[1]] = w
+                    cues += [dict(c, sp=sp) for c in make_cues(sorted(words.values(), key=lambda w: w[1]), max(1, int(d.get("words", 3))))]
                 return self.reply(dict(cues=sorted(cues, key=lambda c: c["a"]), tracks=max(1, na), speed=CFG["speed"]))
             if p == "/api/update/apply":
                 setup = apply_update()
