@@ -133,24 +133,27 @@ function pubTargetsHtml(f) {
       title="${missing ? `${s.name} ще не підключено в Buffer` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : ''}</button>`;
   }).join('');
 }
-// ── коли: звичайний список — «за розкладом» або один з найближчих вільних слотів розкладу ──
-const PUB_CHOICES = 40;                                           // скільки слотів показати у списку
+// ── коли: два списки — день і час; без клавіатури ──
+const PUB_DAYS = 21, TIME_STEP = 15;                               // днів у списку; крок часу, хв
 const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-function whenLabel(d) {
-  const n = Math.round((dayStart(d) - dayStart(new Date())) / 864e5);
-  return `${n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'})} · ${hhmm(d)}`;
+function dayOptions(t) {                                          // сьогодні, завтра, далі дні тижня; обраний день — навіть якщо далі за список
+  const today = dayStart(new Date()), days = [...Array(PUB_DAYS).keys()].map(i => { const d = new Date(today); d.setDate(today.getDate() + i); return d; });
+  if (t && !days.some(d => +d === +dayStart(t))) days.push(dayStart(t));
+  const name = d => { const n = Math.round((d - today) / 864e5); return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'}); };
+  return days.map(d => `<option value="${+d}" ${t && +d === +dayStart(t) ? 'selected' : ''}>${name(d)}</option>`).join('');
+}
+function timeOptions(t) {                                         // кожні 15 хв; час з розкладу (напр. 16:40) — теж у списку; минуле сьогодні — сіре
+  const mins = new Set([...Array(24 * 60 / TIME_STEP).keys()].map(i => i * TIME_STEP)); if (t) mins.add(t.getHours() * 60 + t.getMinutes());
+  const base = t ? dayStart(t) : dayStart(new Date()), soon = Date.now() + PUB_MIN_GAP;
+  return [...mins].sort((x, y) => x - y).map(m => { const d = new Date(+base + m * 60e3);
+    return `<option value="${m}" ${t && m === t.getHours() * 60 + t.getMinutes() ? 'selected' : ''} ${d < soon ? 'disabled' : ''}>${hhmm(d)}</option>`; }).join('');
 }
 function pubWhenHtml(f, d) {
-  const dates = pubDates(), taken = new Set(Object.entries(dates).filter(([p]) => p !== f.path).map(([, x]) => +x.t));
-  const after = new Date(Math.max(Date.now(), ...pubQueue().map(q => +new Date(q.dueAt))));
-  const free = pubSlots(PUB_CHOICES + taken.size, after, pub.seed).filter(t => !taken.has(+t)).slice(0, PUB_CHOICES);
   const late = d && d.t - Date.now() < PUB_MIN_GAP;
-  return `<select class="pwhen ${late ? 'bad' : ''}" data-a="when" aria-label="Коли публікувати">
-      <option value="auto" ${d?.own ? '' : 'selected'}>За розкладом${d && !d.own ? ` · ${whenLabel(d.t)}` : ''}</option>
-      ${d?.own ? `<option value="${d.t.toISOString()}" selected>${whenLabel(d.t)}</option>` : ''}
-      ${free.filter(t => !d || +t !== +d.t).map(t => `<option value="${t.toISOString()}">${whenLabel(t)}</option>`).join('')}
-    </select>`;
+  return `<div class="pwhen ${late ? 'bad' : ''}"><select data-a="day" aria-label="День">${dayOptions(d?.t)}</select>
+      <select data-a="time" aria-label="Час">${timeOptions(d?.t)}</select>
+      ${d?.own ? '<button class="ghost ptxt" data-a="auto" title="Повернути час з розкладу">Як у розкладі</button>' : '<small>за розкладом</small>'}</div>`;
 }
 function pubQueueBtn(f) {
   const sending = pub.sending.has(f.path), d = pubDates()[f.path], late = d && d.t - Date.now() < PUB_MIN_GAP;
@@ -196,7 +199,7 @@ function pubSetPost(path, post) {                                 // збере�
 $('#pubGrid').onclick = e => {
   const card = e.target.closest('.pc'), btn = e.target.closest('[data-a]'); if (!card || !btn) return;
   const path = card.dataset.path, a = btn.dataset.a, f = pubFile(path);
-  if (a === 'when') return;
+  if (a === 'day' || a === 'time') return;
   if (a === 'play') { $('#mv').src = fileUrl(path); $('#mv').dataset.path = path; $('#modal').classList.add('on'); return $('#mv').play(); }
   if (a === 'reveal') return api('/api/reveal', {path});
   if (a === 'ai') return captionMany([path]);
@@ -206,9 +209,12 @@ $('#pubGrid').onclick = e => {
   pubToggle(path);
 };
 const parseTags = s => [...new Set(s.split(/[\s,]+/).map(t => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))];
-$('#pubGrid').onchange = e => {
-  if (e.target.dataset.a !== 'when') return;
-  pubSetPost(e.target.closest('.pc').dataset.path, {when: e.target.value === 'auto' ? null : e.target.value});
+$('#pubGrid').onchange = e => {                                   // день або час: новий момент = обраний день + обрані хвилини від півночі
+  const a = e.target.dataset.a; if (a !== 'day' && a !== 'time') return;
+  const card = e.target.closest('.pc'), day = +card.querySelector('[data-a=day]').value, min = +card.querySelector('[data-a=time]').value;
+  let t = new Date(day + min * 60e3);
+  if (t - Date.now() < PUB_MIN_GAP) t = new Date(Math.ceil((Date.now() + PUB_MIN_GAP) / (TIME_STEP * 60e3)) * TIME_STEP * 60e3);   // сьогоднішнє минуле — найближчий можливий
+  pubSetPost(card.dataset.path, {when: t.toISOString()});
 };
 $('#pubGrid').oninput = e => {
   const card = e.target.closest('.pc'), k = e.target.dataset.f; if (!card || !k) return;

@@ -230,8 +230,9 @@ footer{padding:0 8px 8px}
 .ptg svg{width:16px;height:16px;color:var(--dim)}.ptg small{font-size:11px;color:var(--dim)}
 .ptg:hover{border-color:#5a5651;color:var(--fg);background:none}
 .ptg.on{background:var(--s4);border-color:#5a5651;color:var(--hi)}.ptg.on svg{color:var(--svc)}
-/* коли: звичайний список слотів */
-.pwhen{width:auto;max-width:230px;padding:6px 10px;font-size:12.5px;font-variant-numeric:tabular-nums}.pwhen.bad{border-color:var(--red);color:var(--red)}
+/* коли: день і час — два списки */
+.pwhen{display:flex;align-items:center;gap:6px}.pwhen select{width:auto;padding:6px 8px;font-size:12.5px;font-variant-numeric:tabular-nums}
+.pwhen small{font-size:11.5px;color:var(--dim);white-space:nowrap}.pwhen.bad select{border-color:var(--red);color:var(--red)}
 /* налаштування розкладу — випадне вікно з шапки */
 #pubOpt{position:relative}
 #pubOpt summary{list-style:none;cursor:pointer;padding:6px 12px;border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--fg);font-size:13px;white-space:nowrap}
