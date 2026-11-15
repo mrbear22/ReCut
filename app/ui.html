@@ -230,20 +230,8 @@ footer{padding:0 8px 8px}
 .ptg svg{width:16px;height:16px;color:var(--dim)}.ptg small{font-size:11px;color:var(--dim)}
 .ptg:hover{border-color:#5a5651;color:var(--fg);background:none}
 .ptg.on{background:var(--s4);border-color:#5a5651;color:var(--hi)}.ptg.on svg{color:var(--svc)}
-/* коли: кнопка з часом і панель вибору мишею */
-.pwhen{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:var(--s2);border:1px solid var(--line2);color:var(--fg);font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums}
-.pwhen svg{width:15px;height:15px;color:var(--mut)}.pwhen:hover{background:var(--s3)}.pwhen.own{border-color:#6a5a3a}.pwhen.own svg{color:var(--acc)}
-.pwhen.bad{border-color:var(--red);color:var(--red)}.pwhen.bad svg{color:var(--red)}
-.whenpop{position:fixed;z-index:30;display:none;width:340px;padding:12px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop)}.whenpop.on{display:block}
-.whenpop button{border:1px solid transparent;background:var(--s3);color:var(--fg);border-radius:var(--r-sm);padding:0;font-variant-numeric:tabular-nums}
-.whenpop button:hover:not(:disabled){background:var(--s4);color:var(--hi)}.whenpop button.on{background:var(--acc);color:var(--acc-ink);font-weight:600}
-.whenpop button:disabled{opacity:.3;cursor:default}
-.wp-days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}.wp-days button{display:flex;flex-direction:column;align-items:center;padding:4px 0;line-height:1.15}
-.wp-days small{font-size:10.5px;color:inherit;opacity:.7}.wp-days b{font-size:14px;font-weight:600}.wp-days button.today:not(.on){border-color:var(--acc-soft)}
-.wp-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin:12px 0 5px}
-.wp-hours{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}.wp-mins{display:grid;grid-template-columns:repeat(6,1fr);gap:3px}
-.wp-hours button,.wp-mins button{height:28px;font-size:13px}
-.wp-foot{display:flex;align-items:center;gap:8px;margin-top:12px}.wp-foot small{color:var(--dim);font-size:12px}.wp-foot button{padding:6px 14px;height:auto}.wp-foot .pri{background:var(--acc)}
+/* коли: звичайний список слотів */
+.pwhen{width:auto;max-width:230px;padding:6px 10px;font-size:12.5px;font-variant-numeric:tabular-nums}.pwhen.bad{border-color:var(--red);color:var(--red)}
 /* налаштування розкладу — випадне вікно з шапки */
 #pubOpt{position:relative}
 #pubOpt summary{list-style:none;cursor:pointer;padding:6px 12px;border:1px solid var(--line2);border-radius:var(--r-sm);color:var(--fg);font-size:13px;white-space:nowrap}

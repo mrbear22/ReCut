@@ -9,7 +9,6 @@ const ICON = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>',
   check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   tiktok: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.2 3h3a4.6 4.6 0 0 0 3.8 3.9v3a7.6 7.6 0 0 1-3.8-1.1v6.4a5.8 5.8 0 1 1-5.8-5.8c.3 0 .6 0 .9.1v3.1a2.8 2.8 0 1 0 1.9 2.6z"/></svg>',
-  clock: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   youtube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.6 2.6 0 0 0 2.4 7.2 27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8zM10 15V9l5.2 3z"/></svg>',
 };
 const newSeed = () => 1 + Math.floor(Math.random() * 1e6);
@@ -134,54 +133,25 @@ function pubTargetsHtml(f) {
       title="${missing ? `${s.name} ще не підключено в Buffer` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : ''}</button>`;
   }).join('');
 }
-// ── коли: кнопка «Завтра · 16:40»; клік — панель з днями, годинами й хвилинами, усе мишею ──
-const PUB_DAYS = 14, MIN_STEP = 5;
+// ── коли: звичайний список — «за розкладом» або один з найближчих вільних слотів розкладу ──
+const PUB_CHOICES = 40;                                           // скільки слотів показати у списку
 const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-function dayName(d) {
+function whenLabel(d) {
   const n = Math.round((dayStart(d) - dayStart(new Date())) / 864e5);
-  return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'});
+  return `${n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'})} · ${hhmm(d)}`;
 }
 function pubWhenHtml(f, d) {
+  const dates = pubDates(), taken = new Set(Object.entries(dates).filter(([p]) => p !== f.path).map(([, x]) => +x.t));
+  const after = new Date(Math.max(Date.now(), ...pubQueue().map(q => +new Date(q.dueAt))));
+  const free = pubSlots(PUB_CHOICES + taken.size, after, pub.seed).filter(t => !taken.has(+t)).slice(0, PUB_CHOICES);
   const late = d && d.t - Date.now() < PUB_MIN_GAP;
-  return `<button class="pwhen ${late ? 'bad' : ''} ${d?.own ? 'own' : ''}" data-a="whenpick" title="${d?.own ? 'Свій час' : 'Час за розкладом'}">
-      ${ICON.clock}<span>${d ? `${dayName(d.t)} · ${hhmm(d.t)}` : 'Коли?'}</span></button>`;
+  return `<select class="pwhen ${late ? 'bad' : ''}" data-a="when" aria-label="Коли публікувати">
+      <option value="auto" ${d?.own ? '' : 'selected'}>За розкладом${d && !d.own ? ` · ${whenLabel(d.t)}` : ''}</option>
+      ${d?.own ? `<option value="${d.t.toISOString()}" selected>${whenLabel(d.t)}</option>` : ''}
+      ${free.filter(t => !d || +t !== +d.t).map(t => `<option value="${t.toISOString()}">${whenLabel(t)}</option>`).join('')}
+    </select>`;
 }
-const whenPop = Object.assign(document.createElement('div'), {id: 'whenPop', className: 'whenpop'}); document.body.append(whenPop);
-let whenFor = null;                                               // path шорту, чий час зараз обираємо
-function renderWhenPop() {
-  const d = pubDates()[whenFor]; if (!d) return closeWhenPop();
-  const t = d.t, today = dayStart(new Date()), soon = Date.now() + PUB_MIN_GAP;
-  const at = (day, h, m) => { const x = new Date(day); x.setHours(h, m, 0, 0); return x; };
-  const days = [...Array(PUB_DAYS).keys()].map(i => { const x = new Date(today); x.setDate(today.getDate() + i); return x; });
-  whenPop.innerHTML = `<div class="wp-days">${days.map(x => `<button data-day="${+x}" class="${+x === +dayStart(t) ? 'on' : ''} ${+x === +today ? 'today' : ''}">
-        <small>${x.toLocaleDateString('uk-UA', {weekday: 'short'})}</small><b>${x.getDate()}</b></button>`).join('')}</div>
-    <div class="wp-lbl">Година</div><div class="wp-hours">${[...Array(24).keys()].map(h =>
-      `<button data-h="${h}" class="${h === t.getHours() ? 'on' : ''}" ${at(t, h, 59) < soon ? 'disabled' : ''}>${String(h).padStart(2, '0')}</button>`).join('')}</div>
-    <div class="wp-lbl">Хвилини</div><div class="wp-mins">${[...Array(60 / MIN_STEP).keys()].map(i => i * MIN_STEP).map(m =>
-      `<button data-m="${m}" class="${m === t.getMinutes() ? 'on' : ''}" ${at(t, t.getHours(), m) < soon ? 'disabled' : ''}>:${String(m).padStart(2, '0')}</button>`).join('')}</div>
-    <div class="wp-foot">${d.own ? '<button class="ghost" data-auto>Як у розкладі</button>' : '<small>за розкладом</small>'}<span class="grow"></span><button class="pri" data-done>Готово</button></div>`;
-}
-function openWhenPop(path, btn) {
-  whenFor = path; renderWhenPop(); whenPop.classList.add('on');
-  const r = btn.getBoundingClientRect(), w = whenPop.offsetWidth, h = whenPop.offsetHeight;
-  whenPop.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px';
-  whenPop.style.top = (r.bottom + 6 + h < innerHeight ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
-}
-function closeWhenPop() { whenFor = null; whenPop.classList.remove('on'); }
-whenPop.onclick = e => {
-  const b = e.target.closest('button'); if (!b || !whenFor) return;
-  if (b.dataset.done != null) return closeWhenPop();
-  if (b.dataset.auto != null) { pubSetPost(whenFor, {when: null}); return renderWhenPop(); }
-  const t = new Date(pubDates()[whenFor].t);
-  if (b.dataset.day) { const d = new Date(+b.dataset.day); t.setFullYear(d.getFullYear(), d.getMonth(), d.getDate()); }
-  if (b.dataset.h) t.setHours(+b.dataset.h);
-  if (b.dataset.m) t.setMinutes(+b.dataset.m);
-  if (t - Date.now() < PUB_MIN_GAP) t.setTime(Math.ceil((Date.now() + PUB_MIN_GAP) / (MIN_STEP * 60e3)) * MIN_STEP * 60e3);   // минуле — найближчий можливий час
-  pubSetPost(whenFor, {when: t.toISOString()}); renderWhenPop();
-};
-document.addEventListener('pointerdown', e => { if (whenFor && !e.target.closest('#whenPop,[data-a=whenpick]')) closeWhenPop(); });
-addEventListener('keydown', e => { if (e.key === 'Escape' && whenFor) closeWhenPop(); });
 function pubQueueBtn(f) {
   const sending = pub.sending.has(f.path), d = pubDates()[f.path], late = d && d.t - Date.now() < PUB_MIN_GAP;
   const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.media?.connected ? 'Сховище відео для Buffer не налаштоване в цій версії' : !pubTargetChannels(f).length ? 'Обери, куди публікувати' : late ? 'Цей час уже минув' : '';
@@ -226,7 +196,7 @@ function pubSetPost(path, post) {                                 // збере�
 $('#pubGrid').onclick = e => {
   const card = e.target.closest('.pc'), btn = e.target.closest('[data-a]'); if (!card || !btn) return;
   const path = card.dataset.path, a = btn.dataset.a, f = pubFile(path);
-  if (a === 'whenpick') return whenFor === path ? closeWhenPop() : openWhenPop(path, btn);
+  if (a === 'when') return;
   if (a === 'play') { $('#mv').src = fileUrl(path); $('#mv').dataset.path = path; $('#modal').classList.add('on'); return $('#mv').play(); }
   if (a === 'reveal') return api('/api/reveal', {path});
   if (a === 'ai') return captionMany([path]);
@@ -236,6 +206,10 @@ $('#pubGrid').onclick = e => {
   pubToggle(path);
 };
 const parseTags = s => [...new Set(s.split(/[\s,]+/).map(t => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))];
+$('#pubGrid').onchange = e => {
+  if (e.target.dataset.a !== 'when') return;
+  pubSetPost(e.target.closest('.pc').dataset.path, {when: e.target.value === 'auto' ? null : e.target.value});
+};
 $('#pubGrid').oninput = e => {
   const card = e.target.closest('.pc'), k = e.target.dataset.f; if (!card || !k) return;
   const f = pubFile(card.dataset.path); f.post ||= {};
