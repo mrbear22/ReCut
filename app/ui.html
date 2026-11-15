@@ -171,6 +171,10 @@ footer{padding:0 8px 8px}
 .sep{width:1px;height:20px;background:var(--line2)}
 .tlwrap{position:relative}
 #tl{width:100%;display:block;border:1px solid #0e0d0c;border-radius:0 0 var(--r) var(--r);touch-action:none}
+#musEdit{position:absolute;display:none;z-index:3;align-items:center;gap:12px;padding:5px 10px;background:var(--s2);border:1px solid #8a70c4;border-radius:var(--r);box-shadow:var(--pop);white-space:nowrap;font-size:12.5px}
+#musEdit.on{display:flex}#musEdit b{max-width:160px;overflow:hidden;text-overflow:ellipsis;color:var(--hi)}#musEdit label{display:flex;align-items:center;gap:6px;margin:0;color:var(--mut)}
+#musEdit input[type=range]{width:110px}#musEdit output{min-width:38px;color:var(--fg);font-variant-numeric:tabular-nums}.mf{display:flex;align-items:center;gap:6px;color:var(--mut)}
+#musEdit .segb button{padding:3px 8px;font-size:12px}
 #cueEdit{position:absolute;display:none;width:380px;z-index:3;background:var(--s2);border:1px solid var(--green);border-radius:var(--r);box-shadow:var(--pop);padding:4px;gap:4px}#cueEdit.on{display:flex}
 .hints{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;color:var(--dim);font-size:12px}
 .hints span b{color:var(--mut);font-weight:600}
@@ -360,6 +364,7 @@ footer{padding:0 8px 8px}
   </div>
   <div class="tlwrap">
     <canvas id="tl"></canvas>
+    <span id="musEdit"><b id="musName"></b><label>Гучність <input type="range" id="musVol" min="0" max="200" step="5"><output id="musVolO"></output></label><span class="mf">Наростання <span class="segb" id="mus_fin"></span></span><span class="mf">Згасання <span class="segb" id="mus_fout"></span></span><button id="musDel" class="ghost" title="Видалити музику" aria-label="Видалити музику">✕</button></span>
     <span id="cueEdit"><input id="cueText" placeholder="Текст репліки" aria-label="Текст репліки"><button id="cueDel" class="ghost" title="Видалити репліку" aria-label="Видалити репліку">✕</button></span>
   </div>
   <div class="hints">
@@ -424,7 +429,7 @@ const T = (name, ic, col, size, props) => ({name, ic, col, size, props});
 const NETS = [['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['instagram', 'Instagram'], ['telegram', 'Telegram'], ['twitch', 'Twitch'],
               ['discord', 'Discord'], ['kick', 'Kick'], ['x', 'X'], ['facebook', 'Facebook'], ['threads', 'Threads'], ['linkedin', 'LinkedIn'], ['bluesky', 'Bluesky'], ['mastodon', 'Mastodon']];   // логотипи — app/brands.py
 const TYPES = {
-  video:  T('Відео', '▶', '#6b8fb8', ['w'], SHAPE),
+  video:  T('Відео', '▶', '#6b8fb8', ['w'], [['vol', 'range', 'Гучність звуку', [0, 200, 1, '%', 100]], ...SHAPE]),
   cam:    T('Вебкамера', '◉', '#b8789a', ['w'], [['detect', 'button', 'Знайти вебкамеру автоматично'], ...SHAPE]),
   card:   T('Плашка відео', '▤', '#c9a75a', ['s'], [['preview', 'file', 'Прев\'ю'], ['logo', 'file', 'Аватар'], ['title', 'area', 'Назва'],
             ['channel', 'text', 'Канал'], ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [30, 250, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
@@ -491,7 +496,7 @@ const SINGLE = ['bg'];
 const mk = p => ({id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, to: 0, ...structuredClone(p)});
 
 let audioTracks = 1, cfg = {}, P = null, dur = 0, S = {w: 1920, h: 1080}, curve = [], t0 = 0, lo = 0, hi = 1, step = .5;
-let sel = -1, selCue = -1, selEl = null, stopAt = null, mode = 'short', drag = null, guide = null, pvGuides = [], view = {t0: 0, t1: 1}, TW = 0, TH = 0;
+let sel = -1, selCue = -1, selMus = -1, selEl = null, stopAt = null, mode = 'short', drag = null, guide = null, pvGuides = [], view = {t0: 0, t1: 1}, TW = 0, TH = 0;
 const arts = new Map();
 const els = () => P ? P.elements : [];
 const elById = id => els().find(e => e.id === id);
@@ -523,12 +528,12 @@ const ctxClip = () => P.clips[sel] || clipAt(vid.currentTime) || P.clips[0];
 
 // ── збереження й undo/redo ──
 let undoSt = [], redoSt = [], curSnap = null, saveT;
-const snapNow = () => JSON.stringify({clips: P.clips, elements: P.elements, cues: P.cues, region: P.region});
+const snapNow = () => JSON.stringify({clips: P.clips, elements: P.elements, cues: P.cues, region: P.region, music: P.music});
 const resetHist = () => { undoSt = []; redoSt = []; curSnap = snapNow(); };
 function record() { const s = snapNow(); if (curSnap !== null && s !== curSnap) { undoSt.push(curSnap); if (undoSt.length > 200) undoSt.shift(); redoSt = []; } curSnap = s; }
 function save(now) {
   clearTimeout(saveT);
-  const go = () => { record(); return api('/api/project/save', {id: P.id, name: P.name, video: P.video, region: P.region, clips: P.clips, elements: P.elements, cues: P.cues, scan: P.scan}); };
+  const go = () => { record(); return api('/api/project/save', {id: P.id, name: P.name, video: P.video, region: P.region, clips: P.clips, elements: P.elements, cues: P.cues, scan: P.scan, music: P.music}); };
   if (now) return go(); saveT = setTimeout(go, 400);
 }
 function travel(from, to) {
@@ -621,7 +626,7 @@ $('#mreveal').onclick = () => api('/api/reveal', {path: $('#mv').dataset.path});
 
 async function openProject(p) {
   await api('/api/project/open', {id: p.id});
-  P = p; sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
+  P = p; P.music ||= []; selMus = -1; sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
   if (!P.clips.length && P.video) try { P.clips = JSON.parse(localStorage.getItem('clips:' + P.video)) || []; } catch (e) {}   // незбережені кліпи старих версій
   for (const e of P.elements) if (e.type === 'subs' && !['', 'uk', 'en'].includes(e.lang)) e.lang = '';   // мови без кнопки — автовизначення
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
@@ -1017,12 +1022,14 @@ document.addEventListener('pointerdown', e => {                   // capture: с
   selEl = null; renderEls();
 }, true);
 document.addEventListener('pointerdown', e => {                   // клік деінде закриває редактор репліки; клік по іншій репліці відкриє її
+  if (selMus >= 0 && !e.target.closest('#musEdit,#ctx,#tl')) selectMus(-1);
   if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
   selCue = -1; $('#cueEdit').classList.remove('on'); drawTL();
 }, true);
 $('#layers').addEventListener('pointerdown', () => focus = 'el'); pv.addEventListener('pointerdown', () => focus = 'el');
 $('#list').addEventListener('pointerdown', () => focus = 'clip');
 function removeSel() {
+  if (focus === 'mus' && selMus >= 0) return removeMus();
   if (focus === 'cue' && selCue >= 0) return $('#cueDel').click();
   if (focus === 'el' && selEl) { if (dropEl(elById(selEl))) { renderEls(); fitTL(); save(); } return; }
   if (P.clips[sel]) { P.clips.splice(sel, 1); sel = -1; commit(); }
@@ -1315,7 +1322,8 @@ $('#tlGrip').onpointermove = e => { if (gripDrag) setTlHeight(gripDrag.h + gripD
 $('#tlGrip').onpointerup = () => { gripDrag = null; keepTlK(); };
 $('#tlGrip').ondblclick = () => { tlK = 1; scaleUI(); keepTlK(); };
 const laneEls = () => els().filter(e => !['subs', 'bg'].includes(e.type)).slice().reverse();
-const geo = () => { const cb = CTOP + CHEAD + Math.max(1, laneEls().length) * BAR + 6, rows = subRows().length; return {cb, cueY: cb + 6, rows, H: cb + 6 + rows * CUE + 4}; };
+const geo = () => { const cb = CTOP + CHEAD + Math.max(1, laneEls().length) * BAR + 6, rows = subRows().length, musY = cb + 6 + rows * CUE + 4;
+  return {cb, cueY: cb + 6, rows, musY, H: musY + CUE + 4}; };
 const spAt = y => { const {cueY, rows} = geo(); return clamp(Math.floor((y - cueY) / CUE), 0, rows - 1); };   // рядок спікера під курсором
 const X = t => (t - view.t0) / (view.t1 - view.t0) * TW, Tt = x => view.t0 + x / TW * (view.t1 - view.t0);
 function fitTL() { const h = geo().H; if (tl.clientHeight !== h) { tl.style.height = h + 'px'; resizeTL(); } }
@@ -1337,6 +1345,23 @@ function curvePath() {                                            // «енер�
     path.lineTo(x, TH - (v - lo) / (hi - lo) * (TH - CTOP) * .9);
   }
   path.lineTo(TW, TH); path.closePath(); return path;
+}
+const MUS_COL = '#8a70c4';
+function drawMusic() {                                            // музика: шматки з назвою, рампами наростання/згасання й ручками на краях
+  const {musY} = geo(), y = musY, h = CUE;
+  tx.fillStyle = PAL.grid; tx.fillRect(0, y, TW, h); tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
+  if (!P.music.length) { tx.fillStyle = PAL.tick; tx.fillText('музика · права кнопка — додати', 8, y + h * .67); return; }
+  P.music.forEach((m, j) => {
+    const x0 = X(m.a), x1 = X(m.b); if (x1 < 0 || x0 > TW) return;
+    const on = j === selMus; rr(x0 + 1, y + 1, x1 - x0 - 2, h - 2, 0); tx.fillStyle = mixHex(MUS_COL, PAL.bg, on ? .5 : .72); tx.fill();
+    tx.strokeStyle = on ? PAL.acc : mixHex(MUS_COL, PAL.bg, .3); tx.lineWidth = on ? 2 : 1; tx.stroke();
+    tx.strokeStyle = mixHex(MUS_COL, '#ffffff', .35); tx.lineWidth = 1.5; tx.beginPath();          // рампи гучності
+    const fi = X(m.a + (m.fin || 0)) - x0, fo = x1 - X(m.b - (m.fout || 0));
+    tx.moveTo(x0 + 1, y + h - 2); tx.lineTo(x0 + 1 + fi, y + 3); tx.lineTo(x1 - 1 - fo, y + 3); tx.lineTo(x1 - 1, y + h - 2); tx.stroke();
+    if (x1 - x0 > 30) { tx.save(); tx.beginPath(); tx.rect(x0 + 6, y, x1 - x0 - 12, h); tx.clip(); tx.fillStyle = mixHex(MUS_COL, '#ffffff', .6);
+      tx.fillText(`♪ ${m.name}${(m.vol ?? 1) !== 1 ? ` · ${Math.round(m.vol * 100)}%` : ''}`, x0 + 8, y + h * .67); tx.restore(); }
+    if (x1 - x0 > 14) { tx.fillStyle = on ? PAL.acc : mixHex(MUS_COL, '#ffffff', .15); tx.fillRect(x0 + 1, y + 5, 3, h - 10); tx.fillRect(x1 - 4, y + 5, 3, h - 10); }
+  });
 }
 function drawTL() {
   tx.fillStyle = PAL.out; tx.fillRect(0, 0, TW, TH);
@@ -1376,6 +1401,7 @@ function drawTL() {
       if (b - a > 40) { tx.save(); tx.beginPath(); tx.rect(a + 4, y, b - a - 8, BAR); tx.clip(); tx.fillStyle = ink; tx.fillText(Ty.name, a + 6, y + BAR * .73); tx.restore(); }
     });
   });
+  drawMusic();
   // репліки субтитрів — рядок унизу того самого полотна
   tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
   const spk = subRows(), many = spk.length > 1;
@@ -1435,6 +1461,15 @@ function hit(x, y) {
     if (Math.abs(X(rb) - x) < 7) return {region: 'b'};
     return {seek: true, scrub: true};
   }
+  if (y >= geo().musY) {                                          // рядок музики: краї — обрізати, середина — рухати
+    for (const j of [selMus, ...P.music.keys()]) {
+      const m = P.music[j]; if (!m) continue;
+      if (Math.abs(X(m.a) - x) < 6) return {mus: j, edge: 'a'};
+      if (Math.abs(X(m.b) - x) < 6) return {mus: j, edge: 'b'};
+    }
+    const j = P.music.findIndex(m => t >= m.a && t <= m.b);
+    return j >= 0 ? {mus: j, move: t - P.music[j].a} : {seek: true, lane: 'music'};
+  }
   if (y >= cueY) {
     const row = spAt(y), inRow = c => c && rowOf(c) === row;
     for (const j of [selCue, ...P.cues.keys()]) {
@@ -1473,9 +1508,9 @@ tl.onpointerdown = e => {
   if (e.button === 1) { e.preventDefault(); drag = {pan: e.offsetX, v: {...view}}; tl.style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
   drag = hit(e.offsetX, e.offsetY); drag.x0 = e.offsetX;
-  focus = drag.bar ? 'el' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
+  focus = drag.bar ? 'el' : drag.mus != null ? 'mus' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
   const t = Tt(e.offsetX), inLane = e.offsetY >= TICK + 2 && e.offsetY < geo().cueY;
-  if (e.shiftKey && e.offsetY >= geo().cueY) {                    // Shift+тягни в рядку реплік — нова репліка
+  if (e.shiftKey && e.offsetY >= geo().cueY && e.offsetY < geo().musY) {   // Shift+тягни в рядку реплік — нова репліка
     const sid = subsEls()[spAt(e.offsetY)]?.id, q = {a: snap(t), b: snap(t), text: 'Текст', k: [], ...(sid ? {sid} : {})}; P.cues.push(q); drag = {createCue: q, t0: q.a}; focus = 'cue'; return;
   }
   if (e.shiftKey && inLane) {                                     // Shift+тягни — новий кліп
@@ -1491,12 +1526,14 @@ tl.onpointerdown = e => {
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek) seek(t);
+  else if (drag.mus != null) selectMus(drag.mus);
   else if (drag.cue != null) selectCue(drag.cue);
-  else if (sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
+  else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
 };
 tl.oncontextmenu = e => {
   e.preventDefault(); if (!P || !dur) return;
   const t = clamp(Tt(e.offsetX), 0, dur), h = hit(e.offsetX, e.offsetY), inCues = e.offsetY >= geo().cueY;
+  if (e.offsetY >= geo().musY) return openMenu(e, h.mus != null ? musMenu(h.mus) : [{label: 'Додати музику тут', run: () => addMusic(t)}, {label: 'Перемотати сюди', run: () => seek(t)}]);
   openMenu(e, h.cue != null ? cueMenu(h.cue, t) : h.bar ? elMenu(h.bar, t, 'звідси') : h.i != null ? clipMenu(h.i, t, 'тут') : laneMenu(t, inCues, inCues ? spAt(e.offsetY) : 0));
 };
 tl.onpointermove = e => {
@@ -1527,6 +1564,13 @@ tl.onpointermove = e => {
       const nf = clamp(toOut(c, snapSpan(start, toSrc(c, toOut(c, start) + len) - start, e)), 0, n - len);
       e.from = nf; e.to = nf + len < n - .05 ? nf + len : 0;
     }
+    return;
+  }
+  if (drag.mus != null) {
+    const m = P.music[drag.mus], left = m.a - (m.off || 0), right = m.a + (m.dur || 1e9) - (m.off || 0);   // межі самого треку на таймлайні
+    if (drag.edge === 'a') { const na = clamp(snap(raw, m), Math.max(0, left), m.b - .3); m.off = (m.off || 0) + na - m.a; m.a = na; }
+    else if (drag.edge === 'b') m.b = clamp(snap(raw, m), m.a + .3, Math.min(dur, right));
+    else { const len = m.b - m.a; m.a = clamp(snapSpan(raw - drag.move, len, m), 0, dur - len); m.b = m.a + len; }
     return;
   }
   if (drag.cue != null) {
@@ -1560,7 +1604,7 @@ tl.onpointerup = e => {
   if (drag && drag.cut != null) P.clips[drag.i].cut = P.clips[drag.i].cut.filter(([u, v]) => v - u >= .2);    // випадковий клік, не пропуск
   if (drag && drag.i != null) commit();
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
-  if (drag && (drag.region || drag.cue != null || drag.bar)) { save(); renderProps(); }
+  if (drag && (drag.region || drag.cue != null || drag.bar || drag.mus != null)) { save(); renderProps(); }
   drag = null; guide = null; tl.style.cursor = '';
 };
 tl.onwheel = e => {
@@ -1577,7 +1621,7 @@ tl.ondblclick = e => {                                            // привч�
 };
 // ── плашка області над таймлайном (дії + перетягування) і редактор репліки над реплікою ──
 const ovl = {}, ovlW = {};                                        // розміри плашок кешуються: читання з DOM щокадру гальмує
-for (const id of ['ract', 'cueEdit']) new ResizeObserver(() => ovlW[id] = $('#' + id).offsetWidth).observe($('#' + id));
+for (const id of ['ract', 'cueEdit', 'musEdit']) new ResizeObserver(() => ovlW[id] = $('#' + id).offsetWidth).observe($('#' + id));
 function place(id, props) {                                       // пишемо в DOM лише те, що змінилось
   const s = $('#' + id).style, last = ovl[id] ||= {};
   for (const [k, v] of Object.entries(props)) { const px_ = Math.round(v) + 'px'; if (last[k] !== px_) s[k] = last[k] = px_; }
@@ -1586,6 +1630,7 @@ function placeOverlays() {
   const on = !!(P && dur); if (ovl.on !== on) $('#rbar').classList.toggle('on', ovl.on = on); if (!on) return;
   const [ra, rb] = region(), xa = X(ra), l = clamp(xa, 0, TW), r = clamp(X(rb), 0, TW), c = P.cues[selCue];
   place('rband', {left: l, width: Math.max(0, r - l)}); place('ract', {left: clamp(xa, 0, Math.max(0, TW - (ovlW.ract || 0)))});
+  const m = P.music[selMus]; if (m) place('musEdit', {left: clamp(X(m.a), 0, Math.max(0, TW - (ovlW.musEdit || 0))), top: geo().musY - 50});
   if (c) place('cueEdit', {left: clamp(X(c.a), 0, Math.max(0, TW - (ovlW.cueEdit || 0))), top: geo().cueY + rowOf(c) * CUE - 46});
 }
 const barX = e => e.clientX - tl.getBoundingClientRect().left;
@@ -1599,6 +1644,22 @@ $('#rbar').onpointermove = e => {
 };
 $('#rbar').onpointerup = () => { if (drag && drag.band) { drag = null; guide = null; save(); } };
 
+const musAud = new Map();                                         // id шматка → <audio>
+function syncSound() {
+  if (!P) return;
+  const vv = Math.min(1, els().find(e => e.type === 'video')?.vol ?? 1); vid.volume = vv; mix.volume = vv;   // звук відео; понад 100% — лише в рендері
+  const t = vid.currentTime, play = !vid.paused;
+  for (const [id, a] of musAud) if (!P.music.some(m => m.id === id)) { a.pause(); musAud.delete(id); }
+  for (const m of P.music) {
+    let a = musAud.get(m.id); if (!a || a.dataset.path !== m.path) { a?.pause(); a = new Audio(fileUrl(m.path)); a.dataset.path = m.path; musAud.set(m.id, a); }
+    if (!play || t < m.a || t >= m.b) { if (!a.paused) a.pause(); continue; }
+    const want = (m.off || 0) + t - m.a;
+    if (a.paused || Math.abs(a.currentTime - want) > .25) a.currentTime = want;
+    if (a.paused) a.play().catch(() => {});
+    const fi = m.fin ? clamp((t - m.a) / m.fin, 0, 1) : 1, fo = m.fout ? clamp((m.b - t) / m.fout, 0, 1) : 1;
+    a.volume = clamp((m.vol ?? 1) * fi * fo, 0, 1);
+  }
+}
 (function loop() {
   if ($('#editor').classList.contains('on')) {
     if (stopAt != null && vid.currentTime >= stopAt) { vid.pause(); stopAt = null; }
@@ -1607,6 +1668,7 @@ $('#rbar').onpointerup = () => { if (drag && drag.band) { drag = null; guide = n
       if (u) vid.currentTime = u[1];
       if (mixOn() && Math.abs(mix.currentTime - vid.currentTime) > .12) mix.currentTime = vid.currentTime;   // зведений звук не відстає
     }
+    syncSound();
     mode === 'short' ? drawShort() : drawSrc(); drawTL(); showRegionLabel(); placeOverlays();
     $('#time').textContent = fmt(vid.currentTime) + ' / ' + fmt(dur);
   }
@@ -1689,6 +1751,30 @@ function mergeCues(q, nx) {
   q.k = timed(q) && timed(nx) ? [...q.k, ...nx.k] : []; q.text = `${q.text} ${nx.text}`.trim(); q.b = nx.b;
   P.cues.splice(P.cues.indexOf(nx), 1); selectCue(P.cues.indexOf(q), false); save();
 }
+const FADES = [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']];
+async function addMusic(t) {
+  const {path} = await api('/api/pick', {kind: 'audio'}); if (!path) return;
+  const {dur: d} = await api('/api/audio?p=' + encodeURIComponent(path)).catch(() => ({dur: 0})); if (!d) return msg('Не вдалося прочитати аудіофайл', 1);
+  P.music.push({id: uid(), path, name: path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''), a: t, b: Math.min(dur, t + d), off: 0, dur: d, vol: 1, fin: 0, fout: 1});
+  selectMus(P.music.length - 1); fitTL(); save();
+}
+function selectMus(j) {
+  selMus = j; if (j >= 0) { selCue = -1; $('#cueEdit').classList.remove('on'); focus = 'mus'; }
+  const m = P.music[j]; $('#musEdit').classList.toggle('on', !!m); if (!m) return;
+  $('#musName').textContent = m.name; $('#musVol').value = Math.round((m.vol ?? 1) * 100); $('#musVolO').textContent = Math.round((m.vol ?? 1) * 100) + '%';
+  for (const k of ['fin', 'fout']) $(`#mus_${k}`).innerHTML = FADES.map(([v, l]) => `<button data-f="${k}" data-v="${v}" class="${(m[k] || 0) === v ? 'on' : ''}">${l}</button>`).join('');
+}
+$('#musVol').oninput = e => { const m = P.music[selMus]; if (!m) return; m.vol = e.target.value / 100; $('#musVolO').textContent = e.target.value + '%'; save(); };
+$('#musEdit').onclick = e => {
+  const m = P.music[selMus], b = e.target.closest('[data-f]'); if (!m) return;
+  if (b) { m[b.dataset.f] = +b.dataset.v; selectMus(selMus); save(); }
+  if (e.target.closest('#musDel')) removeMus();
+};
+function removeMus() { if (selMus < 0) return; P.music.splice(selMus, 1); selectMus(-1); save(); }
+const musMenu = j => { const m = P.music[j]; selectMus(j); return [{hd: `♪ ${m.name}`},
+  {label: 'З початку треку', off: !m.off, run: () => { m.b = Math.min(dur, m.a + Math.min(m.b - m.a + m.off, m.dur || 1e9)); m.off = 0; save(); }},
+  {label: 'Програти звідси', run: () => { seek(m.a); vid.play(); }},
+  '-', {label: 'Видалити музику', key: 'Del', run: removeMus}]; };
 function moveCue(q, el) { q.sid = el.id; selectCue(P.cues.indexOf(q), false); renderEls(); fitTL(); drawTL(); save(); }
 function cueMenu(j, t) {
   const q = P.cues[j], nx = P.cues.slice(j + 1).find(c => rowOf(c) === rowOf(q)); selectCue(j, false);
@@ -1793,7 +1879,7 @@ $('#render').onclick = async () => {
   if (!P || !P.clips.some(c => c.on)) return msg('Немає увімкнених кліпів', 1);
   if (subsEl()?.on && !P.cues.length) msg('Субтитрів ще немає', 1);
   const list = P.clips.slice().sort((x, y) => x.a - y.a).map(c => ({a: c.a, b: c.b, on: c.on, cut: c.cut || []}));
-  try { await save(true); await api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues}); poll(); } catch (e) { msg(e.message, 1); }
+  try { await save(true); await api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues, music: P.music}); poll(); } catch (e) { msg(e.message, 1); }
 };
 let outDir = '';
 $('#open').onclick = () => api('/api/reveal', {path: outDir});

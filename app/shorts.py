@@ -864,14 +864,46 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
             c, dw, dh = layer(e, sw, sh); i, x, y = vids.index(e), int(e["x"]), int(e["y"])
             if (e["id"], "mask") in inp: f += [f"[s{i}]{c},format=rgba[c{n}]", f"[c{n}][{inp[e['id'], 'mask']}:v]alphamerge[e{n}]"]
             else: f.append(f"[s{i}]{c}[e{n}]")
-            f.append(f"[{last}][e{n}]overlay={x}:{y}{when(e)}[l{n}]")
+            f.append(f"[{last}][e{n}]overlay={x}:{y}:shortest=1{when(e)}[l{n}]")   # маска-картинка довша за склеєне відео — кліп не подовжується
             if (e["id"], "ring") in inp:
                 b = round(float(e["bw"])); f.append(f"[l{n}][{inp[e['id'], 'ring']}:v]overlay={x - b}:{y - b}:shortest=1{when(e)}[r{n}]"); last = f"r{n}"; continue
         last = f"l{n}"
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
-def render(pid, clips, elements, cues):
+def out_pos(x, keep):
+    """Час у готовому кліпі для моменту x джерела (вирізані пропуски не рахуються)."""
+    return sum(min(x, e) - s for s, e in keep if x > s)
+
+def music_parts(music, keep):
+    """Шматки музики, що потрапляють у кліп: (файл, з якої секунди файлу, де в кліпі, скільки, гучність, наростання, згасання).
+    Музика грає суцільно — вирізані пропуски відео її не рвуть."""
+    a, b, out = keep[0][0], keep[-1][1], []
+    for m in music:
+        s, e = max(float(m["a"]), a), min(float(m["b"]), b)
+        if e - s < .05 or not Path(m.get("path", "")).is_file(): continue
+        at, length = out_pos(s, keep), out_pos(e, keep) - out_pos(s, keep)
+        if length < .05: continue
+        fin = float(m.get("fin") or 0) if s <= float(m["a"]) + .01 else 0                  # наростання — лише якщо початок музики в кліпі
+        fout = float(m.get("fout") or 0) if e >= float(m["b"]) - .01 else .05             # згасання — лише на кінці музики; інакше без клацання
+        out.append((m["path"], float(m.get("off") or 0) + s - float(m["a"]), at, length, float(m.get("vol", 1)), min(fin, length / 2), min(fout, length / 2)))
+    return out
+
+def audio_filter(main, parts, first_input, video_vol, net):
+    """Звук кліпу: звук відео з потрібною гучністю + шматки музики з фейдами. Повертає (фільтри, мітка виходу)."""
+    f, mix = [], []
+    if main: f.append(f"[{main}]volume={video_vol:.3f}[av]"); mix.append("[av]")
+    for k, (_, _, at, length, vol, fin, fout) in enumerate(parts):
+        fx = [f"atrim=0:{length:.3f}", "asetpts=PTS-STARTPTS", f"volume={vol:.3f}"]
+        if fin: fx.append(f"afade=t=in:st=0:d={fin:.3f}")
+        if fout: fx.append(f"afade=t=out:st={length - fout:.3f}:d={fout:.3f}")
+        fx.append(f"adelay={round(at * 1000)}:all=1")
+        f.append(f"[{first_input + k}:a]" + ",".join(fx) + f"[mu{k}]"); mix.append(f"[mu{k}]")
+    if not mix: return f, None
+    f.append("".join(mix) + f"amix=inputs={len(mix)}:normalize=0:duration=longest,atrim=0:{net:.3f}[aout]")   # мікс не довший за кліп
+    return f, "aout"
+
+def render(pid, clips, elements, cues, music=()):
     try:
         pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder()
         subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
@@ -901,10 +933,15 @@ def render(pid, clips, elements, cues):
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
                 if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all), "utf-8")
                 inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
+                parts = music_parts(music, keep)
+                inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
+                vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
+                main = ("ca" if len(keep) > 1 else "am" if na > 1 else "0:a") if na else None
+                afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", build_filter(sw, sh, elements, keep, na, inp, sizes, bool(subs)),
-                                      "-map", "[v]", "-map", "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
+                                      "-filter_complex", ";".join([build_filter(sw, sh, elements, keep, na, inp, sizes, bool(subs)), *afx]),
+                                      "-map", "[v]", "-map", f"[{alabel}]" if alabel else "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
                 for line in p.stdout:
@@ -919,8 +956,9 @@ def render(pid, clips, elements, cues):
 
 # ── системні дії ──
 def ask_file(kind):
-    flt = ("Відео|*.mp4;*.mov;*.mkv;*.webm;*.flv;*.ts", "*.mp4 *.mov *.mkv *.webm *.flv *.ts") if kind == "video" else \
-          ("Зображення|*.png;*.jpg;*.jpeg;*.webp;*.bmp", "*.png *.jpg *.jpeg *.webp *.bmp")
+    flt = {"video": ("Відео|*.mp4;*.mov;*.mkv;*.webm;*.flv;*.ts", "*.mp4 *.mov *.mkv *.webm *.flv *.ts"),
+           "audio": ("Музика|*.mp3;*.wav;*.m4a;*.ogg;*.flac;*.aac;*.opus", "*.mp3 *.wav *.m4a *.ogg *.flac *.aac *.opus")}.get(
+          kind, ("Зображення|*.png;*.jpg;*.jpeg;*.webp;*.bmp", "*.png *.jpg *.jpeg *.webp *.bmp"))
     if os.name == "nt":                                            # системний діалог Windows без tkinter
         ps = ("Add-Type -AssemblyName System.Windows.Forms;"
               # невидимий власник «поверх усіх»: фоновий процес не може вивести діалог наперед, а власник-topmost — може
@@ -941,7 +979,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.2.1"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.3.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1062,7 +1100,7 @@ def reveal(path):
 def allowed_files():
     s = set(PICKED) | {str(p) for p in MIXES.glob("*.m4a")} | {str(p) for p in MIXES.glob("*.mp4")}
     for p in projects():
-        s |= {p["video"]} | {e[k] for e in p["elements"] for k in ("preview", "logo", "path") if e.get(k)}
+        s |= {p["video"]} | {e[k] for e in p["elements"] for k in ("preview", "logo", "path") if e.get(k)} | {m["path"] for m in p.get("music", [])}
         s |= {r["out"] for r in p["renders"]} | {f[k] for r in p["renders"] for f in r["files"] for k in ("path", "thumb")}
     return s
 
@@ -1117,6 +1155,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/media": return self.reply(dict(connected=bool(MEDIA.base)))
             if u.path == "/api/buffer/schema": return self.reply(BUFFER.schema_summary())
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
+            if u.path == "/api/audio":                            # тривалість музичного файлу
+                r = run([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", q["p"]])
+                return self.reply(dict(dur=float(r.stdout.decode().strip() or 0)))
             if u.path == "/api/probe":
                 sw, sh, dur, na = probe(q["p"]); return self.reply(dict(sw=sw, sh=sh, dur=dur, region=REGION, tracks=na, mix=preview_mix(q["p"], na), play=preview_video(q["p"])))
             if u.path == "/file": return self.send_file(q.get("p") if q.get("p") in allowed_files() else "")
@@ -1145,7 +1186,7 @@ class Handler(BaseHTTPRequestHandler):
                 pr = new_project(); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
             if p == "/api/project/open": load_project(d["id"]); CFG["project"] = d["id"]; save_cfg(); return self.reply({})
             if p == "/api/project/save":
-                keys = ("name", "video", "region", "clips", "elements", "cues", "scan")
+                keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music")
                 pr = update_project(d["id"], lambda pr: pr.update({k: d[k] for k in keys if k in d}))
                 if "elements" in d: CFG["defaults"] = d["elements"]; save_cfg()        # новий проєкт почне з цих налаштувань
                 return self.reply(dict(updated=pr["updated"]))
@@ -1186,10 +1227,10 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"])))
             if p == "/api/render":
                 if JOB["running"]: return self.reply(JOB, code=409)
-                update_project(d["id"], lambda pr: pr.update(clips=d["clips"], elements=d["elements"], cues=d["cues"]))
+                update_project(d["id"], lambda pr: pr.update(clips=d["clips"], elements=d["elements"], cues=d["cues"], music=d.get("music", [])))
                 JOB.update(running=True, i=0, n=sum(c.get("on", True) for c in d["clips"]), pct=0.0, err="", out="",
                            id=uuid.uuid4().hex[:10], project=d["id"])
-                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"]), daemon=True).start()
+                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"], d.get("music", [])), daemon=True).start()
                 return self.reply(JOB)
             if p == "/api/reveal":
                 if d["path"] not in allowed_files(): return self.reply({"error": "заборонено"}, code=403)
