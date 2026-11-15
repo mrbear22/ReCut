@@ -1,0 +1,6 @@
+app/data/
+app/renders/
+dist/
+__pycache__/
+*.pyc
+cloudflare/worker.txt
