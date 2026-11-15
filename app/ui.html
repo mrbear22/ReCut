@@ -30,6 +30,8 @@ nav button:hover{color:var(--fg);background:var(--s2)}nav button.on{background:v
 #pname{max-width:280px;background:none;border-color:transparent;font-weight:600;font-size:14px;color:var(--hi)}#pname:hover{border-color:var(--line2)}
 .grow{flex:1}
 #busy{display:grid;grid-template-columns:10px auto auto 120px;align-content:center;align-items:center;gap:2px 8px;color:var(--mut);font-size:12px;line-height:1.2;font-variant-numeric:tabular-nums}#busy:empty{display:none}
+#support{display:inline-flex;align-items:center;gap:6px;color:var(--mut)}#support svg{width:14px;height:14px;color:#e2533f}#support:hover{color:var(--hi)}
+.support{margin:28px 0 8px;color:var(--dim);font-size:12.5px;text-align:center}.support .link{background:none;border:0;padding:0;color:var(--mut);text-decoration:underline;cursor:pointer}.support .link:hover{color:var(--hi)}
 #upd{color:var(--acc);border-color:var(--acc-soft)}#upd:hover{background:var(--acc-soft);color:var(--hi)}
 #busy .bt{display:contents}#busy .bt:nth-child(n+3){display:none}   /* не більше двох рядків */                                        /* рядки однієї сітки: назви, відсотки й смужки стоять стовпчиками */
 #busy .bt>b{color:var(--fg);font-weight:600}#busy .bt>span:not(.pb){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
@@ -288,6 +290,7 @@ footer{padding:0 8px 8px}
   <span class="grow"></span>
   <div id="busy" role="status" aria-live="polite"></div>
   <button id="upd" class="ghost" hidden></button>
+  <button id="support" class="ghost" data-link="patreon" title="ShortsMaker безкоштовний; підтримати автора на Patreon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1z"/></svg>Підтримати</button>
   <button id="help" class="ghost" title="Довідка" aria-label="Довідка">?</button>
 </header>
 <div id="tour" role="dialog" aria-modal="true" aria-labelledby="tourTitle"><div id="tourHole"></div>
@@ -297,6 +300,7 @@ footer{padding:0 8px 8px}
 <section id="home" class="view">
   <div class="hh"><h2 class="hero"><svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="40" y="40" width="944" height="944" rx="230" fill="#16161c"/><rect x="150" y="330" width="724" height="364" rx="54" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="26"/><g transform="rotate(8 512 476)"><rect x="352" y="192" width="320" height="568" rx="64" fill="#ffcc33"/><path d="M470 382V570L618 476Z" fill="#16161c"/></g><rect x="312" y="838" width="400" height="32" rx="16" fill="#ffcc33"/><rect x="312" y="838" width="158" height="32" rx="16" fill="#fff"/></svg><span>Проєкти</span></h2><button class="pri" id="new">+ Новий проєкт</button></div>
   <div id="plist"></div>
+  <p class="support">ShortsMaker безкоштовний. Підтримати розробку можна на <button class="link" data-link="patreon">Patreon</button>.</p>
 </section>
 
 <section id="editor" class="view">
@@ -349,7 +353,7 @@ footer{padding:0 8px 8px}
       <label class="inl"><input type="number" min="1" max="30" data-c="n_clips"> кліпів по <input type="number" min="5" max="180" data-c="min_len">–<input type="number" min="5" max="300" data-c="max_len"> с</label>
       <label class="inl" title="Враховувати сказане: точніше, але довше"><input type="checkbox" data-c="stt"> за змістом мови</label>
       <span class="sep"></span>
-      <button id="mkSubs">Субтитри</button>
+      <button id="mkSubs">Згенерувати субтитри</button>
       <button id="toRegion" class="ghost" title="Показати всю область" aria-label="Показати всю область">⤢</button>
     </div>
   </div>
@@ -417,7 +421,7 @@ const SHAPE = [['shape', 'seg', 'Форма', [['rect', 'Прямокутник'
   ['radius', 'range', 'Заокруглення', [0, 200, 1, 'px'], e => e.shape === 'round'], ['bw', 'range', 'Рамка', [0, 30, 1, 'px']], ['border', 'color', 'Колір рамки', null, e => e.bw > 0]];
 const T = (name, ic, col, size, props) => ({name, ic, col, size, props});
 const NETS = [['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['instagram', 'Instagram'], ['telegram', 'Telegram'], ['twitch', 'Twitch'],
-              ['discord', 'Discord'], ['kick', 'Kick'], ['x', 'X'], ['facebook', 'Facebook'], ['threads', 'Threads']];   // логотипи — app/brands.py
+              ['discord', 'Discord'], ['kick', 'Kick'], ['x', 'X'], ['facebook', 'Facebook'], ['threads', 'Threads'], ['linkedin', 'LinkedIn'], ['bluesky', 'Bluesky'], ['mastodon', 'Mastodon']];   // логотипи — app/brands.py
 const TYPES = {
   video:  T('Відео', '▶', '#6b8fb8', ['w'], SHAPE),
   cam:    T('Вебкамера', '◉', '#b8789a', ['w'], [['detect', 'button', 'Знайти вебкамеру автоматично'], ...SHAPE]),
@@ -502,7 +506,7 @@ const subRows = () => subsEls().length ? subsEls() : [{name: '', color: '#ffffff
 const subName = (e, i) => e.name || `Субтитри ${i + 1}`;
 function addSubsEl(list, name, from) {                            // новий спікер: копія стилю, інший колір, рядком вище
   const n = subsEls(list).length, base = from || subsEls(list).at(-1) || CATALOG[1][1][2][2];
-  const el = {...mk(base), id: uid(), name: name || `Спікер ${n + 1}`, color: SUB_COLORS[n % SUB_COLORS.length], on: true};
+  const el = {...mk(base), id: uid(), name: name ?? `Спікер ${n + 1}`, color: SUB_COLORS[n % SUB_COLORS.length], on: true};
   if (from || n) el.y = Math.max(0, (base.y ?? 1380) - (base.size || 84) * 1.6);
   list.push(el); return el;
 }
@@ -1362,6 +1366,10 @@ function drawTL() {
     const y = cueY + rowOf(c) * CUE, col = cueOwner(c)?.color || '#ffffff';
     rr(x0 + 1, y + 1, x1 - x0 - 2, CUE - 2, 0); tx.fillStyle = mixHex(col, PAL.bg, j === selCue ? .55 : .78); tx.fill();
     tx.strokeStyle = j === selCue ? PAL.acc : mixHex(col, PAL.bg, .35); tx.lineWidth = j === selCue ? 2 : 1; tx.stroke();
+    if (x1 - x0 > 14) {                                           // ручки на краях, як у кліпів: за них тягнуть межі репліки
+      tx.fillStyle = j === selCue ? PAL.acc : mixHex(col, '#ffffff', .15);
+      tx.fillRect(x0 + 1, y + 5, 3, CUE - 10); tx.fillRect(x1 - 4, y + 5, 3, CUE - 10);
+    }
     if (x1 - x0 > 24) { tx.save(); tx.beginPath(); tx.rect(x0 + 4, y, x1 - x0 - 8, CUE); tx.clip(); tx.fillStyle = mixHex(col, '#ffffff', .4); tx.fillText(c.text, x0 + 7, y + CUE * .67); tx.restore(); }
   });
   tx.font = font(11);
@@ -1682,7 +1690,7 @@ function regionItems(t) {
     t != null && {label: 'Почати область тут', off: t > b - g, run: () => setRegion([t, b])},
     t != null && {label: 'Закінчити область тут', off: t < a + g, run: () => setRegion([a, t])},
     {label: 'Знайти моменти', off: $('#reanalyze').disabled, run: () => analyze(true)},
-    {label: 'Зробити субтитри', off: $('#mkSubs').disabled, run: makeSubs},
+    {label: 'Згенерувати субтитри', off: $('#mkSubs').disabled, run: makeSubs},
     {label: 'Показати всю область', run: () => $('#toRegion').click()},
     {label: 'Показати все відео', run: () => { view = {t0: 0, t1: dur}; clampView(); }}];
 }
@@ -1782,7 +1790,7 @@ const key = (k, col = '#383634', ink = '#e2dfda') => `<i style="background:${col
 const TOUR = [
   [null, 'ShortsMaker', '<p>Основні інструменти. Довідка знову — кнопка <b>?</b> угорі.</p>'],
   ['#videoChip', 'Відео', '<p>Запис стріму, з якого робимо шорти.</p>'],
-  ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Субтитри</b> розпізнають мовлення. Область тягнеться за плашку й краї.</p>'],
+  ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#tl', 'Клавіші на таймлайні', `<div class="combo">
     <span>${key('Ctrl')} + перетягування</span><span>нова область аналізу</span>
     <span>${key('Shift')} + перетягування</span><span>новий кліп; у рядку реплік унизу нова репліка</span>
@@ -1834,6 +1842,7 @@ function renderAll() { renderEls(); renderList(); $('#videoChip span').textConte
     $('#upd').hidden = !u.version; if (u.version) $('#upd').textContent = `Оновити до ${u.version}`;
   };
   setTimeout(checkUpdate, 4000);
+  document.addEventListener('click', e => { const b = e.target.closest('[data-link]'); if (b) api('/api/open', {link: b.dataset.link}); });   // у звичайному браузері, не у вікні програми
   (async function ffmpegRow() {                                    // перший запуск: ffmpeg завантажується у фоні — показуємо поступ
     const s = await api('/api/status').catch(() => ({}));
     if (s.ffmpeg !== false) return;

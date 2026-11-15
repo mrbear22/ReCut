@@ -1,6 +1,8 @@
 // ── публікація: зліва шорти на редагуванні з рекомендованою датою, справа черга Buffer ──
 // спирається на спільне з ui.html: $, $$, api, esc, fmt, fmtDur, fileUrl, clamp, projName
-const PUB_SERVICES = {tiktok: {name: 'TikTok', col: '#25f4ee', ink: '#101113'}, youtube: {name: 'YouTube', col: '#ff0033', ink: '#ffffff'}};   // куди вміємо слати шорти; фірмові кольори — для іконок
+const PUB_SERVICES = {tiktok: {name: 'TikTok', col: '#25f4ee', ink: '#101113'}, youtube: {name: 'YouTube', col: '#ff0033', ink: '#ffffff'},
+  instagram: {}, facebook: {}, threads: {}, twitter: {brand: 'x'}, linkedin: {}, bluesky: {}, mastodon: {}};   // відео-мережі Buffer; назви, кольори й логотипи — з /api/brands
+const PUB_DEFAULT = ['tiktok', 'youtube'];                        // що показувати, поки Buffer не підключено   // куди вміємо слати шорти; фірмові кольори — для іконок
 const PUB_FREE_QUEUE = 10;                                        // безкоштовний Buffer тримає 10 запланованих постів на канал
 const PUB_SENT = ['sched', 'done'];                               // ці шорти вже не на редагуванні: вони в черзі або вийшли
 const PUB_TITLE_MAX = 100;
@@ -24,7 +26,8 @@ const pubFiles = p => {                                           // найно�
 const pubFile = path => pubFiles(pubProject()).find(f => f.path === path);
 const pubMsg = (t, err) => { $('#pubMsg').textContent = t; $('#pubMsg').classList.toggle('err', !!err); };
 const pubChannels = () => (pub.buffer?.channels || []).filter(c => PUB_SERVICES[c.service]);
-const pubTargets = f => f.post?.targets || Object.keys(PUB_SERVICES);   // куди слати цей шорт; за замовчуванням — усюди
+const pubShown = () => { const c = [...new Set(pubChannels().map(c => c.service))]; return c.length ? c : PUB_DEFAULT; };   // лише мережі, підключені в Buffer
+const pubTargets = f => f.post?.targets || pubShown();   // куди слати цей шорт; за замовчуванням — усюди
 const pubTargetChannels = f => pubChannels().filter(c => pubTargets(f).includes(c.service));
 const pubReady = () => !!pub.buffer?.channels && !!pub.media?.connected;   // є куди слати й де тримати відео
 const pubSave = (path, post) => api('/api/post/save', {id: pub.pid, path, post});
@@ -39,7 +42,16 @@ async function loadPub(pid) {
   pub.chosen = new Set([...pub.chosen].filter(path => pubProject() && pubFile(path) && pubEditable(pubFile(path))));
   renderPub(); loadPubStatus();
 }
+async function loadBrands() {                                     // назви, кольори й логотипи мереж — один раз
+  if (pub.brands) return; pub.brands = await api('/api/brands').catch(() => ({}));
+  for (const [svc, s] of Object.entries(PUB_SERVICES)) {
+    const b = pub.brands[s.brand || svc]; if (!b) continue;
+    s.name ||= b.name; s.col ||= b.color === '#000000' ? '#e2dfda' : b.color; s.ink ||= '#ffffff';   // чорний логотип на темному тлі не видно
+    ICON[svc] ||= `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${b.path}"/></svg>`;
+  }
+}
 async function loadPubStatus() {
+  await loadBrands();
   const [ai, buf, media] = await Promise.all([api('/api/ai').catch(() => ({})), api('/api/buffer').catch(e => ({connected: true, error: e.message})), api('/api/media').catch(() => ({}))]);
   pub.ai = ai.model; pub.buffer = buf; pub.media = media;
   pub.queue = buf.channels ? (await api('/api/buffer/queue').catch(() => ({posts: []}))).posts : null;
@@ -128,7 +140,7 @@ document.addEventListener('pointerdown', e => { if (!e.target.closest('#pubOpt')
 // ── картка шорту на редагуванні ──
 function pubTargetsHtml(f) {
   const on = pubTargets(f), connected = new Set(pubChannels().map(c => c.service));
-  return Object.entries(PUB_SERVICES).map(([svc, s]) => {
+  return pubShown().map(svc => [svc, PUB_SERVICES[svc]]).map(([svc, s]) => {
     const missing = pub.buffer?.channels && !connected.has(svc);
     return `<button class="ptg ${on.includes(svc) ? 'on' : ''}" style="--svc:${s.col};--svc-ink:${s.ink}" data-a="target" data-svc="${svc}" aria-pressed="${on.includes(svc)}"
       title="${missing ? `${s.name} ще не підключено в Buffer` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : ''}</button>`;

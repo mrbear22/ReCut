@@ -643,7 +643,9 @@ def make_text(el):
     bg = el.get("bgOn"); px, py = (round(f.size * .5), round(f.size * .25)) if bg else (0, 0); stroke = 0 if bg else max(1, f.size // 12)
     cw, ch = round(tw) + 2 * px + 2 * stroke, lh * len(lines) + 2 * py
     img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
-    if bg: shadow(img, cw, ch, round(f.size * .4)); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), round(f.size * .4), fill=el.get("bg", "#000000"))
+    if bg:                                                        # фон по контуру рядків, як у TikTok: кожен рядок — своєї ширини
+        shape = text_shape(img.size, [f.getlength(l) for l in lines], px, py, lh, round(f.size * .3))
+        shadow_of(img, shape); img.paste(Image.new("RGBA", img.size, el.get("bg", "#000000")), (0, 0), shape)
     for i, l in enumerate(lines):
         d.text((PAD + cw / 2, PAD + py + i * lh + lh / 2), l, font=f, fill=el.get("color", "#ffffff"), anchor="mm",
                stroke_width=stroke, stroke_fill="black")
@@ -751,6 +753,20 @@ def frame(l, dw, dh):
     if shape != "rect": mask = Image.new("L", (dw, dh), 0); draw(mask, 0, fill=255)
     if b: ring = Image.new("RGBA", (dw + 2 * b, dh + 2 * b), (0, 0, 0, 0)); draw(ring, b, outline=l.get("border", "#ffffff"), width=b)
     return mask, ring
+
+def text_shape(size, widths, px, py, lh, r):
+    """Маска фону тексту за контуром рядків: заокруглені кути назовні, рядки зростаються без щілин."""
+    m = Image.new("L", size, 0); d = ImageDraw.Draw(m); cx, n = size[0] / 2, len(widths)
+    rows = [(cx - w / 2 - px, PAD + i * lh + (0 if i == 0 else py), cx + w / 2 + px, PAD + (i + 1) * lh + py + (py if i == n - 1 else 0)) for i, w in enumerate(widths)]
+    for x0, y0, x1, y1 in rows: d.rounded_rectangle((x0, y0, x1, y1), r, fill=255)
+    for (a0, _, a1, ab), (b0, _, b1, _) in zip(rows, rows[1:]):  # стик рядків: без заокруглень там, де обидва рядки є
+        d.rectangle((max(a0, b0), ab - r, min(a1, b1), ab + r), fill=255)
+    return m
+
+def shadow_of(img, mask):
+    """М'яка тінь під фігуру будь-якої форми."""
+    sh = Image.new("RGBA", img.size, (0, 0, 0, 0)); sh.paste(Image.new("RGBA", img.size, (0, 0, 0, 110)), (0, 12), mask)
+    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(16)))
 
 def shadow(img, cw, ch, r):
     sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -920,7 +936,8 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.1.0"                     # VERSION — тег релізу без «v»
+LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
+REPO, VERSION = "mrbear22/ShortsMaker", "1.2.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1092,6 +1109,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/buffer":
                 if not BUFFER.key: return self.reply(dict(connected=False))
                 return self.reply(dict(connected=True, channels=BUFFER.channels()))
+            if u.path == "/api/brands": return self.reply({k: dict(name=n, color=c, path=d) for k, (n, c, d) in brands.BRANDS.items()})
             if u.path == "/api/media": return self.reply(dict(connected=bool(MEDIA.base)))
             if u.path == "/api/buffer/schema": return self.reply(BUFFER.schema_summary())
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
@@ -1107,6 +1125,9 @@ class Handler(BaseHTTPRequestHandler):
         CUR.task = d.get("task")                                  # потік обслуговує й інші запити: ключ задаємо щоразу
         try:
             if p == "/api/ping": PAGES[d.get("page", "?")] = time.time(); return self.reply({})
+            if p == "/api/open":                                  # лише відомі адреси: сторінка не може відкрити довільне посилання
+                if url := LINKS.get(d.get("link")): webbrowser.open(url)
+                return self.reply({})
             if p == "/api/bye":                                   # вікно закрили: останнє — виходимо одразу
                 known = PAGES.pop(d.get("page", "?"), None)       # невідоме вікно — сторінка до перезапуску після оновлення
                 if known and not PAGES: threading.Thread(target=quit_app, daemon=True).start()

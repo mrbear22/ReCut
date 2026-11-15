@@ -17,6 +17,8 @@ CAPTION_PROMPT = """Ти пишеш підписи до вертикальног
 {{"title": "чіпка назва-гачок, до 70 символів",
   "description": "1-2 короткі речення, щоб додивились до кінця",
   "hashtags": ["3-6 доречних тегів без #, малими літерами"]}}"""
+VIDEO_SERVICES = ("tiktok", "youtube", "instagram", "facebook", "threads", "twitter", "linkedin", "bluesky", "mastodon")   # куди Buffer публікує вертикальне відео
+TEXT_MAX = {"twitter": 280, "bluesky": 300, "threads": 500, "mastodon": 500}   # більший допис Buffer відхилить
 ALWAYS_TAGS = ["shorts"]                                           # YouTube надійніше впізнає шорт
 TITLE_MAX, DESC_MAX, TAGS_MAX = 100, 2000, 8
 YOUTUBE_CATEGORY = "20"                                            # «Ігри»: шорти зі стрімів
@@ -79,7 +81,7 @@ class Buffer:
             t = self.gql('query { __type(name: "PostInputMetaData") { inputFields { name type { name ofType { name } } } } }')["__type"] or {}
             for f in t.get("inputFields", []):
                 kind, tn = f["name"].lower(), f["type"]["name"] or (f["type"]["ofType"] or {}).get("name")
-                if kind in ("youtube", "tiktok") and tn:
+                if kind in VIDEO_SERVICES and tn:
                     sub = self.gql('query($n: String!) { __type(name: $n) { inputFields { name } } }', {"n": tn})["__type"] or {}
                     self._meta[kind] = (f["name"], {x["name"] for x in sub.get("inputFields", [])})
         except RuntimeError: self._meta = {}
@@ -88,7 +90,9 @@ class Buffer:
     def post_metadata(self, service, title, privacy):
         """Назва й налаштування шорту для конкретної мережі — лише ті поля, що є в схемі."""
         want = {"youtube": dict(title=title, privacy=privacy, type="short", categoryId=YOUTUBE_CATEGORY, madeForKids=False, notifySubscribers=True),
-                "tiktok": dict(title=title)}.get(service)
+                "tiktok": dict(title=title),
+                "instagram": dict(type="reel", shouldShareToFeed=True),     # Instagram і Facebook без типу допису не приймають
+                "facebook": dict(type="reel")}.get(service)
         if not want: return {}
         key, fields = self.meta_schema().get(service, (service, set(want)))
         body = {k: v for k, v in want.items() if k in fields and v not in ("", None)}
@@ -97,6 +101,7 @@ class Buffer:
     def create_post(self, channel, text, title, due_at, video_url, privacy):
         """Шорт на конкретний час. Назва — окремим полем для YouTube і TikTok."""
         meta = self.post_metadata(channel["service"], (title or text)[:TITLE_MAX], privacy)
+        if (n := TEXT_MAX.get(channel["service"])) and len(text) > n: text = text[:n - 1].rsplit(" ", 1)[0].rstrip(" ,.;:—-") + "…"   # X, Bluesky, Threads — короткі дописи
         inp = dict(channelId=channel["id"], text=text, schedulingType="automatic", mode="customScheduled", dueAt=due_at,
                    assets=[{"video": {"url": video_url}}], **({"metadata": meta} if meta else {}))
         q = """mutation($i: CreatePostInput!) { createPost(input: $i) {
