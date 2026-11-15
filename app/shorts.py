@@ -824,7 +824,7 @@ AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
-REPO, VERSION = "mrbear22/ShortsMaker", "1.0.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.0.1"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1024,7 +1024,7 @@ class Handler(BaseHTTPRequestHandler):
                 pr = new_project(); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
             if p == "/api/project/open": load_project(d["id"]); CFG["project"] = d["id"]; save_cfg(); return self.reply({})
             if p == "/api/project/save":
-                keys = ("name", "video", "region", "clips", "elements", "cues")
+                keys = ("name", "video", "region", "clips", "elements", "cues", "scan")
                 pr = update_project(d["id"], lambda pr: pr.update({k: d[k] for k in keys if k in d}))
                 if "elements" in d: CFG["defaults"] = d["elements"]; save_cfg()        # новий проєкт почне з цих налаштувань
                 return self.reply(dict(updated=pr["updated"]))
@@ -1039,9 +1039,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(dict(w=w, h=h, pad=PAD, img="data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()))
             if p == "/api/analyze":
                 report("", ""); f = features(d["video"], d.get("region"))
-                segs = transcript(d["video"], *f["region"], d.get("lang", ""))[1] if CFG["stt"] and f["audio"] else []
                 clips = []
-                if d.get("suggest", True):
+                if d.get("suggest", True):                            # лише крива без пошуку моментів — мову не розпізнаємо
+                    segs = transcript(d["video"], *f["region"], d.get("lang", ""))[1] if CFG["stt"] and f["audio"] else []
                     m = safe_ollama_model() if segs else None              # ШІ нічого не дав — звичайні моменти за рухом і звуком
                     clips = (ai_moments(f, segs, m) if m else []) or with_context(suggest(f), segs)
                 return self.reply(dict(dur=f["dur"], sw=f["sw"], sh=f["sh"], step=B, region=f["region"], curve=np.round(f["ex"], 2).tolist(),

@@ -31,7 +31,7 @@ nav button:hover{color:var(--fg);background:var(--s2)}nav button.on{background:v
 .grow{flex:1}
 #busy{display:grid;grid-template-columns:10px auto auto 120px;align-content:center;align-items:center;gap:2px 8px;color:var(--mut);font-size:12px;line-height:1.2;font-variant-numeric:tabular-nums}#busy:empty{display:none}
 #upd{color:var(--acc);border-color:var(--acc-soft)}#upd:hover{background:var(--acc-soft);color:var(--hi)}
-#busy .bt{display:contents}                                        /* рядки однієї сітки: назви, відсотки й смужки стоять стовпчиками */
+#busy .bt{display:contents}#busy .bt:nth-child(n+3){display:none}   /* не більше двох рядків */                                        /* рядки однієї сітки: назви, відсотки й смужки стоять стовпчиками */
 #busy .bt>b{color:var(--fg);font-weight:600}#busy .bt>span:not(.pb){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
 #busy .pb{height:4px;background:var(--s4);border-radius:2px;overflow:hidden}#busy .pb b{display:block;height:100%;width:0;background:var(--acc);transition:width .6s var(--ease)}
 #busy i{width:10px;height:10px;border:2px solid var(--s4);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite}
@@ -485,7 +485,7 @@ const resetHist = () => { undoSt = []; redoSt = []; curSnap = snapNow(); };
 function record() { const s = snapNow(); if (curSnap !== null && s !== curSnap) { undoSt.push(curSnap); if (undoSt.length > 200) undoSt.shift(); redoSt = []; } curSnap = s; }
 function save(now) {
   clearTimeout(saveT);
-  const go = () => { record(); return api('/api/project/save', {id: P.id, name: P.name, video: P.video, region: P.region, clips: P.clips, elements: P.elements, cues: P.cues}); };
+  const go = () => { record(); return api('/api/project/save', {id: P.id, name: P.name, video: P.video, region: P.region, clips: P.clips, elements: P.elements, cues: P.cues, scan: P.scan}); };
   if (now) return go(); saveT = setTimeout(go, 400);
 }
 function travel(from, to) {
@@ -499,7 +499,7 @@ $('#undo').onclick = () => travel(undoSt, redoSt); $('#redo').onclick = () => tr
 const fmtDur = s => s < 60 ? `${Math.max(5, Math.round(s / 5) * 5)} с` : s < 3600 ? `${Math.round(s / 60)} хв` : `${Math.floor(s / 3600)} год ${Math.round(s % 3600 / 60)} хв`;
 const speed = () => cfg.speed || {scan: 5, stt: 10};
 const plans = {                                                   // етапи операції з очікуваною тривалістю, с
-  analyze: () => { const [a, b] = region(); return [['scan', (b - a) / speed().scan], ...(cfg.stt ? [['stt', (b - a) / speed().stt]] : [])]; },
+  analyze: suggest => { const [a, b] = region(); return [['scan', (b - a) / speed().scan], ...(cfg.stt && suggest ? [['stt', (b - a) / speed().stt]] : [])]; },
   subs: () => { const [a, b] = region(); return [['stt', (b - a) / speed().stt]]; },
 };
 const planTotal = p => p.reduce((s, [, e]) => s + e, 0);
@@ -779,23 +779,31 @@ async function loadVideo() {
   showPlayable(P.video, pr.play ?? P.video);                       // старий сервер не знає «play» — граємо оригінал
   if (pr.tracks > 1) waitMix(P.video, pr.mix);
   if (!P.elements.length) await defaultElements();
-  if (P.region || dur <= pr.region) analyze(!P.clips.length);
+  if (P.scan) showScan(P.scan);                                    // крива з минулого аналізу — без нового
+  else if (P.region || dur <= pr.region) analyze(!P.clips.length);
   else msg('Відео довге: виділи на таймлайні частину для аналізу');
 }
+function showScan(sc) {                                           // крива активності на таймлайні й видимий відрізок — область аналізу
+  curve = sc.curve; t0 = sc.region[0]; step = sc.step; lo = Math.min(...curve); hi = Math.max(...curve) || 1;
+  view = {t0: sc.region[0], t1: sc.region[1]}; clampView(); drawTL();
+}
+let analyzing = false;
 vid.onerror = () => P && P.video && msg('Цей формат не відтворюється в перегляді, але рендер працюватиме', 1);
 async function analyze(suggest) {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
-  msg('');
+  if (analyzing) return;                                          // одна операція аналізу за раз
+  analyzing = true; msg('');
   try {
-    const r = await busy($('#reanalyze'), 'Аналіз', plans.analyze(), task => api('/api/analyze', {video: P.video, region: region(), suggest, lang: subsEl()?.lang || '', task}));
-    curve = r.curve; t0 = r.region[0]; step = r.step; lo = Math.min(...curve); hi = Math.max(...curve) || 1; P.region = r.region; cfg.speed = r.speed;
+    const r = await busy($('#reanalyze'), 'Аналіз', plans.analyze(suggest), task => api('/api/analyze', {video: P.video, region: region(), suggest, lang: subsEl()?.lang || '', task}));
+    P.region = r.region; P.scan = {region: r.region, step: r.step, curve: r.curve}; cfg.speed = r.speed;
     if (suggest) {
       const [ra, rb] = r.region;                                     // нові моменти замінюють лише ті, що в області
       P.clips = [...P.clips.filter(c => c.b <= ra || c.a >= rb), ...r.clips.map(c => ({...c, on: true}))].sort((x, y) => x.a - y.a);
       msg(`${r.clips.length ? `Знайдено моментів: ${r.clips.length}` : 'Моментів не знайдено'}`);
     }
-    view = {t0: r.region[0], t1: r.region[1]}; clampView(); sel = -1; renderList(); save();
+    showScan(P.scan); sel = -1; renderList(); save();
   } catch (e) { msg('Помилка аналізу: ' + e.message, 1); }
+  finally { analyzing = false; }
 }
 $('#reanalyze').onclick = () => analyze(true);
 async function makeSubs() {
