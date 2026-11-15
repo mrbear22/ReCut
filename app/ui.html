@@ -111,6 +111,12 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .elhint{margin:0;padding:6px 14px 10px;font-size:11.5px;line-height:1.4;color:var(--mut)}.elhint b{color:var(--fg);font-weight:600}
 #props{border-top:1px solid var(--line);padding:12px;overflow:auto;flex:1;min-height:0}
 #props .hd{display:flex;align-items:center;gap:8px}#props .hd b{font-size:14px;font-weight:600;color:var(--hi)}
+#imp{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}#imp.on{display:flex}
+#imp .ibox{width:440px;max-height:80vh;display:flex;flex-direction:column;gap:12px;padding:18px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop)}
+#imp h3{margin:0;font-size:15px;text-transform:none;letter-spacing:0}#imp h4{margin:10px 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);font-weight:600}
+#impList{overflow:auto;min-height:60px}#impList label{display:flex;justify-content:flex-start;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:400;padding:5px 4px;margin:0;color:var(--fg);cursor:pointer;border-radius:var(--r-sm)}
+#impList label:hover{background:var(--s3)}#impList input{width:auto;margin:0;flex:none}#impList .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}#impList .ic{width:20px;height:20px;display:grid;place-items:center;border-radius:5px;font-size:11px;color:#151413}#impList small{color:var(--mut);margin-left:4px}
+#imp .row{display:flex;gap:8px}
 #cat{left:12px;right:12px;top:52px;max-height:70vh;overflow:auto;width:560px}
 #cat h4{margin:12px 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mut);font-weight:600}#cat h4:first-child{margin-top:0}
 #cat .cg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
@@ -315,7 +321,7 @@ footer{padding:0 8px 8px}
     <div class="top"><button class="pri wide" id="addEl">+ Додати елемент</button></div>
     <div class="pop" id="cat"></div>
     <div id="els"></div>
-    <p class="elhint">Новий елемент додається у вибраний кліп. В інший кліп — перетягни рядок зі списку на кліп на таймлайні, в усі — <b>⇶</b>.</p>
+    <p class="elhint">Новий елемент додається у вибраний кліп. В інший кліп — перетягни рядок зі списку на кліп на таймлайні. <b>Глобальний</b> елемент є в усіх кліпах.</p>
     <div id="props"></div>
   </section>
 
@@ -408,6 +414,12 @@ footer{padding:0 8px 8px}
 
 <datalist id="fontlist"></datalist>
 <div id="ctx" role="menu"></div>
+<div id="imp" role="dialog" aria-label="Імпорт з іншого проєкту"><div class="ibox">
+  <h3>Імпорт з іншого проєкту</h3>
+  <select id="impProj" aria-label="Проєкт"></select>
+  <div id="impList"></div>
+  <div class="row"><span class="grow"></span><button id="impCancel" class="ghost">Скасувати</button><button id="impGo" class="pri">Імпортувати</button></div>
+</div></div>
 <div id="modal"><div class="mbox"><video id="mv" controls></video><div><button id="mreveal">Показати у папці</button><button id="mclose">Закрити</button></div></div></div>
 <video id="vid" preload="auto"></video>
 
@@ -694,9 +706,45 @@ function readControl(t, cur) {                                    // значе�
 
 // ── шари й налаштування вибраного ──
 let listClip = null, dragEl = null, dropAt = null;
+const fullSeg = (el, c) => { const left = el.type === 'music' ? (el.dur || 1e9) - (el.off || 0) : 1e9; return [[0, left < net(c) - .05 ? Math.max(.2, left) : 0]]; };
+let impProjects = [];
+async function openImport() {
+  impProjects = (await api('/api/projects')).filter(x => x.id !== P.id && x.elements?.length);
+  if (!impProjects.length) return msg('Немає інших проєктів з елементами', 1);
+  $('#impProj').innerHTML = impProjects.map(x => `<option value="${x.id}">${esc(x.name || x.video?.split(/[\\/]/).pop() || 'Без назви')}</option>`).join('');
+  renderImport(); $('#imp').classList.add('on');
+}
+function renderImport() {
+  const pr = impProjects.find(x => x.id === $('#impProj').value), row = (e, i) => {
+    const Ty = TYPES[e.type], note = e.type === 'subs' ? subName(e, subsEls(pr.elements).indexOf(e)) : e.title || e.text || e.channel || e.name || e.handle || '';
+    return `<label><input type="checkbox" data-i="${i}" ${e.type === 'video' ? '' : 'checked'}><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><span class="nm">${Ty.name}${note ? `<small>${esc(note)}</small>` : ''}</span></label>`;
+  };
+  const list = pr.elements.map((e, i) => [e, i]).reverse(), main = list.filter(([e]) => e.type !== 'subs'), subs = list.filter(([e]) => e.type === 'subs');
+  $('#impList').innerHTML = (main.length ? `<h4>Елементи</h4>${main.map(([e, i]) => row(e, i)).join('')}` : '') +
+    (subs.length ? `<h4>Доріжки субтитрів</h4>${subs.map(([e, i]) => row(e, i)).join('')}` : '');
+}
+function importEls(src) {                                         // копії з новими id; «лише в кліпах» — у вибраний кліп; доріжки субтитрів — без реплік
+  const c = P.clips.length ? ctxClip() : null;
+  for (const e of src) {
+    const el = {...structuredClone(e), id: uid()};
+    if (SINGLE.includes(el.type)) { const i = P.elements.findIndex(x => x.type === el.type); if (i >= 0) { P.elements[i] = {...el, id: P.elements[i].id}; continue; } }
+    if (el.solo) { if (c) (c.segs ||= {})[el.id] = fullSeg(el, c); else el.solo = false; }
+    if (el.type === 'bg') P.elements.unshift(el); else P.elements.push(el);
+  }
+  arts.clear(); renderEls(); save(true); msg(`Імпортовано: ${src.length}`);
+}
+$('#impProj').onchange = renderImport;
+$('#impCancel').onclick = () => $('#imp').classList.remove('on');
+$('#imp').onclick = e => { if (e.target.id === 'imp') $('#imp').classList.remove('on'); };
+$('#impGo').onclick = () => {
+  const pr = impProjects.find(x => x.id === $('#impProj').value);
+  const pick = [...$$('#impList input:checked')].map(b => pr.elements[+b.dataset.i]).sort((a, b) => pr.elements.indexOf(a) - pr.elements.indexOf(b));
+  $('#imp').classList.remove('on'); if (pick.length) importEls(pick);
+};
+addEventListener('keydown', e => { if (e.key === 'Escape' && $('#imp').classList.contains('on')) { $('#imp').classList.remove('on'); e.stopImmediatePropagation(); } }, true);
 function addToClip(el, c) {                                        // елемент зі списку покласти на кліп
-  const cur = c.segs?.[el.id], left = el.type === 'music' ? (el.dur || 1e9) - (el.off || 0) : 1e9;
-  if (el.solo ? !cur?.length : cur && !cur.length) (c.segs ||= {})[el.id] = [[0, left < net(c) - .05 ? Math.max(.2, left) : 0]];
+  const cur = c.segs?.[el.id];
+  if (el.solo ? !cur?.length : cur && !cur.length) (c.segs ||= {})[el.id] = fullSeg(el, c);
   sel = P.clips.indexOf(c); selEl = el.id; focus = 'el'; renderList(); renderEls(); save(); msg(`${TYPES[el.type].name}: додано в кліп #${sel + 1}`);
 }
 function renderEls() {
@@ -707,7 +755,7 @@ function renderEls() {
     return `<div class="el ${e.id === selEl ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"
       title="${lane ? 'Перетягни на кліп на таймлайні, щоб додати туди' : ''}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
       <span class="nm">${Ty.name}${where ? `<em>${where}</em>` : ''}${note ? `<small>${esc(note)}</small>` : ''}</span>
-      <span class="tl">${lane && e.solo ? '<button data-a="all" title="Застосувати до всіх кліпів" aria-label="Застосувати до всіх кліпів">⇶</button>' : ''}<button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
+      <span class="tl"><button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
       <button data-a="up" title="Вище" aria-label="Вище">↑</button><button data-a="down" title="Нижче" aria-label="Нижче">↓</button>
       <button data-a="del" title="Видалити" aria-label="Видалити">✕</button></span></div>`;
   };
@@ -720,7 +768,6 @@ $('#els').onclick = e => {
   const r = e.target.closest('.el'); if (!r) return;
   const i = els().findIndex(x => x.id === r.dataset.id), el = els()[i], a = e.target.closest('[data-a]')?.dataset.a;
   if (a === 'up' || a === 'down') return moveEl(el, a);
-  if (a === 'all') return setScope(el, null, false);
   if (a === 'eye') el.on = !el.on;
   else if (a === 'del') { if (!dropEl(el)) return; }
   else selEl = el.id;
@@ -742,8 +789,10 @@ function moveEl(el, where) {                                      // поряд�
   a.splice(j, 0, el); renderEls(); save();
 }
 $('#cat').innerHTML = CATALOG.map(([g, items], gi) => `<h4>${g}</h4><div class="cg">${items.map(([n, d, p], i) =>
-  `<button data-g="${gi}" data-i="${i}"><i>${TYPES[p.type].ic}</i><b>${n}</b><small>${d}</small></button>`).join('')}</div>`).join('');
+  `<button data-g="${gi}" data-i="${i}"><i>${TYPES[p.type].ic}</i><b>${n}</b><small>${d}</small></button>`).join('')}</div>`).join('') +
+  '<button class="wide" id="impOpen" style="margin-top:14px">Імпорт з іншого проєкту…</button>';
 $('#addEl').onclick = e => P ? togglePop('#cat', e) : msg('Спершу відкрий або створи проєкт', 1);
+$('#cat').addEventListener('click', e => { if (e.target.closest('#impOpen')) { $('#cat').classList.remove('on'); openImport(); } });
 $('#cat').onclick = e => {
   const b = e.target.closest('button[data-g]'); if (!b || !P) return; $('#cat').classList.remove('on');
   const {stack, ...p} = CATALOG[b.dataset.g][1][b.dataset.i][2];
@@ -751,21 +800,28 @@ $('#cat').onclick = e => {
   if (one) { selEl = one.id; return renderEls(); }
   if (p.type === 'music') return addMusicEl();
   const el = mk(p), c = P.clips.length ? ctxClip() : null;
-  if (!['subs', 'bg'].includes(p.type)) { el.solo = true; if (c) (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }
+  if (c && !['subs', 'bg'].includes(p.type)) { el.solo = true; (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }   // кліпів ще немає — глобальний
   if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
   if (stack) arrange(); renderEls(); save();
 };
-function setScope(el, c, solo) {                                  // спільний ↔ лише цей кліп
-  if (solo) { const sg = segsOf(c, el); for (const o of P.clips) if (o.segs) delete o.segs[el.id]; (c.segs ||= {})[el.id] = sg.length ? sg.map(x => [...x]) : [[0, 0]]; }
-  el.solo = solo; renderEls(); save();
+function setGlobal(el, on) {                                      // глобальний — у всіх кліпах, у кліпі його лише ховають чи ріжуть
+  if (on === !el.solo) return;
+  if (!on) for (const c of P.clips) {                              // стає звичайним: лишається там, де його зараз видно
+    const sg = c.segs?.[el.id];
+    if (!sg) (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; else if (!sg.length) delete c.segs[el.id];
+  }
+  if (!on) el.from = el.to = 0;
+  el.solo = !on; renderEls(); save();
 }
 function renderProps() {
   const el = elById(selEl), box = $('#props');
   if (!el) { box.innerHTML = '<p class="mut" style="margin:0">Обери елемент у списку або клікни його на прев\'ю. Тягни його мишею, кут — розмір.</p>'; return; }
   const Ty = TYPES[el.type];
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
+    (['subs', 'bg'].includes(el.type) ? '' : `<label class="tg" data-glob>Глобальний — є в усіх кліпах<input type="checkbox" ${el.solo ? '' : 'checked'}><i></i></label>`) +
     Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
 }
+$('#props').addEventListener('change', e => { if (e.target.closest('[data-glob]')) setGlobal(elById(selEl), e.target.checked); });
 $('#props').addEventListener('input', e => {
   const el = elById(selEl), box = e.target.closest('[data-p]'); if (!el || !box) return;
   const k = box.dataset.p, v = readControl(e.target, el[k]); if (v === undefined) return;
@@ -812,10 +868,17 @@ function ensureArt(el) {
   })).catch(e => msg('Елемент: ' + e.message, 1));
   arts.set(el.id, {...(a || {}), pending: key, ready}); return ready;
 }
-async function defaultElements() {
-  const card = mk(CATALOG[3][1][0][2]); P.elements = [mk({type: 'video', src: centerSrc(0.8), x: 0, y: 400, w: 1080}), card];
-  await ensureArt(card); arrange(); renderEls(); save();
+async function defaultElements() {                                // стартовий набір нового проєкту
+  const cap = mk({type: 'text', text: 'Підпис до шорта', size: 64, color: '#111111', bg: '#ffffff', bgOn: true, y: 230});
+  const socials = ['tiktok', 'youtube', 'instagram'].map(net => mk({type: 'social', net, handle: net === 'youtube' ? '@channel' : '@nickname', style: 'dark', size: 40, y: 1690}));
+  P.elements = [mk({type: 'video', src: centerSrc(0.8), x: 0, y: 285, w: 1080}), cap, ...socials];
+  await Promise.all([cap, ...socials].map(ensureArt));
+  cap.x = Math.round((1080 - rectOf(cap).w) / 2);
+  const ws = socials.map(e => rectOf(e).w), gap = 18; let x = Math.round((1080 - ws.reduce((a, b) => a + b, 0) - gap * (ws.length - 1)) / 2);
+  socials.forEach((e, i) => { e.x = x; x += ws[i] + gap; });
+  renderEls(); save();
 }
+const oldStarter = els => els.length === 2 && els[0].type === 'video' && els[1].type === 'card' && els[1].title === 'Назва відео' && els[1].channel === 'Канал';
 
 // ── розкладка ──
 const centerSrc = a => { const w = Math.min(1, a * S.h / S.w); return [(1 - w) / 2, 0, w, 1]; };
@@ -886,7 +949,7 @@ async function loadVideo() {
   showPlayable(P.video, pr.play ?? P.video);                       // старий сервер не знає «play» — граємо оригінал
   audioTracks = pr.tracks || 1;
   if (pr.tracks > 1) waitMix(P.video, pr.mix);
-  if (!P.elements.length) await defaultElements();
+  if (!P.elements.length || (oldStarter(P.elements) && !P.clips.length)) await defaultElements();   // стара заготовка з плашкою відео — на нову
   if (P.scan) showScan(P.scan);                                    // крива з минулого аналізу; новий — лише кнопкою
   busyButtons();
 }
@@ -1038,7 +1101,7 @@ document.onkeydown = e => {
     Space: () => sh ? (q ? (seek(q.a), stopAt = q.b, vid.play()) : c && playClip(sel)) : vid.paused ? vid.play() : vid.pause(),
     KeyB: () => splitAt(), KeyI: () => setRegionEdge('a'), KeyO: () => setRegionEdge('b'), KeyQ: () => trimTo('a'), KeyW: () => trimTo('b'),
     KeyN: () => addAt(t), KeyM: () => addMusicEl(), KeyZ: () => c && select(sel, true),
-    KeyH: () => el && (el.on = !el.on, renderEls(), save()), KeyA: () => el?.solo && setScope(el, null, false),
+    KeyH: () => el && (el.on = !el.on, renderEls(), save()), KeyG: () => el && !['subs', 'bg'].includes(el.type) && setGlobal(el, !!el.solo),
     KeyR: () => focus === 'clip' && c && (c.on = !c.on, commit()),
     KeyJ: () => { if (!q) return; const nx = P.cues.slice(selCue + 1).find(x => rowOf(x) === rowOf(q)); if (nx) mergeCues(q, nx); },
     Enter: () => q && ($('#cueText').focus(), $('#cueText').select()),
@@ -1070,7 +1133,7 @@ function removeFromClip(el, c = elClip(), k = selBar?.c === c ? selBar.k : null)
   if (sg && k != null && sg.length > 1) sg.splice(k, 1);
   else if (el.solo) delete c.segs[el.id];
   else (c.segs ||= {})[el.id] = [];
-  selBar = null; renderEls(); save(); msg(`${TYPES[el.type].name}: прибрано з кліпу #${P.clips.indexOf(c) + 1}`); return true;
+  selBar = null; renderEls(); save(); msg(`${TYPES[el.type].name}: ${el.solo ? 'прибрано з кліпу' : 'сховано в кліпі'} #${P.clips.indexOf(c) + 1}`); return true;
 }
 function deleteEl(el) { if (dropEl(el)) { selBar = null; renderEls(); fitTL(); save(); } }
 function splitAt(t = vid.currentTime) {                            // B: розрізати вибране під курсором
@@ -1851,10 +1914,9 @@ async function pickAudio() {
   return {path, name: path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''), dur: d, off: 0};
 }
 async function addMusicEl(c = P.clips.length ? ctxClip() : null) {   // музика живе всередині кліпу
-  if (!c) return msg('Спершу додай кліп: музика накладається на кліп', 1);
   const a = await pickAudio(); if (!a) return;
-  const el = {...mk({type: 'music', vol: 1, fin: 0, fout: 1}), ...a, solo: true};
-  P.elements.push(el); (c.segs ||= {})[el.id] = [[0, a.dur < net(c) - .05 ? a.dur : 0]];
+  const el = {...mk({type: 'music', vol: 1, fin: 0, fout: 1}), ...a, solo: !!c};   // кліпів ще немає — глобальна
+  P.elements.push(el); if (c) (c.segs ||= {})[el.id] = [[0, a.dur < net(c) - .05 ? a.dur : 0]];
   selEl = el.id; focus = 'el'; renderEls(); save(true); loadPeaks(el.path);
 }
 const peaks = new Map();                                          // трек → гучність, 50 значень на секунду
@@ -1952,7 +2014,7 @@ function alignEl(el, how) { const p = ALIGN[how](rectOf(el)); for (const k in p)
 const pickEl = el => { selEl = el.id; focus = 'el'; renderEls(); };
 function timingItems(el, t, where) {                              // з якого й до якого моменту кліпу видно елемент
   const c = P.clips.length ? ctxClip() : null; if (!c || ['subs', 'bg'].includes(el.type)) return [];
-  if (el.solo && !c.segs?.[el.id]) return ['-', {label: `Додати в кліп #${P.clips.indexOf(c) + 1}`, run: () => addToClip(el, c)}, {label: 'Застосувати до всіх кліпів', run: () => setScope(el, c, false)}];
+  if (el.solo && !c.segs?.[el.id]) return ['-', {label: `Додати в кліп #${P.clips.indexOf(c) + 1}`, run: () => addToClip(el, c)}, {label: 'Зробити глобальним', key: 'G', run: () => setGlobal(el, true)}];
   const rel = toOut(c, clamp(t, c.a, c.b)), n = net(c), done = () => { save(); renderProps(); };
   const own = !!c.segs?.[el.id];
   return ['-', {hd: 'Коли видно'},
@@ -1976,11 +2038,11 @@ function segItems(e, c, t, k) {                                  // сховат
           run: () => { const y = ownSegs(c, e)[k], end = y[1]; y[1] = rel; c.segs[e.id].push([rel, end]); done(); }},
     x && segs.length > 1 && {label: 'Прибрати цей шматок', key: 'Del', run: () => removeFromClip(e, c, k)},
     e.type === 'music' && {label: 'З початку треку', off: (e.off || 0) === -(segs[0]?.[0] || 0), run: () => { e.off = -(segs[0]?.[0] || 0); done(); }},
-    segs.length ? {label: 'Прибрати з цього кліпу', key: segs.length > 1 ? '' : 'Del', run: () => removeFromClip(e, c)}
+    segs.length ? {label: e.solo ? 'Прибрати з цього кліпу' : 'Сховати в цьому кліпі', key: segs.length > 1 ? '' : 'Del', run: () => removeFromClip(e, c)}
       : {label: 'Показати в цьому кліпі', run: () => { c.segs[e.id] = [[0, 0]]; done(); }},
     !e.solo && own && {label: 'Як у всіх кліпах', run: () => { delete c.segs[e.id]; done(); }},
     !e.solo && own && segs.length === 1 && {label: 'Так у всіх кліпах', run: () => { [e.from, e.to] = segs[0]; for (const o of P.clips) if (o.segs) delete o.segs[e.id]; done(); }},
-    e.solo ? {label: 'Застосувати до всіх кліпів', key: 'A', run: () => setScope(e, c, false)} : {label: 'Лише в цьому кліпі', run: () => setScope(e, c, true)},
+    {label: e.solo ? 'Зробити глобальним' : 'Зробити не глобальним', key: 'G', run: () => setGlobal(e, !!e.solo)},
     '-'];
 }
 function elMenu(el, t = vid.currentTime, where = 'з поточного кадру') {
@@ -1995,7 +2057,7 @@ function elMenu(el, t = vid.currentTime, where = 'з поточного кадр
     {label: 'Копіювати', key: 'Ctrl+C', run: copySel},
     {label: 'Дублювати', key: 'Ctrl+D', off: SINGLE.includes(el.type), run: duplicate},
     where !== 'звідси' && elClip() && inClip(elClip(), el) && segsOf(elClip(), el).length > 0 && !['subs', 'bg'].includes(el.type) &&
-      {label: `Прибрати з кліпу #${P.clips.indexOf(elClip()) + 1}`, key: 'Del', run: () => removeFromClip(el)},
+      {label: `${el.solo ? 'Прибрати з кліпу' : 'Сховати в кліпі'} #${P.clips.indexOf(elClip()) + 1}`, key: 'Del', run: () => removeFromClip(el)},
     {label: 'Видалити елемент повністю', key: 'Ctrl+Del', run: () => deleteEl(el)}];
 }
 function stageMenu() {                                            // клік повз елементи на прев'ю шорту
@@ -2058,7 +2120,7 @@ const TOUR = [
     <span>${key('Alt')} + перетягування по кліпу</span><span>вирізати шматок</span>
     <span>Права кнопка</span><span>дії з кліпом чи реплікою</span></div>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
-  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні, а <b>⇶</b> додає його в усі кліпи. Для іншого тексту чи треку додай новий елемент.</p>'],
+  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Перемикач <b>Глобальний</b> робить елемент частиною всіх кліпів. Для іншого тексту чи треку додай новий елемент.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>
