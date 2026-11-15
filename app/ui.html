@@ -1562,7 +1562,13 @@ function drawTL() {
       tx.fillStyle = j === selCue ? PAL.acc : mixHex(col, '#ffffff', .15);
       tx.fillRect(x0 + 1, y + 5, 3, CUE - 10); tx.fillRect(x1 - 4, y + 5, 3, CUE - 10);
     }
-    if (x1 - x0 > 24) { tx.save(); tx.beginPath(); tx.rect(x0 + 4, y, x1 - x0 - 8, CUE); tx.clip(); tx.fillStyle = mixHex(col, '#ffffff', .4); tx.fillText(c.text, x0 + 7, y + CUE * .67); tx.restore(); }
+    const t = vid.currentTime, w = wordsOf(c), ink = mixHex(col, '#ffffff', .4), text = (s, a, b, at) => {
+      if (b - a < 12) return; tx.save(); tx.beginPath(); tx.rect(a, y, b - a, CUE); tx.clip(); tx.fillStyle = ink; tx.fillText(s, at, y + CUE * .67); tx.restore(); };
+    if (t > c.a + .1 && t < c.b - .1 && w.length > 1) {          // курсор на репліці: які слова лишаться ліворуч, а які підуть праворуч
+      const n = splitIdx(c, t, w), p = X(t);
+      text(w.slice(0, n).join(' '), x0 + 4, p - 4, x0 + 7); text(w.slice(n).join(' '), p + 4, x1 - 4, p + 7);
+      tx.fillStyle = PAL.play; tx.fillRect(p - 1, y + 2, 2, CUE - 4);
+    } else if (x1 - x0 > 24) text(c.text, x0 + 4, x1 - 4, x0 + 7);
   });
   tx.font = font(11);
   // межі області — на всю висоту, ручки на шкалі
@@ -1666,7 +1672,7 @@ tl.onpointerdown = e => {
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek) seek(t);
-  else if (drag.cue != null) selectCue(drag.cue);
+  else if (drag.cue != null) selectCue(drag.cue, false);           // курсор лишається там, де був: B розріже саме там
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
 };
 $('#els').addEventListener('dragstart', e => { const r = e.target.closest('.el'); if (!r) return; dragEl = r.dataset.id; e.dataTransfer.setData('text/plain', dragEl); e.dataTransfer.effectAllowed = 'copy'; });
@@ -1888,9 +1894,9 @@ function clipMenu(i, t, at) {
 
 // ── меню репліки ──
 const wordsOf = q => q.text.split(/\s+/).filter(Boolean);
+const splitIdx = (q, t, w = wordsOf(q)) => clamp(q.k?.length === w.length ? q.k.filter(s => s < t).length : Math.round(w.length * (t - q.a) / (q.b - q.a)), 1, w.length - 1);
 function splitCue(q, t) {                                         // слова діляться за їхнім часом, а без нього — пропорційно
-  const w = wordsOf(q), hasK = q.k?.length === w.length;
-  const n = clamp(hasK ? q.k.filter(s => s < t).length : Math.round(w.length * (t - q.a) / (q.b - q.a)), 1, w.length - 1);
+  const w = wordsOf(q), hasK = q.k?.length === w.length, n = splitIdx(q, t, w);
   const r = {...q, a: t, text: w.slice(n).join(' '), k: hasK ? q.k.slice(n) : []};
   Object.assign(q, {b: t, text: w.slice(0, n).join(' '), k: hasK ? q.k.slice(0, n) : []});
   P.cues.push(r); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(r), false); save();
