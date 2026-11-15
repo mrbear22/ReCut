@@ -822,8 +822,18 @@ def subs_ass(cues, keep, subs_all):
 
 def when(e):
     """Час показу елемента в кліпі: з/до, секунди від початку вже без пропусків."""
-    st, en = float(e.get("from") or 0), float(e.get("to") or 0)
-    return f":enable='between(t,{st},{en or 1e9})'" if st or en else ""
+    segs = [(float(a or 0), float(b or 0)) for a, b in e.get("segs") or [(e.get("from"), e.get("to"))]]
+    if segs == [(0, 0)]: return ""
+    return ":enable='" + "+".join(f"between(t,{a},{b or 1e9})" for a, b in segs) + "'"
+
+def clip_elements(elements, c):
+    """Елементи для кліпу: свої частини показу кліпу (segs) замість спільних з/до; сховані в кліпі — геть."""
+    own, out = c.get("segs") or {}, []
+    for e in elements:
+        segs = own.get(e["id"])
+        if segs is None: out.append(e)
+        elif segs: out.append(dict(e, segs=segs, **{"from": segs[0][0], "to": segs[-1][1]}))   # анімація — на першому вході й останньому виході
+    return out
 
 def overlay_art(e, i, size, last, nxt):
     """Елемент-картинка (вхід i) з анімацією входу."""
@@ -925,6 +935,7 @@ def render(pid, clips, elements, cues, music=()):
             for e in subs_all:
                 if on(e): shutil.copy(pick_font(e.get("font"))[1], tmp)
             for i, c in enumerate([c for c in clips if c.get("on", True)], 1):
+                cel = clip_elements(elements, c)
                 keep = kept(float(c["a"]), float(c["b"]), c.get("cut", []))
                 if not keep: raise RuntimeError(f"Кліп {i} вирізано повністю")
                 a, b, net = keep[0][0], keep[-1][1], sum(e - s for s, e in keep)
@@ -940,7 +951,7 @@ def render(pid, clips, elements, cues, music=()):
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", ";".join([build_filter(sw, sh, elements, keep, na, inp, sizes, bool(subs)), *afx]),
+                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs)), *afx]),
                                       "-map", "[v]", "-map", f"[{alabel}]" if alabel else "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
@@ -979,7 +990,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.3.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.4.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
