@@ -348,7 +348,7 @@ footer{padding:0 8px 8px}
   <div class="hints">
     <span>Клік по шкалі часу: перемотка</span>
     <span><kbd>Ctrl</kbd> + перетягування: область аналізу</span>
-    <span><kbd>Shift</kbd> + перетягування: новий кліп або репліка</span>
+    <span><kbd>Shift</kbd> + клік: новий кліп або репліка, з перетягуванням — потрібної довжини</span>
     <span><kbd>Alt</kbd> + перетягування по кліпу: вирізати шматок</span>
     <span>Права кнопка: дії з кліпом, реплікою чи елементом</span>
     <span>Смужка над таймлайном: висота, подвійний клік скидає</span>
@@ -779,41 +779,55 @@ async function loadVideo() {
   showPlayable(P.video, pr.play ?? P.video);                       // старий сервер не знає «play» — граємо оригінал
   if (pr.tracks > 1) waitMix(P.video, pr.mix);
   if (!P.elements.length) await defaultElements();
-  if (P.scan) showScan(P.scan);                                    // крива з минулого аналізу — без нового
-  else if (P.region || dur <= pr.region) analyze(!P.clips.length);
-  else msg('Відео довге: виділи на таймлайні частину для аналізу');
+  if (P.scan) showScan(P.scan);                                    // крива з минулого аналізу; новий — лише кнопкою
+  busyButtons();
 }
 function showScan(sc) {                                           // крива активності на таймлайні й видимий відрізок — область аналізу
   curve = sc.curve; t0 = sc.region[0]; step = sc.step; lo = Math.min(...curve); hi = Math.max(...curve) || 1;
   view = {t0: sc.region[0], t1: sc.region[1]}; clampView(); drawTL();
 }
-let analyzing = false;
 vid.onerror = () => P && P.video && msg('Цей формат не відтворюється в перегляді, але рендер працюватиме', 1);
+// аналіз і субтитри прив'язані до свого проєкту: можна запустити в кількох проєктах і перемикатись між ними
+const running = {analyze: new Set(), subs: new Set()};               // id проєктів, де операція зараз іде
+function busyButtons() { if (P) { $('#reanalyze').disabled = running.analyze.has(P.id); $('#mkSubs').disabled = running.subs.has(P.id); } }
+async function forProject(proj, kind, work, apply) {
+  running[kind].add(proj.id); busyButtons();
+  try {
+    const r = await work();
+    const open = P && P.id === proj.id, target = open ? P : proj;      // проєкт могли закрити й відкрити знову — пишемо в актуальний
+    const keys = apply(target, r, open);
+    if (open) save(); else api('/api/project/save', {id: target.id, ...Object.fromEntries(keys.map(k => [k, target[k]]))});
+  } finally { running[kind].delete(proj.id); busyButtons(); }
+}
+const tag = (label, proj) => P && P.id !== proj.id || Object.keys(running).some(k => [...running[k]].some(id => id !== proj.id)) ? `${label} · ${projName(proj)}` : label;
 async function analyze(suggest) {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
-  if (analyzing) return;                                          // одна операція аналізу за раз
-  analyzing = true; msg('');
+  const proj = P, body = {video: P.video, region: region(), suggest, lang: subsEl()?.lang || ''}; msg('');
   try {
-    const r = await busy($('#reanalyze'), 'Аналіз', plans.analyze(suggest), task => api('/api/analyze', {video: P.video, region: region(), suggest, lang: subsEl()?.lang || '', task}));
-    P.region = r.region; P.scan = {region: r.region, step: r.step, curve: r.curve}; cfg.speed = r.speed;
-    if (suggest) {
-      const [ra, rb] = r.region;                                     // нові моменти замінюють лише ті, що в області
-      P.clips = [...P.clips.filter(c => c.b <= ra || c.a >= rb), ...r.clips.map(c => ({...c, on: true}))].sort((x, y) => x.a - y.a);
-      msg(`${r.clips.length ? `Знайдено моментів: ${r.clips.length}` : 'Моментів не знайдено'}`);
-    }
-    showScan(P.scan); sel = -1; renderList(); save();
-  } catch (e) { msg('Помилка аналізу: ' + e.message, 1); }
-  finally { analyzing = false; }
+    await forProject(proj, 'analyze', () => busy($('#reanalyze'), tag('Аналіз', proj), plans.analyze(suggest), task => api('/api/analyze', {...body, task})), (pr, r, open) => {
+      pr.region = r.region; pr.scan = {region: r.region, step: r.step, curve: r.curve}; cfg.speed = r.speed;
+      if (suggest) {
+        const [ra, rb] = r.region;                                   // нові моменти замінюють лише ті, що в області
+        pr.clips = [...pr.clips.filter(c => c.b <= ra || c.a >= rb), ...r.clips.map(c => ({...c, on: true}))].sort((x, y) => x.a - y.a);
+      }
+      const note = suggest ? (r.clips.length ? `Знайдено моментів: ${r.clips.length}` : 'Моментів не знайдено') : '';
+      if (open) { showScan(pr.scan); sel = -1; renderList(); msg(note); } else if (note) msg(`${projName(pr)}: ${note.toLowerCase()}`);
+      return ['region', 'scan', 'clips'];
+    });
+  } catch (e) { msg(`Помилка аналізу (${projName(proj)}): ` + e.message, 1); }
 }
 $('#reanalyze').onclick = () => analyze(true);
 async function makeSubs() {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
-  let st = subsEl(); if (!st) { st = mk(CATALOG[1][1][2][2]); P.elements.push(st); renderEls(); }
+  let st = subsEl(); if (!st) { st = mk(CATALOG[1][1][2][2]); P.elements.push(st); renderEls(); save(); }
+  const proj = P, [ra, rb] = region(), body = {video: P.video, region: [ra, rb], words: st.words || 3, lang: st.lang || ''};
   try {
-    const [ra, rb] = region(), r = await busy($('#mkSubs'), 'Субтитри', plans.subs(), task => api('/api/subs', {video: P.video, region: [ra, rb], words: st.words || 3, lang: st.lang || '', task}));
-    P.cues = [...P.cues.filter(c => c.b <= ra || c.a >= rb), ...r.cues].sort((x, y) => x.a - y.a); selCue = -1; cfg.speed = r.speed;
-    msg(`Субтитри: ${r.cues.length} реплік`); save();
-  } catch (e) { msg('Субтитри: ' + e.message, 1); }
+    await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task})), (pr, r, open) => {
+      pr.cues = [...pr.cues.filter(c => c.b <= ra || c.a >= rb), ...r.cues].sort((x, y) => x.a - y.a); cfg.speed = r.speed;
+      if (open) { selCue = -1; msg(`Субтитри: ${r.cues.length} реплік`); } else msg(`${projName(pr)}: субтитри готові (${r.cues.length} реплік)`);
+      return ['cues'];
+    });
+  } catch (e) { msg(`Субтитри (${projName(proj)}): ` + e.message, 1); }
 }
 $('#mkSubs').onclick = makeSubs;
 $('#toRegion').onclick = () => { if (P && dur) { const [a, b] = region(), pad = (b - a) * .03; view = {t0: a - pad, t1: b + pad}; clampView(); } };
@@ -911,6 +925,10 @@ const KEEPS_ELEMENT = '#layers,#pv,#ctx,#cropBar,#tour,#modal';   // кліки 
 document.addEventListener('pointerdown', e => {                   // capture: смужка на таймлайні вибере свій елемент уже після цього
   if (!selEl || e.target.closest(KEEPS_ELEMENT)) return;
   selEl = null; renderEls();
+}, true);
+document.addEventListener('pointerdown', e => {                   // клік деінде закриває редактор репліки; клік по іншій репліці відкриє її
+  if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
+  selCue = -1; $('#cueEdit').classList.remove('on'); drawTL();
 }, true);
 $('#layers').addEventListener('pointerdown', () => focus = 'el'); pv.addEventListener('pointerdown', () => focus = 'el');
 $('#list').addEventListener('pointerdown', () => focus = 'clip');
@@ -1265,7 +1283,7 @@ function drawTL() {
   });
   // репліки субтитрів — рядок унизу того самого полотна
   tx.font = font(clamp(Math.round(CUE * .5), 12, 17));
-  if (!P.cues.length) { tx.fillStyle = PAL.tick; tx.fillText('субтитри з\'являться тут · подвійний клік — додати репліку', 8, cueY + CUE * .67); }
+  if (!P.cues.length) { tx.fillStyle = PAL.tick; tx.fillText('субтитри з\'являться тут · Shift + клік — нова репліка', 8, cueY + CUE * .67); }
   P.cues.forEach((c, j) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
     rr(x0 + 1, cueY, x1 - x0 - 2, CUE, 0); tx.fillStyle = j === selCue ? PAL.greenSel : PAL.greenDk; tx.fill();
@@ -1446,10 +1464,10 @@ tl.onwheel = e => {
   else { const t = Tt(e.offsetX), ns = clamp(span * Math.exp(e.deltaY * .002), 2, dur); view.t0 = t - (t - view.t0) * ns / span; view.t1 = view.t0 + ns; }
   clampView();
 };
-tl.ondblclick = e => {
-  if (!dur || !P) return; const t = Tt(e.offsetX), h = hit(e.offsetX, e.offsetY);
-  if (h.lane === 'subs') addCue(t);
-  else if (h.seek && !h.scrub) addAt(t);
+tl.ondblclick = e => {                                            // привчаємо до Shift: подвійний клік лише підказує
+  if (!dur || !P) return; const h = hit(e.offsetX, e.offsetY);
+  if (h.lane === 'subs') msg('Нова репліка: Shift + клік у рядку субтитрів');
+  else if (h.seek && !h.scrub) msg('Новий кліп: Shift + клік на таймлайні');
 };
 // ── плашка області над таймлайном (дії + перетягування) і редактор репліки над реплікою ──
 const ovl = {}, ovlW = {};                                        // розміри плашок кешуються: читання з DOM щокадру гальмує
@@ -1688,7 +1706,7 @@ const TOUR = [
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Субтитри</b> розпізнають мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#tl', 'Клавіші на таймлайні', `<div class="combo">
     <span>${key('Ctrl')} + перетягування</span><span>нова область аналізу</span>
-    <span>${key('Shift')} + перетягування</span><span>новий кліп; у рядку реплік унизу нова репліка</span>
+    <span>${key('Shift')} + клік</span><span>новий кліп; у рядку реплік унизу нова репліка</span>
     <span>${key('Alt')} + перетягування по кліпу</span><span>вирізати шматок</span>
     <span>Права кнопка</span><span>дії з кліпом чи реплікою</span></div>`],
   ['#tl', 'Таймлайн', '<p>Кліп і його краї тягнуться мишею. Смужки в кліпі показують, коли видно кожен елемент.</p>'],
