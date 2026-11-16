@@ -1047,7 +1047,12 @@ function select(i, focus) {
   sel = i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
   if (focus && P.clips[i]) { const c = P.clips[i], pad = Math.max(5, (c.b - c.a) * .3); view = {t0: Math.max(0, c.a - pad), t1: Math.min(dur, c.b + pad)}; seek(c.a); }
 }
-function playClip(i) { select(i, true); stopAt = P.clips[i].b; vid.play(); }
+let loopRun = null;                                               // програвання петлі: від мітки до кінця, далі з початку до мітки
+function playClip(i) {
+  const c = P.clips[i]; select(i, true);
+  if (c.loop != null && loopOk(c, c.loop)) { seek(c.loop); loopRun = c; } else stopAt = c.b;
+  vid.play();
+}
 $('#list').onclick = e => {
   const r = e.target.closest('.clip'); if (!r) return;
   const i = +r.dataset.i, act = e.target.dataset.act;
@@ -1082,7 +1087,7 @@ async function waitMix(video, path) {
   if (!vid.paused) mix.play();
 }
 const mixOn = () => !!mix.getAttribute('src');
-function seek(t) { vid.currentTime = clamp(t, 0, dur); stopAt = null; }
+function seek(t) { vid.currentTime = clamp(t, 0, dur); stopAt = null; loopRun = null; }
 $('#play').onclick = () => vid.paused ? vid.play() : vid.pause();
 vid.onplay = vid.onpause = () => { $('#play').textContent = vid.paused ? '▶' : '❚❚'; if (mixOn()) { mix.currentTime = vid.currentTime; vid.paused ? mix.pause() : mix.play(); } };
 vid.onseeked = () => { if (mixOn()) mix.currentTime = vid.currentTime; };
@@ -1187,7 +1192,7 @@ function paste(t = vid.currentTime) {                             // елеме�
     P.elements.push(el); selEl = el.id; focus = 'el'; renderEls(); return save();
   }
   if (kind === 'clip') {
-    P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh)}); sel = P.clips.length - 1; focus = 'clip'; return commit();
+    P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh), ...(v.loop != null ? {loop: v.loop + sh} : {})}); sel = P.clips.length - 1; focus = 'clip'; return commit();
   }
   const q = {...structuredClone(v), a: t, b: t + v.b - v.a, k: (v.k || []).map(x => x + sh)};
   if (!subsEls().some(e => e.id === q.sid)) q.sid = (subsEls()[0] || ensureSubs()).id;   // з проєкту, де інші доріжки
@@ -1531,6 +1536,7 @@ function drawTL() {
       tx.fillStyle = PAL.red; tx.fillRect(a, CTOP + 1, 2, cb - CTOP - 2); tx.fillRect(b - 2, CTOP + 1, 2, cb - CTOP - 2);
     }
     tx.fillStyle = col; tx.fillRect(x0, CTOP + 6, 3, cb - CTOP - 12); tx.fillRect(x1 - 3, CTOP + 6, 3, cb - CTOP - 12);
+    if (c.loop != null && loopOk(c, c.loop)) { const lx = X(c.loop); tx.fillStyle = LOOP_COL; tx.fillRect(lx - 1, CTOP + 1, 2, cb - CTOP - 2); tx.fillText('↻', lx + 5, CTOP + 15); }
     tx.fillText(`#${i + 1}  ${net(c).toFixed(1)} с`, x0 + 8, CTOP + 15);
     if (!ctx) return;
     tx.font = font(clamp(Math.round(BAR * .6), 11, 15));            // у витягнутих доріжках підписи більші
@@ -1587,13 +1593,26 @@ function drawTL() {
   if (drag && guide != null) { tx.strokeStyle = PAL.guide; tx.setLineDash([4, 3]); tx.beginPath(); tx.moveTo(X(guide), 0); tx.lineTo(X(guide), TH); tx.stroke(); tx.setLineDash([]); }
   const p = X(vid.currentTime); tx.fillStyle = PAL.play; tx.fillRect(p - 1, TICK - 2, 2, TH);   // курсор з ручкою на шкалі
   tx.beginPath(); const kw = 7; tx.moveTo(p - kw, 2); tx.lineTo(p + kw, 2); tx.lineTo(p + kw, TICK - kw + 1); tx.lineTo(p, TICK); tx.lineTo(p - kw, TICK - kw + 1); tx.closePath(); tx.fill();
-  const mod = hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
+  if (loopKey && hover) {                                          // де стане петля
+    const t = Tt(hover.x), c = P.clips.find(c => loopOk(c, t)), lx = X(t);
+    if (c) { tx.strokeStyle = LOOP_COL; tx.lineWidth = 2; tx.setLineDash([5, 3]); tx.beginPath(); tx.moveTo(lx, CTOP); tx.lineTo(lx, cb); tx.stroke(); tx.setLineDash([]); }
+    tx.font = font(12, 600); const label = c ? 'Петля: шорт почнеться звідси' : 'Петля: наведи на кліп', lh = 22, w = tx.measureText(label).width + 16;
+    const lbx = clamp(hover.x + 12, 0, TW - w), lby = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
+    rr(lbx, lby, w, lh, 0); tx.fillStyle = LOOP_COL; tx.fill(); tx.fillStyle = '#10232a'; tx.fillText(label, lbx + 8, lby + lh * .68); tx.font = font(11);
+  }
+  const mod = !loopKey && hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
   if (mod) {                                                      // що зробить Shift / Alt / Ctrl
     const label = mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.label;
     tx.font = font(12, 600); const lh = 22, w = tx.measureText(label).width + 16, lx = clamp(hover.x + 12, 0, TW - w), ly = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
     rr(lx, ly, w, lh, 0); tx.fillStyle = mod.col; tx.fill(); tx.fillStyle = mod.ink; tx.fillText(label, lx + 8, ly + lh * .68); tx.font = font(11);
   }
 }
+let loopKey = false;                                              // затиснутий правий Alt: клік по кліпу ставить петлю
+addEventListener('keydown', e => { if (e.code === 'AltRight') { loopKey = true; e.preventDefault(); } });
+addEventListener('keyup', e => { if (e.code === 'AltRight') loopKey = false; });
+addEventListener('blur', () => { loopKey = false; });
+const loopOk = (c, t) => t > c.a + .5 && t < c.b - .5 && !(c.cut || []).some(([x, y]) => t >= x && t < y);
+const LOOP_COL = '#5ec8e8';
 const MODS = [{key: 'shift', label: 'Shift: новий кліп', col: '#3d4a5a', ink: '#e2dfda'}, {key: 'alt', label: 'Alt: вирізати шматок', col: '#5a2f2b', ink: '#f3dcd8'},
               {key: 'ctrl', label: 'Ctrl: нова область аналізу', col: '#f2b33d', ink: '#1b1712'}];
 let hover = null;                                                 // курсор над таймлайном і затиснуті модифікатори
@@ -1659,7 +1678,13 @@ function hit(x, y) {
 }
 tl.onmousedown = tl.onauxclick = e => { if (e.button === 1) e.preventDefault(); };
 tl.onpointerdown = e => {
-  if (!dur || !P) return; tl.setPointerCapture(e.pointerId);
+  if (!dur || !P) return;
+  if (loopKey) {                                                  // петля: шорт почнеться звідси, початок кліпу піде після кінця
+    const t = snap(Tt(e.offsetX), 'ph'), i = P.clips.findIndex(c => loopOk(c, t)); guide = null;
+    if (i >= 0) { P.clips[i].loop = t; sel = i; commit(); }
+    return;
+  }
+  tl.setPointerCapture(e.pointerId);
   if (e.button === 1) { e.preventDefault(); drag = {pan: e.offsetX, v: {...view}}; tl.style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
   drag = hit(e.offsetX, e.offsetY); drag.x0 = e.offsetX;
@@ -1826,6 +1851,7 @@ function syncSound() {
 }
 (function loop() {
   if ($('#editor').classList.contains('on')) {
+    if (loopRun && !vid.paused && vid.currentTime >= loopRun.b - .03) { const c = loopRun; seek(c.a); stopAt = c.loop; }   // кінець кліпу — далі його початок
     if (stopAt != null && vid.currentTime >= stopAt) { vid.pause(); stopAt = null; }
     if (P && (P.clips.length ? ctxClip() : null) !== listClip) renderEls();   // інший кліп — свій список елементів
     if (P && !vid.paused) {                                        // програвання перестрибує пропуски, як у рендері
@@ -1874,11 +1900,12 @@ for (const ev of ['blur', 'resize', 'wheel']) addEventListener(ev, closeMenu, {p
 function splitClip(c, t) {                                        // два кліпи; вирізані шматки розходяться по своїх половинах
   const within = (a, b) => (c.cut || []).map(([u, v]) => [Math.max(u, a), Math.min(v, b)]).filter(([u, v]) => v - u >= .2);
   const right = {...structuredClone(c), a: t, cut: within(t, c.b)};
+  if (c.loop >= t) delete c.loop; else delete right.loop;          // петля лишається в тій половині, де стоїть
   c.cut = within(c.a, t); c.b = t; P.clips.push(right); commit();
 }
 function dupClip(c) {                                             // копія одразу після оригіналу
   const len = c.b - c.a, a = Math.min(c.b, dur - len);
-  P.clips.push({...structuredClone(c), a, b: a + len, cut: shiftCuts(c.cut, a - c.a)}); sel = P.clips.length - 1; commit();
+  P.clips.push({...structuredClone(c), a, b: a + len, cut: shiftCuts(c.cut, a - c.a), ...(c.loop != null ? {loop: c.loop + a - c.a} : {})}); sel = P.clips.length - 1; commit();
 }
 const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червоний'], ['#d08a3c', 'Помаранчевий'], ['#c9ad45', 'Жовтий'],
   ['#62a467', 'Зелений'], ['#4f94b8', 'Блакитний'], ['#8a70c4', 'Фіолетовий'], ['#c46a9e', 'Рожевий']];
@@ -1891,6 +1918,8 @@ function clipMenu(i, t, at) {
     {label: 'Програти кліп', key: 'Shift+Space', run: () => playClip(P.clips.indexOf(c))},
     {label: `Почати кліп ${at}`, key: 'Q', off: t > c.b - 1, run: () => { c.a = t; commit(); }},
     {label: `Закінчити кліп ${at}`, key: 'W', off: t < c.a + 1, run: () => { c.b = t; commit(); }},
+    loopOk(c, t) && {label: `Петля: шорт почнеться ${at}`, key: 'Правий Alt+клік', run: () => { c.loop = t; commit(); }},
+    c.loop != null && {label: 'Прибрати петлю', run: () => { delete c.loop; commit(); }},
     {label: `Розрізати на два ${at}`, key: 'B', off: t < c.a + .5 || t > c.b - .5, run: () => splitClip(c, t)},
     c.cut?.length && {label: 'Повернути всі вирізані шматки', run: () => { c.cut = []; commit(); }},
     '-',
@@ -2168,7 +2197,7 @@ const KEYS = [
     ['Рядок зі списку на кліп', 'додати елемент у кліп']]],
   ['Вибране', [['Del', 'прибрати з кліпу (глобальний — сховати)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
     ['H', 'сховати / показати елемент'], ['G', 'глобальний / ні'], ['] / [', 'шар вище / нижче'], ['Shift+] / Shift+[', 'на передній / задній план'], ['Esc', 'зняти вибір']]],
-  ['Кліпи й репліки', [['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
+  ['Кліпи й репліки', [['Правий Alt+клік по кліпу', 'петля: шорт почнеться звідси, а початок кліпу піде в кінець'], ['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
   ['Перетягування', [['Ctrl', 'без прилипання'], ['Shift', 'зберегти пропорції в прев\'ю'], ['Колесо', 'масштаб таймлайна чи прев\'ю'], ['Затиснуте колесо', 'рухати прев\'ю'], ['Права кнопка', 'усі дії з тим, що під курсором']]],
   ['Загальне', [['Ctrl+Z', 'скасувати'], ['Ctrl+Y / Ctrl+Shift+Z', 'повторити'], ['?', 'це вікно']]],
 ];

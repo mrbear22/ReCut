@@ -887,6 +887,21 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
+def loop_cut(dst, at, net, bars, args, audio):
+    """Петля: шорт іде з моменту at до кінця, далі початок кліпу до at — коли відео повторюється, стику не видно.
+    bars — прогрес-бари: їх малюємо тут, щоб смуга росла від нового початку."""
+    f = [f"[0:v]trim=start={at:.3f},setpts=PTS-STARTPTS[v1]", f"[0:v]trim=end={at:.3f},setpts=PTS-STARTPTS[v2]"]
+    if audio: f += [f"[0:a]atrim=start={at:.3f},asetpts=PTS-STARTPTS[a1]", f"[0:a]atrim=end={at:.3f},asetpts=PTS-STARTPTS[a2]"]
+    f.append("[v1]" + "[a1]" * audio + "[v2]" + "[a2]" * audio + f"concat=n=2:v=1:a={int(audio)}[c0]" + "[a]" * audio); last = "c0"
+    for n, e in enumerate(bars, 1):
+        f += [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{n}]",
+              f"[{last}][pg{n}]overlay=x='-w+w*t/{net:.3f}':y={int(e['y'])}:shortest=1[c{n}]"]; last = f"c{n}"
+    tmp = dst.with_name(dst.stem + ".loop.mp4")
+    r = run([ffbin("ffmpeg"), "-y", "-v", "error", *HW, "-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
+             *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)])
+    if r.returncode: tmp.unlink(missing_ok=True); raise RuntimeError("Петля: " + r.stderr.decode("utf-8", "replace")[-400:])
+    os.replace(tmp, dst)
+
 def out_pos(x, keep):
     """Час у готовому кліпі для моменту x джерела (вирізані пропуски не рахуються)."""
     return sum(min(x, e) - s for s, e in keep if x > s)
@@ -957,6 +972,10 @@ def render(pid, clips, elements, cues):
                 keep = kept(float(c["a"]), float(c["b"]), c.get("cut", []))
                 if not keep: raise RuntimeError(f"Кліп {i} вирізано повністю")
                 a, b, net = keep[0][0], keep[-1][1], sum(e - s for s, e in keep)
+                loop = out_pos(float(c["loop"]), keep) if c.get("loop") is not None and any(s < float(c["loop"]) < e for s, e in keep) else 0
+                if not .5 < loop < net - .5: loop = 0
+                bars = [e for e in cel if e["type"] == "progress" and on(e)] if loop else []   # з петлею прогрес малюється вже після перестановки
+                cel = [e for e in cel if e not in bars]
                 ca = float(c["a"]); stem = base = f"{name} {int(ca // 60):02d}-{int(ca % 60):02d}"
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
@@ -977,6 +996,7 @@ def render(pid, clips, elements, cues):
                     if line.startswith("out_time_us=") and line[12:].strip().isdigit():
                         JOB["pct"] = min(1.0, int(line[12:]) / 1e6 / net)
                 if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
+                if loop: loop_cut(dst, loop, net, bars, args, bool(alabel or na))
                 thumb = THUMBS / f"{rec['id']}_{i:02d}.jpg"
                 run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
                 rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=net)); save_rec()
@@ -1008,7 +1028,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.8.3"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.9.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
