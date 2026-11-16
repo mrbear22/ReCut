@@ -14,10 +14,10 @@ import brands, localai, publish
 HERE = Path(__file__).resolve().parent
 PACKAGED = (HERE.parent / "runtime").is_dir()                    # зібрана програма (інсталятор); інакше — запуск із сорсів
 ROOT = HERE.parent if PACKAGED else HERE
-DATA = ROOT / "data"; THUMBS, TRANS, PROJ, MODELS, MIXES = DATA / "thumbs", DATA / "transcripts", DATA / "projects", DATA / "models", DATA / "mixes"
+DATA = ROOT / "data"; THUMBS, TRANS, PROJ, MODELS, MIXES, WAVES = DATA / "thumbs", DATA / "transcripts", DATA / "projects", DATA / "models", DATA / "mixes", DATA / "waves"
 TMP, RENDERS, CUDA, LIBS, FFDIR = DATA / "tmp", ROOT / "renders", DATA / "cuda", DATA / "libs", ROOT / "ffmpeg"
 sys.path.insert(0, str(LIBS))                                      # бібліотеки, завантажені, коли вперше знадобились
-for d in (THUMBS, TRANS, MODELS, MIXES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
+for d in (THUMBS, TRANS, MODELS, MIXES, WAVES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
 # портативно: тимчасові файли й кеш моделей — лише в теці програми, ніде більше в системі
 SYS_ENV = dict(os.environ)                                         # для вікна Edge: його тимчасові файли не мають жити в нашій теці (їх тримає BITS і програму не видалити)
 tempfile.tempdir = str(TMP); os.environ.update(TMP=str(TMP), TEMP=str(TMP), HF_HOME=str(DATA / "hf"), HF_HUB_DISABLE_TELEMETRY="1")
@@ -923,14 +923,20 @@ def music_parts(els, net):
     return out
 
 PEAKS = {}
-def peaks(path, rate=50):
-    """Гучність треку для хвилі на таймлайні: rate значень на секунду, 0–255, base64."""
-    if path not in PEAKS:
-        raw, step = run([ffbin("ffmpeg"), "-v", "error", "-i", path, "-ac", "1", "-ar", str(rate * 40), "-f", "u8", "-"]).stdout, 40
-        v = [max(abs(x - 128) for x in raw[i:i + step]) for i in range(0, len(raw), step)]
-        top = max(v, default=0) or 1
-        PEAKS[path] = dict(rate=rate, b64=base64.b64encode(bytes(min(255, x * 255 // top) for x in v)).decode())
-    return PEAKS[path]
+def peaks(path, track=None, rate=50):
+    """Гучність для хвилі на таймлайні: rate значень на секунду, 0–255, base64. track — одна звукова доріжка відео.
+    Довге відео рахується один раз: результат лежить на диску."""
+    key = uuid.uuid5(uuid.NAMESPACE_URL, f"{path}|{os.path.getmtime(path)}|{track}|{rate}").hex[:16]; f = WAVES / f"{key}.json"
+    if key not in PEAKS:
+        if f.is_file(): PEAKS[key] = json.loads(f.read_text("utf-8"))
+        else:
+            amap, step = (["-map", f"0:a:{track}"] if track is not None else []), 40
+            raw = np.frombuffer(run([ffbin("ffmpeg"), "-v", "error", "-i", path, "-vn", *amap, "-ac", "1", "-ar", str(rate * step), "-f", "u8", "-"]).stdout, np.uint8)
+            n = len(raw) // step; v = np.abs(raw[:n * step].astype(np.int16) - 128).reshape(n, step).max(1) if n else np.zeros(0, np.int16)
+            top = float(np.percentile(v, 99.5)) if n else 0                 # поодинокі піки не стискають решту хвилі
+            PEAKS[key] = dict(rate=rate, b64=base64.b64encode(np.clip(v * 255 / (top or 1), 0, 255).astype(np.uint8).tobytes()).decode())
+            f.write_text(json.dumps(PEAKS[key]), "utf-8")
+    return PEAKS[key]
 
 def audio_filter(main, parts, first_input, video_vol, net):
     """Звук кліпу: звук відео з потрібною гучністю + шматки музики з фейдами. Повертає (фільтри, мітка виходу)."""
@@ -1028,7 +1034,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.9.0"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.9.1"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1204,7 +1210,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/media": return self.reply(dict(connected=bool(MEDIA.base)))
             if u.path == "/api/buffer/schema": return self.reply(BUFFER.schema_summary())
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
-            if u.path == "/api/peaks": return self.reply(peaks(q["p"]))
+            if u.path == "/api/peaks": return self.reply(peaks(q["p"], int(q["track"]) if q.get("track") else None))
             if u.path == "/api/audio":                            # тривалість музичного файлу
                 r = run([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", q["p"]])
                 return self.reply(dict(dur=float(r.stdout.decode().strip() or 0)))

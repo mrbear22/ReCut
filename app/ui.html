@@ -1566,6 +1566,7 @@ function drawTL() {
   spk.forEach((x, r) => {                                         // назва доріжки — під репліками; порожня доріжка — як почати
     const ty = cueY + r * CUE + CUE * .67, nm = named ? subName(x, r) : 'субтитри';
     if (r % 2) { tx.fillStyle = PAL.grid; tx.fillRect(0, cueY + r * CUE, TW, CUE); }
+    rowWave(audioTracks > 1 ? r % audioTracks : 0, cueY + r * CUE);
     tx.fillStyle = named ? mixHex(x.color, PAL.bg, x.on === false ? .8 : .55) : PAL.tick; tx.fillText(nm, 8, ty);
     if (!P.cues.some(c => rowOf(c) === r)) { tx.fillStyle = PAL.tick; tx.fillText('Shift + перетягування — нова репліка', 8 + tx.measureText(nm).width + 14, ty); }
   });
@@ -1962,6 +1963,23 @@ function loadPeaks(path) {
   if (peaks.has(path)) return; peaks.set(path, null);
   api('/api/peaks?p=' + encodeURIComponent(path)).then(r => peaks.set(path, {rate: r.rate, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))}))
     .catch(() => peaks.delete(path));
+}
+const waveCols = new Map();                                       // доріжка → висоти стовпчиків для поточного масштабу
+function rowWave(k, y) {                                          // сіра хвиля звукової доріжки відео — фоном рядка реплік
+  const key = `${P.video}#${k}`, pk = peaks.get(key);
+  if (!pk) { if (!peaks.has(key)) { peaks.set(key, null); api(`/api/peaks?p=${encodeURIComponent(P.video)}${audioTracks > 1 ? '&track=' + k : ''}`)
+    .then(r => peaks.set(key, {rate: r.rate, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))})).catch(() => peaks.delete(key)); } return; }
+  const vk = `${key}|${view.t0}|${view.t1}|${TW}`; let cols = waveCols.get(k);
+  if (!cols || cols.vk !== vk) {                                  // перераховуємо лише при зміні масштабу чи прокрутці
+    cols = new Uint8Array(Math.ceil(TW / 2)); cols.vk = vk;
+    for (let j = 0; j < cols.length; j++) {
+      const i0 = Math.max(0, Math.floor(Tt(j * 2) * pk.rate)), i1 = Math.min(pk.v.length, Math.max(i0 + 1, Math.floor(Tt(j * 2 + 2) * pk.rate)));
+      let v = 0; for (let i = i0; i < i1; i++) if (pk.v[i] > v) v = pk.v[i]; cols[j] = v;
+    }
+    waveCols.set(k, cols);
+  }
+  const mid = y + CUE / 2, h = CUE / 2 - 2; tx.fillStyle = 'rgba(255,255,255,.12)';
+  for (let j = 0; j < cols.length; j++) if (cols[j] > 6) { const hh = cols[j] / 255 * h; tx.fillRect(j * 2, mid - hh, 1.5, hh * 2); }
 }
 function drawWave(e, c, a, b, y, col) {                            // хвиля під шматком: що саме з треку грає в цьому місці
   const pk = peaks.get(e.path); if (!pk) return loadPeaks(e.path);
