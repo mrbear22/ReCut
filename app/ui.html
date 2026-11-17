@@ -169,6 +169,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .bar{height:4px;background:var(--s4);border-radius:2px;overflow:hidden;margin-top:8px}#prog{height:100%;width:0;background:var(--acc);transition:width .3s var(--ease)}
 #msg{color:var(--mut);margin-top:6px;min-height:18px;word-break:break-word}#msg.err{color:var(--red)}
 #rPop{right:0;left:0;bottom:calc(100% + 6px)}#sPop{left:0;bottom:calc(100% + 6px);width:300px;cursor:default}
+#aPop{left:0;bottom:calc(100% + 6px);width:240px;cursor:default}#aPop label:first-child{margin-top:0}#aPop .row input{text-align:center}
 footer{padding:0 8px 8px}
 #tlGrip{height:12px;margin-bottom:-4px;cursor:ns-resize;display:flex;align-items:center;justify-content:center;touch-action:none}
 #tlGrip::before{content:'';width:48px;height:4px;border-radius:2px;background:var(--line2);transition:background var(--fast),width var(--fast)}
@@ -374,10 +375,12 @@ footer{padding:0 8px 8px}
     <div id="rband" title="Пересунути область"></div>
     <div id="ract" title="Пересунути область">
       <span class="rl" id="rlen">Область</span>
-      <button id="reanalyze" class="pri">Знайти моменти</button>
-      <label class="inl"><input type="number" min="1" max="30" data-c="n_clips"> кліпів по <input type="number" min="5" max="180" data-c="min_len">–<input type="number" min="5" max="300" data-c="max_len"> с</label>
-      <label class="inl" title="Враховувати сказане: точніше, але довше"><input type="checkbox" data-c="stt"> за змістом мови</label>
-      <span class="sep"></span>
+      <span class="split anchor"><button id="reanalyze" class="pri">Знайти моменти</button><button id="aSet" class="pri" title="Як шукати моменти" aria-label="Як шукати моменти">⚙</button>
+        <div class="pop" id="aPop">
+          <label>Скільки кліпів</label><input type="number" min="1" max="30" data-c="n_clips">
+          <label>Довжина кліпу, с</label><div class="row"><input type="number" min="5" max="180" data-c="min_len"><span>–</span><input type="number" min="5" max="300" data-c="max_len"></div>
+          <label class="tg" title="Точніше, але довше">За змістом мови<input type="checkbox" data-c="stt"><i></i></label>
+        </div></span>
       <span class="split anchor"><button id="mkSubs">Згенерувати субтитри</button><button id="sSet" title="Модель розпізнавання" aria-label="Модель розпізнавання">⚙</button><div class="pop" id="sPop"></div></span>
       <button id="toRegion" class="ghost" title="Показати всю область" aria-label="Показати всю область">⤢</button>
     </div>
@@ -709,6 +712,7 @@ async function setCfg(t) {
 }
 $('#rSet').onclick = e => togglePop('#rPop', e);
 $('#sSet').onclick = e => togglePop('#sPop', e);
+$('#aSet').onclick = e => togglePop('#aPop', e);
 
 // ── контроли: повзунок, перемикач, вибір, кольори, файл ──
 function control(o, k, kind, label, opt) {
