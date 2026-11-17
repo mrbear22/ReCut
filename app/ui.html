@@ -98,6 +98,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .ed{display:grid;grid-template-columns:clamp(300px,22vw,560px) 1fr clamp(340px,25vw,620px);gap:8px;padding:8px 8px 6px;min-height:0}
 #layers{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible}
 #layers .top{padding:10px 10px 8px}
+.el.kid{padding-left:24px}.el.kid .ic{background:none;color:var(--dim);width:14px}.el.kid .nm{color:var(--mut)}.el.kid.sel .nm{color:var(--hi)}
 .el.away .nm{color:var(--mut)}.el.away .ic{opacity:.45}.el .nm em{font-style:normal;font-size:11px;color:var(--acc);margin-left:6px}
 .elgrp{margin:8px 2px 2px;padding:8px 6px 2px;border-top:1px solid var(--line2);font-size:11px;font-weight:600;color:var(--mut);letter-spacing:.04em;text-transform:uppercase}
 #els{display:flex;flex-direction:column;gap:1px;padding:0 6px 8px;max-height:38%;overflow:auto;flex:none}
@@ -184,7 +185,15 @@ footer{padding:0 8px 8px}
 .sep{width:1px;height:20px;background:var(--line2)}
 .tlwrap{position:relative}
 #tl{width:100%;display:block;border:1px solid #0e0d0c;border-radius:0 0 var(--r) var(--r);touch-action:none}
-#cueEdit{position:absolute;display:none;width:380px;z-index:3;background:var(--s2);border:1px solid var(--green);border-radius:var(--r);box-shadow:var(--pop);padding:4px;gap:4px}#cueEdit.on{display:flex}
+#cueEdit{position:absolute;display:none;flex-direction:column;width:440px;z-index:3;background:var(--s2);border:1px solid var(--green);border-radius:var(--r);box-shadow:var(--pop);padding:4px;gap:4px}#cueEdit.on{display:flex}
+.cbar{display:flex;gap:1px;align-items:center}
+.cbar button{min-width:26px;height:24px;padding:0 6px;background:none;border-color:transparent;color:var(--mut);font-size:12px}
+.cbar button:hover{background:var(--s4);color:var(--hi);border-color:transparent}.cbar button.on{background:var(--s4);color:var(--acc)}
+.cbar button.csw{min-width:0;width:16px;height:16px;padding:0;margin:0 2px;border-radius:50%;border:1px solid rgba(255,255,255,.28)}
+.cbar button.csw.none{background:linear-gradient(135deg,transparent 44%,var(--mut) 45% 55%,transparent 56%)}
+.csep{width:1px;height:16px;background:var(--line2);margin:0 4px}#cueCols{display:inline-flex;align-items:center}
+#cueText{background:#121110;border:1px solid var(--line2);border-radius:var(--r-sm);padding:5px 8px;font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere;min-height:30px;max-height:84px;overflow:auto;color:var(--fg);outline:none;cursor:text}
+#cueText:focus{border-color:#7a756e}#cueText:empty::before{content:attr(data-ph);color:var(--dim)}
 #vid{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
 /* туторіал */
 #tour{position:fixed;inset:0;z-index:40;display:none}#tour.on{display:block}
@@ -200,19 +209,20 @@ footer{padding:0 8px 8px}
 .mbox{display:flex;flex-direction:column;gap:8px;height:90vh}.mbox video{flex:1;min-height:0;aspect-ratio:9/16;background:#000;border-radius:var(--r)}
 .mbox div{display:flex;gap:8px;justify-content:center}
 /* публікація */
-#pub{grid-template-rows:auto 1fr;padding:12px 16px;gap:12px;overflow:hidden}
+#pub{grid-template-rows:auto auto minmax(0,1fr);padding:12px 16px;gap:12px;overflow:hidden}
 .pubbar{display:flex;gap:10px 22px;align-items:flex-end;flex-wrap:wrap}.pubbar select{width:auto;max-width:340px}
 .pgrp{display:flex;flex-direction:column;gap:5px;margin:0}.pgrp>small{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--mut)}
 .pgrp .pall{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line2);border-radius:var(--r-sm);cursor:pointer}.pgrp .pall:hover{background:var(--s2)}
 .pacts{display:flex;gap:8px}.pall{color:var(--fg)}.pubbar button{white-space:nowrap}
 #pubMsg{margin:0;color:var(--mut)}#pubMsg:empty{display:none}#pubMsg.err{color:var(--red)}
 
-.pubmain{display:grid;grid-template-columns:1fr clamp(300px,24vw,400px);gap:10px;min-height:0}
+.pubmain{grid-row:3;display:grid;grid-template-columns:1fr clamp(300px,24vw,400px);gap:10px;min-height:0}
 #pubGrid{overflow:auto;display:flex;flex-direction:column;gap:6px;padding:0 4px 24px 0}
 /* рядок списку: превʼю · тексти · куди й коли · дії */
 .pc{display:grid;grid-template-columns:22px 72px minmax(0,1fr) auto;gap:16px;align-items:start;padding:12px 14px;background:var(--s1);border:1px solid var(--line);border-radius:var(--r);transition:border-color var(--fast),background var(--fast)}
 .pc:hover{border-color:var(--line2)}.pc.on{border-color:var(--acc);background:#211f1b}
 .pc.work{pointer-events:none;cursor:progress}.pc.work .pbody,.pc.work .pside{opacity:.5}
+.pc.out .pbody,.pc.out .pth{opacity:.45}.pc.out .pbody input,.pc.out .pbody textarea{cursor:default;pointer-events:none}.pst.out::before{background:var(--dim)}
 .pck{align-self:center;width:22px;height:22px;padding:3px;border-radius:5px;border:1.5px solid var(--line2);background:none;color:transparent}
 .pck:hover{border-color:var(--mut)}.pck svg{width:100%;height:100%;display:block}.pc.on .pck{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
 .pth{position:relative;width:72px;aspect-ratio:9/16;overflow:hidden;border-radius:4px;background:#0f0e0d;cursor:pointer}
@@ -374,7 +384,15 @@ footer{padding:0 8px 8px}
   </div>
   <div class="tlwrap">
     <canvas id="tl"></canvas>
-    <span id="cueEdit"><input id="cueText" placeholder="Текст репліки" aria-label="Текст репліки"><button id="cueDel" class="ghost" title="Видалити репліку" aria-label="Видалити репліку">✕</button></span>
+    <div id="cueEdit"><div class="cbar" id="cueBar">
+      <button data-f="b" title="Жирний (Ctrl+B)" aria-label="Жирний"><b>B</b></button><button data-f="i" title="Курсив (Ctrl+I)" aria-label="Курсив"><i>I</i></button><button data-f="u" title="Підкреслений (Ctrl+U)" aria-label="Підкреслений"><u>U</u></button>
+      <span class="csep"></span><button data-f="s" data-v="-.15" title="Менший" aria-label="Менший">A−</button><button data-f="s" data-v=".15" title="Більший" aria-label="Більший">A+</button>
+      <span class="csep"></span><span id="cueCols"></span>
+      <span class="grow"></span>
+      <button data-q="global" title="Глобальний: стиль і місце доріжки (G)" aria-label="Глобальний">⛓</button><button data-q="upper" title="Великі / малі літери" aria-label="Великі / малі літери">Aa</button>
+      <button data-q="split" title="Розділити на курсорі в тексті" aria-label="Розділити">✂</button><button data-q="merge" title="Об'єднати з наступною (J)" aria-label="Об'єднати з наступною">⤓</button>
+      <button id="cueDel" title="Видалити репліку" aria-label="Видалити репліку">✕</button></div>
+    <div id="cueText" contenteditable="plaintext-only" spellcheck="false" role="textbox" aria-label="Текст репліки" data-ph="Текст репліки"></div></div>
   </div>
  </footer>
 </section>
@@ -507,7 +525,25 @@ const mk = p => ({id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, t
 
 let audioTracks = 1, cfg = {}, P = null, dur = 0, S = {w: 1920, h: 1080}, curve = [], t0 = 0, lo = 0, hi = 1, step = .5;
 let sel = -1, selCue = -1, selEl = null, stopAt = null, mode = 'short', drag = null, guide = null, pvGuides = [], view = {t0: 0, t1: 1}, TW = 0, TH = 0;
+let selOwn = null;                                                // вибрано не сам елемент, а його не глобальний екземпляр (у кліпі чи репліці)
 const arts = new Map();
+// ── глобальний чи ні — у кожному кліпі окремо: не глобальний має свої налаштування лише для цього кліпу (c.own[id]).
+//    У списку зліва він — рядок під своїм елементом, і праворуч від списку редагуються саме його налаштування ──
+const OWN_KEEP = ['id', 'type', 'on', 'solo', 'from', 'to'];     // це в кліпі завжди спільне
+const canOwn = e => !!e && !['subs', 'bg', 'music'].includes(e.type);
+const ownOf = (c, e) => c?.own?.[e.id] || null;
+function effEl(e, c) {                                            // яким елемент є в кліпі c
+  const o = ownOf(c, e); if (!o) return e;
+  for (const k of OWN_KEEP) o[k] = e[k]; return o;
+}
+function setGlobalIn(e, c, on) {
+  if (!c || !canOwn(e) || on === !ownOf(c, e)) return;
+  if (on) { if (selOwn === c.own[e.id]) selOwn = null; delete c.own[e.id]; if (!Object.keys(c.own).length) delete c.own; }
+  else { const o = structuredClone(e); o._own = uid(); (c.own ||= {})[e.id] = o; selEl = e.id; selOwn = o; }
+  renderEls(); save();
+}
+const pvClip = () => P?.clips.length ? clipAt(vid.currentTime) : null;   // кліп, який зараз показує прев'ю
+const aid = e => e._own ? `${e.id}@${e._own}` : e.id;              // картинка елемента: своя в кожного не глобального екземпляра
 const els = () => P ? P.elements : [];
 const elById = id => els().find(e => e.id === id);
 const region = () => P.region || [0, Math.min(dur, 1800)];
@@ -549,7 +585,7 @@ function save(now) {
 function travel(from, to) {
   if (!from.length) return;
   to.push(curSnap); curSnap = from.pop(); Object.assign(P, JSON.parse(curSnap));
-  sel = Math.min(sel, P.clips.length - 1); selCue = -1; renderAll(); api('/api/project/save', {id: P.id, ...JSON.parse(curSnap)});
+  sel = Math.min(sel, P.clips.length - 1); selCue = -1; selOwn = null; renderAll(); api('/api/project/save', {id: P.id, ...JSON.parse(curSnap)});
 }
 $('#undo').onclick = () => travel(undoSt, redoSt); $('#redo').onclick = () => travel(redoSt, undoSt);
 
@@ -743,30 +779,50 @@ function addToClip(el, c) {                                        // елеме
   if (el.solo ? !cur?.length : cur && !cur.length) (c.segs ||= {})[el.id] = fullSeg(el, c);
   sel = P.clips.indexOf(c); selEl = el.id; focus = 'el'; renderList(); renderEls(); save(); msg(`${TYPES[el.type].name}: додано в кліп #${sel + 1}`);
 }
+const cueLabel = q => { const t = q.text.trim(); return `«${t.length > 22 ? t.slice(0, 21) + '…' : t}»`; };
+function kidsOf(e) {                                              // не глобальні екземпляри елемента: [{o, c | q, label}]
+  if (e.type === 'subs') return P.cues.filter(q => q.own && cueOwner(q) === e).map(q => ({o: q.own, q, label: cueLabel(q)}));
+  return P.clips.flatMap((c, i) => c.own?.[e.id] ? [{o: c.own[e.id], c, label: `Кліп #${i + 1}`}] : []);
+}
+let kidRows = [];
 function renderEls() {
-  const cc = P?.clips.length ? ctxClip() : null; listClip = cc;
+  const cc = P?.clips.length ? ctxClip() : null; listClip = cc; kidRows = [];
+  if (selOwn && !(elById(selEl) && kidsOf(elById(selEl)).some(k => k.o === selOwn))) selOwn = null;   // екземпляр уже повернули до глобального
   const row = e => {
     const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || e.handle || '', lane = !['subs', 'bg'].includes(e.type);
     const here = !cc || (inClip(cc, e) && segsOf(cc, e).length > 0), where = lane && !here ? 'не в цьому кліпі' : '';
-    return `<div class="el ${e.id === selEl ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"
+    return `<div class="el ${e.id === selEl && !selOwn ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"
       title="${lane ? 'Перетягни на кліп на таймлайні, щоб додати туди' : ''}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
       <span class="nm">${Ty.name}${where ? `<em>${where}</em>` : ''}${note ? `<small>${esc(note)}</small>` : ''}</span>
       <span class="tl"><button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
       <button data-a="up" title="Вище" aria-label="Вище">↑</button><button data-a="down" title="Нижче" aria-label="Нижче">↓</button>
-      <button data-a="del" title="Видалити" aria-label="Видалити">✕</button></span></div>`;
+      <button data-a="del" title="Видалити" aria-label="Видалити">✕</button></span></div>` +
+      kidsOf(e).map(k => `<div class="el kid ${k.o === selOwn ? 'sel' : ''} ${e.on ? '' : 'off'}" data-id="${e.id}" data-k="${kidRows.push({...k, e}) - 1}">
+        <span class="ic">↳</span><span class="nm">${esc(k.label)}</span>
+        <span class="tl"><button data-a="global" title="Зробити глобальним" aria-label="Зробити глобальним">⛓</button></span></div>`).join('');
   };
   const list = els().slice().reverse(), subs = list.filter(e => e.type === 'subs');
   $('#els').innerHTML = (list.filter(e => e.type !== 'subs').map(row).join('') || '<p class="mut" style="padding:4px 8px">Елементів немає</p>') +
     (subs.length ? `<h5 class="elgrp">Субтитри</h5>${subs.map(row).join('')}` : '');
   renderProps(); renderCropBar(); fitTL();
 }
+function pickKid(k) {                                             // екземпляр кліпу чи репліки: туди ж і прев'ю
+  selEl = k.e.id; selOwn = k.o;
+  if (k.c && clipAt(vid.currentTime) !== k.c) { sel = P.clips.indexOf(k.c); renderList(); seek(k.c.a + Math.min(.05, net(k.c) / 2)); }
+  if (k.q) { selectCue(P.cues.indexOf(k.q), !(vid.currentTime >= k.q.a && vid.currentTime < k.q.b)); focus = 'el'; }
+}
 $('#els').onclick = e => {
   const r = e.target.closest('.el'); if (!r) return;
   const i = els().findIndex(x => x.id === r.dataset.id), el = els()[i], a = e.target.closest('[data-a]')?.dataset.a;
+  if (r.dataset.k != null) {
+    const k = kidRows[+r.dataset.k];
+    if (a === 'global') k.q ? setCueGlobal(k.q, true) : setGlobalIn(k.e, k.c, true); else { pickKid(k); renderEls(); }
+    return;
+  }
   if (a === 'up' || a === 'down') return moveEl(el, a);
   if (a === 'eye') el.on = !el.on;
   else if (a === 'del') { if (!dropEl(el)) return; }
-  else selEl = el.id;
+  else { selEl = el.id; selOwn = null; }
   renderEls(); if (a) save();
 };
 function dropEl(el) {                                             // false — користувач передумав
@@ -777,7 +833,8 @@ function dropEl(el) {                                             // false — �
     if (el === first) for (const c of P.cues) c.sid ||= cueOwner(c).id;   // репліки без позначки належали першому — тепер позначаємо явно
     selCue = -1; $('#cueEdit').classList.remove('on');
   }
-  P.elements = P.elements.filter(e => e !== el); if (selEl === el.id) selEl = null; return true;
+  for (const c of P.clips) if (c.own?.[el.id]) { delete c.own[el.id]; if (!Object.keys(c.own).length) delete c.own; }
+  P.elements = P.elements.filter(e => e !== el); if (selEl === el.id) { selEl = null; selOwn = null; } return true;
 }
 function moveEl(el, where) {                                      // порядок шарів: top / up / down / bottom
   const a = P.elements, i = a.indexOf(el); a.splice(i, 1);
@@ -796,11 +853,11 @@ $('#cat').onclick = e => {
   if (one) { selEl = one.id; return renderEls(); }
   if (p.type === 'music') return addMusicEl();
   const el = mk(p), c = P.clips.length ? ctxClip() : null;
-  if (c && !['subs', 'bg'].includes(p.type)) { el.solo = true; (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }   // кліпів ще немає — глобальний
+  if (c && !['subs', 'bg'].includes(p.type)) { el.solo = true; (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }   // кліпів ще немає — у всіх кліпах
   if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
   if (stack) arrange(); renderEls(); save();
 };
-function setGlobal(el, on) {                                      // глобальний — у всіх кліпах, у кліпі його лише ховають чи ріжуть
+function setEverywhere(el, on) {                                  // у всіх кліпах (і в нових) чи лише в тих, куди додано
   if (on === !el.solo) return;
   if (!on) for (const c of P.clips) {                              // стає звичайним: лишається там, де його зараз видно
     const sg = c.segs?.[el.id];
@@ -809,22 +866,21 @@ function setGlobal(el, on) {                                      // глоба�
   if (!on) el.from = el.to = 0;
   el.solo = !on; renderEls(); save();
 }
+const propTarget = () => selOwn || elById(selEl);                 // що редагує панель: елемент (для всіх кліпів) чи вибраний екземпляр
 function renderProps() {
-  const el = elById(selEl), box = $('#props');
+  const g = elById(selEl), el = propTarget(), box = $('#props');
   if (!el) { box.innerHTML = ''; return; }
-  const Ty = TYPES[el.type];
-  box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b></div>` +
-    (['subs', 'bg'].includes(el.type) ? '' : `<label class="tg" data-glob>Глобальний<input type="checkbox" ${el.solo ? '' : 'checked'}><i></i></label>`) +
-    Ty.props.filter(([, , , , cond]) => !cond || cond(el)).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
+  const Ty = TYPES[el.type], kid = selOwn && kidsOf(g).find(k => k.o === selOwn);
+  box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b>${kid ? `<small class="mut">${esc(kid.label)}</small>` : ''}</div>` +
+    Ty.props.filter(([k, , , , cond]) => (!cond || cond(el)) && (!kid?.q || SUB_STYLE.includes(k))).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
 }
-$('#props').addEventListener('change', e => { if (e.target.closest('[data-glob]')) setGlobal(elById(selEl), e.target.checked); });
 $('#props').addEventListener('input', e => {
-  const el = elById(selEl), box = e.target.closest('[data-p]'); if (!el || !box) return;
+  const el = propTarget(), box = e.target.closest('[data-p]'); if (!el || !box) return;
   const k = box.dataset.p, v = readControl(e.target, el[k]); if (v === undefined) return;
   el[k] = v; afterEdit(el, k);
 });
 $('#props').addEventListener('click', async e => {
-  const el = elById(selEl); if (!el) return; const t = e.target;
+  const el = propTarget(); if (!el) return; const t = e.target;
   if (t.dataset.v != null && t.closest('[data-p]')) { const k = t.closest('[data-p]').dataset.p; el[k] = readControl(t, el[k]); afterEdit(el, k); return renderProps(); }
   if (t.dataset.file) { const {path} = await api('/api/pick', {kind: 'image'}); if (!path) return; el[t.dataset.file] = path; await save(true); return renderProps(); }
   if (t.dataset.clear) { el[t.dataset.clear] = ''; afterEdit(el); return renderProps(); }
@@ -834,7 +890,7 @@ $('#props').addEventListener('click', async e => {
 function afterEdit(el, k) {
   if (el.type === 'progress' && k) el.y = el.pos === 'top' ? 0 : 1920 - el.h;
   if (el.type === 'subs' && ['name', 'color'].includes(k)) drawTL();   // підпис і колір рядка спікера
-  if (['title', 'text', 'channel', 'name', 'handle'].includes(k)) { const r = $(`.el[data-id="${el.id}"] small`); if (r) r.textContent = el[k]; }
+  if (el === elById(el.id) && ['title', 'text', 'channel', 'name', 'handle'].includes(k)) { const r = $(`.el[data-id="${el.id}"] small`); if (r) r.textContent = el[k]; }
   if (['bgOn', 'karaoke', 'shape', 'style', 'bw'].includes(k)) renderProps();
   save();
 }
@@ -853,16 +909,16 @@ async function detectCam(cam, btn = {}) {
 const artKey = el => JSON.stringify(el, (k, v) => ['x', 'y', 'from', 'to', 'anim', 'on', 'id'].includes(k) ? undefined : v);
 const isArt = el => !['video', 'cam', 'subs', 'bg', 'progress'].includes(el.type);
 function ensureArt(el) {
-  const key = artKey(el), a = arts.get(el.id);
+  const key = artKey(el), a = arts.get(aid(el));
   if (a && (a.key === key || a.pending === key)) return a.ready;
   const ready = api('/api/element', el).then(r => new Promise(ok => {
     const img = new Image(); img.onload = () => {
-      const cur = arts.get(el.id); if (cur && cur.pending !== key) return ok();
-      arts.set(el.id, {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]});
+      const cur = arts.get(aid(el)); if (cur && cur.pending !== key) return ok();
+      arts.set(aid(el), {key, img, w: r.w, h: r.h, pad: r.pad, v: el[TYPES[el.type].size[0]]});
       if (el.x == null) { el.x = Math.round((1080 - r.w) / 2); save(); } ok();
     }; img.src = r.img;
   })).catch(e => msg('Елемент: ' + e.message, 1));
-  arts.set(el.id, {...(a || {}), pending: key, ready}); return ready;
+  arts.set(aid(el), {...(a || {}), pending: key, ready}); return ready;
 }
 async function defaultElements() {                                // стартовий набір нового проєкту
   const cap = mk({type: 'text', text: 'Підпис до шорта', size: 64, color: '#111111', bg: '#ffffff', bgOn: true, y: 230});
@@ -1016,18 +1072,111 @@ $('#mkSubs').onclick = makeSubs;
 $('#toRegion').onclick = () => { if (P && dur) { const [a, b] = region(), pad = (b - a) * .03; view = {t0: a - pad, t1: b + pad}; clampView(); } };
 function selectCue(j, jump = true) {
   selCue = j; if (j >= 0) focus = 'cue'; if (j >= 0) sel = -1; renderList(); const c = P.cues[j];
-  $('#cueEdit').classList.toggle('on', !!c); if (c) { $('#cueText').value = c.text; if (jump) seek(c.a); }
+  $('#cueEdit').classList.toggle('on', !!c); if (c) { paintCue(c); if (jump) seek(c.a); }
 }
 function addCue(t, row = 0) {
   const sid = (subsEls()[row] || ensureSubs()).id, nx = P.cues.find(c => rowOf(c) === row && c.a > t), c = {a: t, b: Math.min(t + 1.5, nx ? nx.a : dur), text: 'Текст', sid};   // перша репліка — сама додає елемент «Субтитри»
-  P.cues.push(c); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(c)); $('#cueText').focus(); $('#cueText').select(); save();
+  P.cues.push(c); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(c)); editCueText(); save();
 }
-$('#cueText').oninput = e => { const c = P.cues[selCue]; if (c) { c.text = e.target.value; save(); } };
-$('#cueText').onkeydown = e => { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); };
+// ── редактор репліки: текст з пословним форматуванням (q.fmt — по одному запису на слово) і швидкі дії ──
+const cueEd = $('#cueText'), toks = s => s.match(/\s+|\S+/g) || [];
+const fmtCss = f => !f ? '' : [f.b === false && 'font-weight:400', f.i && 'font-style:italic', f.u && 'text-decoration:underline', f.c && `color:${f.c}`,
+  f.s && f.s !== 1 && `font-size:${f.s}em`].filter(Boolean).join(';');
+const fmtOf = q => { const n = wordsOf(q).length; return q.fmt?.length === n ? q.fmt : Array(n).fill(null); };
+function caretOf() {                                              // виділення в тексті репліки: [з, до] у символах; null — курсора там немає
+  const s = getSelection(); if (!s.rangeCount || !cueEd.contains(s.anchorNode)) return null;
+  const r = s.getRangeAt(0), pre = document.createRange(); pre.selectNodeContents(cueEd);
+  pre.setEnd(r.startContainer, r.startOffset); const a = pre.toString().length; pre.setEnd(r.endContainer, r.endOffset); return [a, pre.toString().length];
+}
+function setCaret([a, b]) {
+  const at = n => { const w = document.createTreeWalker(cueEd, NodeFilter.SHOW_TEXT); let x; while ((x = w.nextNode())) { if (n <= x.length) return [x, n]; n -= x.length; } return [cueEd, cueEd.childNodes.length]; };
+  const r = document.createRange(); r.setStart(...at(a)); r.setEnd(...at(b)); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+function paintCue(q, keep) {                                      // текст з форматуванням; keep — куди повернути курсор
+  const f = fmtOf(q); let w = 0;
+  cueEd.innerHTML = toks(q.text).map(t => { if (/^\s/.test(t)) return esc(t); const st = fmtCss(f[w++]); return st ? `<span style="${st}">${esc(t)}</span>` : esc(t); }).join('');
+  if (keep) setCaret(keep); paintCueBar();
+}
+function selWords(q, cur = caretOf()) {                           // слова під виділенням; без виділення — уся репліка
+  const n = wordsOf(q).length; if (!cur || cur[0] === cur[1]) return [...Array(n).keys()];
+  const out = []; let pos = 0, w = 0;
+  for (const t of toks(q.text)) { const e = pos + t.length; if (!/^\s/.test(t)) { if (e > cur[0] && pos < cur[1]) out.push(w); w++; } pos = e; }
+  return out;
+}
+function wordsBefore(q, at) {                                     // скільки слів повністю до позиції в тексті
+  let n = 0, pos = 0;
+  for (const t of toks(q.text)) { if (!/^\s/.test(t) && pos + t.length <= at) n++; pos += t.length; }
+  return n;
+}
+function paintCueBar() {
+  const q = P?.cues[selCue]; if (!q) return; const f = fmtOf(q), idx = selWords(q), all = fn => idx.length > 0 && idx.every(i => fn(f[i] || {}));
+  $$('#cueBar [data-f=b],#cueBar [data-f=i],#cueBar [data-f=u]').forEach(b => b.classList.toggle('on', all(x => b.dataset.f === 'b' ? x.b !== false : !!x[b.dataset.f])));
+  $('#cueBar [data-q=global]').classList.toggle('on', !q.own);
+}
+function cueFormat(kind, v) {
+  const q = P.cues[selCue]; if (!q || !wordsOf(q).length) return;
+  const cur = caretOf(), idx = selWords(q, cur), f = fmtOf(q).slice(), get = i => f[i] || {};
+  const set = (i, k, x) => { const o = {...get(i)}; if (x === undefined) delete o[k]; else o[k] = x; f[i] = Object.keys(o).length ? o : null; };
+  if (kind === 'b') { const on = idx.every(i => get(i).b !== false); idx.forEach(i => set(i, 'b', on ? false : undefined)); }   // субтитри типово жирні
+  else if (kind === 'i' || kind === 'u') { const on = idx.every(i => get(i)[kind]); idx.forEach(i => set(i, kind, on ? undefined : 1)); }
+  else if (kind === 'c') idx.forEach(i => set(i, 'c', v || undefined));
+  else if (kind === 's') idx.forEach(i => { const z = clamp(Math.round(((get(i).s || 1) + v) * 100) / 100, .5, 2.5); set(i, 's', z === 1 ? undefined : z); });
+  if (f.some(Boolean)) q.fmt = f; else delete q.fmt;
+  paintCue(q, cur); save();
+}
+function alignFmt(ow, nw, of) {                                   // текст змінився: форматування лишається на тих самих словах
+  let p = 0, s = 0; while (p < ow.length && p < nw.length && ow[p] === nw[p]) p++;
+  while (s < ow.length - p && s < nw.length - p && ow[ow.length - 1 - s] === nw[nw.length - 1 - s]) s++;
+  const mid = ow.length - p - s, out = of.slice(0, p);
+  for (let j = 0; j < nw.length - p - s; j++) out.push(mid ? structuredClone(of[p + Math.min(j, mid - 1)]) : null);
+  out.push(...of.slice(ow.length - s)); return out;
+}
+function editCueText() { cueEd.focus(); const r = document.createRange(); r.selectNodeContents(cueEd); getSelection().removeAllRanges(); getSelection().addRange(r); paintCueBar(); }
+cueEd.addEventListener('input', e => {
+  const q = P.cues[selCue]; if (!q) return;
+  const text = cueEd.textContent.replace(/\n/g, ' '), of = q.fmt?.length === wordsOf(q).length ? q.fmt : null;
+  if (of) { const f = alignFmt(wordsOf(q), text.split(/\s+/).filter(Boolean), of); if (f.some(Boolean)) q.fmt = f; else delete q.fmt; }
+  q.text = text; if (!e.isComposing) paintCue(q, caretOf()); save();
+});
+cueEd.addEventListener('compositionend', () => { const q = P.cues[selCue]; if (q) paintCue(q, caretOf()); });
+cueEd.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); cueEd.blur(); return; }
+  const k = (e.ctrlKey || e.metaKey) && !e.altKey && {KeyB: 'b', KeyI: 'i', KeyU: 'u'}[e.code];
+  if (k) { e.preventDefault(); cueFormat(k); }
+});
+document.addEventListener('selectionchange', () => { if (document.activeElement === cueEd) paintCueBar(); });
+$('#cueCols').innerHTML = [null, '#ffffff', '#ffcc33', '#ff3b30', '#4fa3ff', '#5fe08a'].map(c => c
+  ? `<button class="csw" data-f="c" data-v="${c}" style="background:${c}" title="Колір" aria-label="${c}"></button>`
+  : '<button class="csw none" data-f="c" data-v="" title="Колір стилю" aria-label="Колір стилю"></button>').join('');
+$('#cueBar').onmousedown = e => { if (e.target.closest('button')) e.preventDefault(); };   // виділення в тексті не злітає
+$('#cueBar').onclick = e => {
+  const b = e.target.closest('button'), q = P.cues[selCue]; if (!b || !q || b.id === 'cueDel') return;
+  if (b.dataset.f) return cueFormat(b.dataset.f, b.dataset.f === 's' ? +b.dataset.v : b.dataset.v);
+  const a = b.dataset.q;
+  if (a === 'global') setCueGlobal(q, !!q.own);
+  if (a === 'upper') { const up = q.text !== q.text.toUpperCase(); q.text = up ? q.text.toUpperCase() : q.text.toLowerCase(); paintCue(q, caretOf()); save(); }
+  if (a === 'split') {                                            // слова до курсора — ліворуч, решта — праворуч
+    const w = wordsOf(q), cur = caretOf(); if (w.length < 2) return;
+    splitCue(q, null, cur ? clamp(wordsBefore(q, cur[0]), 1, w.length - 1) : Math.ceil(w.length / 2));
+  }
+  if (a === 'merge') { const nx = P.cues.slice(selCue + 1).find(x => rowOf(x) === rowOf(q)); if (nx) mergeCues(q, nx); }
+};
+// ── репліка зі своїм стилем і місцем (не глобальна): q.own; у списку зліва — рядок під своєю доріжкою ──
+const SUB_STYLE = ['font', 'size', 'color', 'hl', 'karaoke', 'upper', 'outline', 'anim', 'x', 'y', 'w'];
+function cueStyle(q) {                                            // чим малювати репліку: її стиль або доріжки
+  const el = cueOwner(q); if (!q.own || !el) return el;
+  return Object.assign(q.own, {type: 'subs', id: el.id, on: el.on});
+}
+function setCueGlobal(q, on) {
+  if (on === !q.own) return;
+  if (on) { if (selOwn === q.own) selOwn = null; delete q.own; }
+  else { const el = cueOwner(q) || ensureSubs(); q.own = {type: 'subs', _own: uid()}; for (const k of SUB_STYLE) q.own[k] = structuredClone(el[k]); selEl = el.id; selOwn = q.own; }
+  paintCueBar(); renderEls(); save();
+}
 $('#cueDel').onclick = () => { if (selCue < 0) return; P.cues.splice(selCue, 1); selectCue(-1); save(); };
 
 // ── список кліпів ──
-const info = c => net(c).toFixed(1) + ' с' + (c.score != null ? ' · ' + c.score.toFixed(1) : '') + (c.why ? ' · ' + c.why : '');
+const info = c => clipLen(c).toFixed(1) + ' с' + (c.score != null ? ' · ' + c.score.toFixed(1) : '') + (c.why ? ' · ' + c.why : '');
 function renderList() {
   if (!P) return;
   $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc(c.why)}"${c.col ? ` style="--cc:${c.col}"` : ''}>
@@ -1047,10 +1196,11 @@ function select(i, focus) {
   sel = i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
   if (focus && P.clips[i]) { const c = P.clips[i], pad = Math.max(5, (c.b - c.a) * .3); view = {t0: Math.max(0, c.a - pad), t1: Math.min(dur, c.b + pad)}; seek(c.a); }
 }
-let loopRun = null;                                               // програвання петлі: від мітки до кінця, далі з початку до мітки
+let playSeq = null;                                               // програвання шорту шматками: хук, з петлі до кінця, з початку до петлі
+const clipParts = c => [...(hookOk(c) ? [[...c.hook]] : []), ...(c.loop != null && loopOk(c, c.loop) ? [[c.loop, c.b], [c.a, c.loop]] : [[c.a, c.b]])];
 function playClip(i) {
-  const c = P.clips[i]; select(i, true);
-  if (c.loop != null && loopOk(c, c.loop)) { seek(c.loop); loopRun = c; } else stopAt = c.b;
+  const c = P.clips[i], parts = clipParts(c); select(i, true);
+  seek(parts[0][0]); if (parts.length > 1) playSeq = {parts, i: 0}; else stopAt = parts[0][1];
   vid.play();
 }
 $('#list').onclick = e => {
@@ -1087,12 +1237,12 @@ async function waitMix(video, path) {
   if (!vid.paused) mix.play();
 }
 const mixOn = () => !!mix.getAttribute('src');
-function seek(t) { vid.currentTime = clamp(t, 0, dur); stopAt = null; loopRun = null; }
+function seek(t) { vid.currentTime = clamp(t, 0, dur); stopAt = null; playSeq = null; }
 $('#play').onclick = () => vid.paused ? vid.play() : vid.pause();
 vid.onplay = vid.onpause = () => { $('#play').textContent = vid.paused ? '▶' : '❚❚'; if (mixOn()) { mix.currentTime = vid.currentTime; vid.paused ? mix.pause() : mix.play(); } };
 vid.onseeked = () => { if (mixOn()) mix.currentTime = vid.currentTime; };
 document.onkeydown = e => {
-  if (!$('#editor').classList.contains('on') || !P || e.target.matches('input,textarea,select')) return;
+  if (!$('#editor').classList.contains('on') || !P || e.target.matches('input,textarea,select,[contenteditable]')) return;
   if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) {
     e.preventDefault(); return e.code === 'KeyY' || e.shiftKey ? travel(redoSt, undoSt) : travel(undoSt, redoSt);
   }
@@ -1105,15 +1255,15 @@ document.onkeydown = e => {
     Space: () => sh ? (q ? (seek(q.a), stopAt = q.b, vid.play()) : c && playClip(sel)) : vid.paused ? vid.play() : vid.pause(),
     KeyB: () => splitAt(), KeyI: () => setRegionEdge('a'), KeyO: () => setRegionEdge('b'), KeyQ: () => trimTo('a'), KeyW: () => trimTo('b'),
     KeyN: () => addAt(t), KeyM: () => addMusicEl(), KeyZ: () => c && select(sel, true),
-    KeyH: () => el && (el.on = !el.on, renderEls(), save()), KeyG: () => el && !['subs', 'bg'].includes(el.type) && setGlobal(el, !!el.solo),
+    KeyH: () => el && (el.on = !el.on, renderEls(), save()), KeyG: () => q ? setCueGlobal(q, !!q.own) : el && elClip() && setGlobalIn(el, elClip(), !!ownOf(elClip(), el)),
     KeyR: () => focus === 'clip' && c && (c.on = !c.on, commit()),
     KeyJ: () => { if (!q) return; const nx = P.cues.slice(selCue + 1).find(x => rowOf(x) === rowOf(q)); if (nx) mergeCues(q, nx); },
-    Enter: () => q && ($('#cueText').focus(), $('#cueText').select()),
+    Enter: () => q && editCueText(),
     BracketRight: () => el && moveEl(el, sh ? 'top' : 'up'), BracketLeft: () => el && moveEl(el, sh ? 'bottom' : 'down'),
     Delete: removeSel, Backspace: removeSel,
   }[k];
   if (act) { e.preventDefault(); act(); }
-  else if (e.code === 'Escape') { selEl = null; sel = -1; selectCue(-1); renderEls(); renderList(); }
+  else if (e.code === 'Escape') { selEl = null; selOwn = null; sel = -1; selectCue(-1); renderEls(); renderList(); }
   else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); seek(t + (e.code === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 5 : 1)); }
 };
 // ── що вибрано останнім (елемент, кліп чи репліка) — з тим і працюють Del / Ctrl+C / Ctrl+V / Ctrl+D ──
@@ -1121,7 +1271,7 @@ let focus = 'clip', clipboard = null;
 const KEEPS_ELEMENT = '#layers,#pv,#ctx,#cropBar,#tour,#modal';   // кліки тут працюють з вибраним елементом; деінде — знімають вибір
 document.addEventListener('pointerdown', e => {                   // capture: смужка на таймлайні вибере свій елемент уже після цього
   if (!selEl || e.target.closest(KEEPS_ELEMENT)) return;
-  selEl = null; renderEls();
+  selEl = null; selOwn = null; renderEls();
 }, true);
 document.addEventListener('pointerdown', e => {                   // клік деінде закриває редактор репліки; клік по іншій репліці відкриє її
   if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
@@ -1192,7 +1342,7 @@ function paste(t = vid.currentTime) {                             // елеме�
     P.elements.push(el); selEl = el.id; focus = 'el'; renderEls(); return save();
   }
   if (kind === 'clip') {
-    P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh), ...(v.loop != null ? {loop: v.loop + sh} : {})}); sel = P.clips.length - 1; focus = 'clip'; return commit();
+    P.clips.push({...structuredClone(v), a: t, b: Math.min(dur, t + v.b - v.a), cut: shiftCuts(v.cut, sh), ...(v.loop != null ? {loop: v.loop + sh} : {}), ...(v.hook ? {hook: v.hook.map(x => x + sh)} : {})}); sel = P.clips.length - 1; focus = 'clip'; return commit();
   }
   const q = {...structuredClone(v), a: t, b: t + v.b - v.a, k: (v.k || []).map(x => x + sh)};
   if (!subsEls().some(e => e.id === q.sid)) q.sid = (subsEls()[0] || ensureSubs()).id;   // з проєкту, де інші доріжки
@@ -1210,7 +1360,7 @@ function rectOf(el) {
   if (el.type === 'subs') return {x: el.x, y: el.y, w: el.w, h: el.size * 1.4};
   if (el.type === 'progress') return {x: 0, y: el.y, w: 1080, h: el.h};
   if (el.type === 'bg') return {x: 0, y: 0, w: 0, h: 0};
-  const a = arts.get(el.id); if (!a || !a.img) return {x: el.x ?? 0, y: el.y, w: 0, h: 0};
+  const a = arts.get(aid(el)); if (!a || !a.img) return {x: el.x ?? 0, y: el.y, w: 0, h: 0};
   const r = el[TYPES[el.type].size[0]] / a.v; return {x: el.x ?? 0, y: el.y, w: a.w * r, h: a.h * r};
 }
 function shapePath(el, x, y, w, h) {
@@ -1221,19 +1371,34 @@ function shapePath(el, x, y, w, h) {
 function drawSubs(el, k) {                                        // наближення ASS-стилю рендеру
   const t = vid.currentTime, now = P.cues.filter(c => t >= c.a && t < c.b && cueOwner(c) === el);
   if (!P.cues.some(c => cueOwner(c) === el)) now.push({a: 0, b: 1e9, text: subsEls().length > 1 ? subName(el, subsEls().indexOf(el)) : 'Тут будуть субтитри', k: [0]});
-  for (const c of now) drawCue(el, k, c, t);
+  for (const c of now) drawCue(c.own ? cueStyle(c) : el, k, c, t);
 }
 function drawCue(el, k, c, t) {
   const words = (el.upper ? c.text.toUpperCase() : c.text).split(/\s+/).filter(Boolean); if (!words.length) return;
-  const base = el.color;
+  const fm = c.fmt?.length === words.length ? c.fmt : [], F = i => fm[i] || {};
   const ks = c.k && c.k.length === words.length ? c.k : words.map((_, i) => c.a + i * (c.b - c.a) / words.length);
-  const font = z => `bold ${z}px "${el.font || 'Arial'}", Arial, sans-serif`, line = words.join(' ');
-  let z = el.size * k; px.font = font(z); z *= Math.min(1, el.w * k / px.measureText(line).width); px.font = font(z);
+  const font = (z, f = {}) => `${f.i ? 'italic ' : ''}${f.b === false ? 400 : 'bold'} ${z * (f.s || 1)}px "${el.font || 'Arial'}", Arial, sans-serif`;
+  let z = el.size * k; px.font = font(z); const sp = px.measureText(' ').width;
+  const ws = words.map((w, i) => { px.font = font(z, F(i)); return px.measureText(w).width; });
+  const line = ws.reduce((s, w) => s + w, 0) + sp * (words.length - 1), r = Math.min(1, el.w * k / line); z *= r;
   const cur = el.karaoke ? ks.findLastIndex(s => s <= t) : -1, y = (el.y + el.size * .7) * k;
-  let x = (el.x + el.w / 2) * k - px.measureText(line).width / 2;
-  px.textBaseline = 'middle'; px.lineJoin = 'round'; px.lineWidth = el.outline * 2 * k * z / (el.size * k); px.strokeStyle = '#000';
-  words.forEach((w, i) => { if (el.outline) px.strokeText(w, x, y); px.fillStyle = i === cur ? el.hl : base; px.fillText(w, x, y); x += px.measureText(w + ' ').width; });
+  let x = (el.x + el.w / 2) * k - line * r / 2;
+  px.textBaseline = 'middle'; px.lineJoin = 'round'; px.lineWidth = el.outline * 2 * k * r; px.strokeStyle = '#000';
+  words.forEach((w, i) => {
+    const f = F(i), ww = ws[i] * r; px.font = font(z, f);
+    if (el.outline) px.strokeText(w, x, y); px.fillStyle = i === cur ? el.hl : f.c || el.color; px.fillText(w, x, y);
+    if (f.u) { const h = Math.max(1, z * (f.s || 1) * .07), uy = y + z * (f.s || 1) * .42; if (el.outline) px.strokeRect(x, uy, ww, h); px.fillRect(x, uy, ww, h); }
+    x += ww + sp * r;
+  });
   px.textBaseline = 'alphabetic';
+}
+// що зараз видно на прев'ю: елементи такими, якими вони є в поточному кліпі, і репліки зі своїм стилем
+const pvEls = () => { const c = pvClip(); return els().map(e => effEl(e, c)); };
+const ownCuesNow = () => { const t = vid.currentTime; return P.cues.filter(q => q.own && t >= q.a && t < q.b && cueOwner(q)?.on); };
+function selShown() {                                             // вибране, якщо воно саме зараз на прев'ю: йому — рамка
+  const g = elById(selEl); if (!g || g.type === 'bg' || g.type === 'music') return null;
+  if (selOwn) { const q = P.cues.find(q => q.own === selOwn); return q ? (ownCuesNow().includes(q) ? cueStyle(q) : null) : effEl(g, pvClip()) === selOwn ? selOwn : null; }
+  return effEl(g, pvClip()) === g ? g : null;
 }
 const bgc = Object.assign(document.createElement('canvas'), {width: 135, height: 240}), bgx = bgc.getContext('2d');
 function drawShort() {
@@ -1246,7 +1411,8 @@ function drawShort() {
     bgx.drawImage(vid, (bgc.width - S.w * s) / 2, (bgc.height - S.h * s) / 2, S.w * s, S.h * s); bgx.filter = 'none';
     px.drawImage(bgc, 0, 0, pv.width, pv.height);
   }
-  for (const el of [...els().filter(e => e.type !== 'subs'), ...els().filter(e => e.type === 'subs')]) {   // субтитри завжди згори, як у рендері
+  const shown = pvEls();
+  for (const el of [...shown.filter(e => e.type !== 'subs'), ...shown.filter(e => e.type === 'subs')]) {   // субтитри завжди згори, як у рендері
     if (el.type === 'bg' || !visible(el)) continue;
     if (el.type === 'video' || el.type === 'cam') {
       if (!vid.videoWidth) continue; const [x, y, w, h] = el.src, r = rectOf(el);
@@ -1256,13 +1422,13 @@ function drawShort() {
     } else if (el.type === 'subs') drawSubs(el, k);
     else if (el.type === 'progress') { const c = clipAt(vid.currentTime); px.fillStyle = el.color; px.fillRect(0, el.y * k, (c ? toOut(c, vid.currentTime) / net(c) : .4) * pv.width, el.h * k); }
     else {
-      ensureArt(el); const a = arts.get(el.id); if (!a || !a.img) continue;
+      ensureArt(el); const a = arts.get(aid(el)); if (!a || !a.img) continue;
       const r = el[TYPES[el.type].size[0]] / a.v;
       px.drawImage(a.img, (el.x - a.pad * r) * k, (el.y - a.pad * r) * k, a.img.naturalWidth * r * k, a.img.naturalHeight * r * k);
     }
   }
-  const el = elById(selEl), s = pvScale(), hs = HANDLE_PX * s;
-  if (el && el.type !== 'bg' && el.type !== 'music') {
+  const el = selShown(), s = pvScale(), hs = HANDLE_PX * s;
+  if (el) {
     const b = rectOf(el); px.strokeStyle = px.fillStyle = TYPES[el.type].col;
     px.lineWidth = 2 * s; px.setLineDash([6 * s, 4 * s]); px.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k); px.setLineDash([]);
     if (TYPES[el.type].size.length) px.fillRect((b.x + b.w) * k - hs, (b.y + b.h) * k - hs, hs * 2, hs * 2);
@@ -1388,7 +1554,7 @@ function pvPoint(e) { return {x: e.offsetX * pv.width / pv.clientWidth, y: e.off
 const toShort = p => ({x: p.x * 1080 / pv.width, y: p.y * 1080 / pv.width});
 function snapTargets(el) {
   const tx = [0, 540, 1080], ty = [0, 960, 1920];
-  for (const o of els()) if (o !== el && o.type !== 'bg' && visible(o)) { const r = rectOf(o); tx.push(r.x, r.x + r.w / 2, r.x + r.w); ty.push(r.y, r.y + r.h / 2, r.y + r.h); }
+  for (const o of [...pvEls(), ...ownCuesNow().map(cueStyle)]) if (o !== el && o.type !== 'bg' && visible(o)) { const r = rectOf(o); tx.push(r.x, r.x + r.w / 2, r.x + r.w); ty.push(r.y, r.y + r.h / 2, r.y + r.h); }
   return {tx, ty};
 }
 function snapRect(el, x, y, w, h, off) {                          // магнетизм до центру, країв кадру й інших елементів
@@ -1405,12 +1571,13 @@ function snapScale(el, r, f, off) {                               // при зм
   pvGuides = [[best[0], best[1]]]; return best[2];
 }
 function elAt(q) {                                                // елемент під курсором; вибраний має пріоритет
-  const order = [...els().filter(e => e.type === 'subs'), ...els().filter(e => e.type !== 'subs').reverse()].filter(e => e.type !== 'bg' && visible(e));
+  const shown = pvEls(), cues = ownCuesNow(), cueOf = st => cues.find(c => c.own === st);
+  const order = [...cues.map(cueStyle), ...shown.filter(e => e.type === 'subs'), ...shown.filter(e => e.type !== 'subs').reverse()].filter(e => e.type !== 'bg' && visible(e));
   const tol = shortUnits(HANDLE_PX + 6);
-  for (const el of [elById(selEl), ...order].filter(e => e && e.type !== 'bg')) {
-    const r = rectOf(el);
-    if (TYPES[el.type].size.length && Math.abs(q.x - r.x - r.w) < tol && Math.abs(q.y - r.y - r.h) < tol) return {el, resize: true, r};
-    if (q.x >= r.x && q.x <= r.x + r.w && q.y >= r.y && q.y <= r.y + r.h) return {el, r};
+  for (const el of [selShown(), ...order].filter(Boolean)) {
+    const r = rectOf(el), cue = cueOf(el);
+    if (TYPES[el.type].size.length && Math.abs(q.x - r.x - r.w) < tol && Math.abs(q.y - r.y - r.h) < tol) return {el, resize: true, r, cue};
+    if (q.x >= r.x && q.x <= r.x + r.w && q.y >= r.y && q.y <= r.y + r.h) return {el, r, cue};
   }
   return null;
 }
@@ -1418,9 +1585,11 @@ pv.onpointerdown = e => {
   if (!P || e.button !== 0) return; pv.setPointerCapture(e.pointerId); const p = pvPoint(e);
   if (mode === 'short') {
     const q = toShort(p), h = elAt(q);
-    if (!h) { if (selEl) { selEl = null; renderEls(); } return; }
+    if (!h) { if (selEl) { selEl = null; selOwn = null; renderEls(); } return; }
     drag = {el: h.el, q, r: h.r, resize: h.resize, v: TYPES[h.el.type].size.map(s => h.el[s])};
-    if (selEl !== h.el.id) { selEl = h.el.id; renderEls(); }
+    const own = h.el === elById(h.el.id) ? null : h.el;            // екземпляр кліпу чи репліка зі своїм стилем
+    if (h.cue) { selectCue(P.cues.indexOf(h.cue), false); focus = 'el'; }
+    if (selEl !== h.el.id || selOwn !== own) { selEl = h.el.id; selOwn = own; renderEls(); }
     return;
   }
   const h = cropHit(p); if (!h.el) { if (selEl) { selEl = null; renderEls(); } return; }
@@ -1536,8 +1705,9 @@ function drawTL() {
       tx.fillStyle = PAL.red; tx.fillRect(a, CTOP + 1, 2, cb - CTOP - 2); tx.fillRect(b - 2, CTOP + 1, 2, cb - CTOP - 2);
     }
     tx.fillStyle = col; tx.fillRect(x0, CTOP + 6, 3, cb - CTOP - 12); tx.fillRect(x1 - 3, CTOP + 6, 3, cb - CTOP - 12);
+    if (hookOk(c)) { const a = X(c.hook[0]), b = X(c.hook[1]); tx.fillStyle = HOOK_COL + '30'; tx.fillRect(a, CTOP + 1, b - a, cb - CTOP - 2); tx.fillStyle = HOOK_COL; tx.fillRect(a, CTOP + 1, b - a, 3); tx.fillStyle = col; }
     if (c.loop != null && loopOk(c, c.loop)) { const lx = X(c.loop); tx.fillStyle = LOOP_COL; tx.fillRect(lx - 1, CTOP + 1, 2, cb - CTOP - 2); tx.fillText('↻', lx + 5, CTOP + 15); }
-    tx.fillText(`#${i + 1}  ${net(c).toFixed(1)} с`, x0 + 8, CTOP + 15);
+    tx.fillStyle = col; tx.fillText(`#${i + 1}  ${clipLen(c).toFixed(1)} с`, x0 + 8, CTOP + 15);
     if (!ctx) return;
     tx.font = font(clamp(Math.round(BAR * .6), 11, 15));            // у витягнутих доріжках підписи більші
     laneEls().forEach((e, j) => {
@@ -1594,26 +1764,30 @@ function drawTL() {
   if (drag && guide != null) { tx.strokeStyle = PAL.guide; tx.setLineDash([4, 3]); tx.beginPath(); tx.moveTo(X(guide), 0); tx.lineTo(X(guide), TH); tx.stroke(); tx.setLineDash([]); }
   const p = X(vid.currentTime); tx.fillStyle = PAL.play; tx.fillRect(p - 1, TICK - 2, 2, TH);   // курсор з ручкою на шкалі
   tx.beginPath(); const kw = 7; tx.moveTo(p - kw, 2); tx.lineTo(p + kw, 2); tx.lineTo(p + kw, TICK - kw + 1); tx.lineTo(p, TICK); tx.lineTo(p - kw, TICK - kw + 1); tx.closePath(); tx.fill();
-  if (loopKey && hover) {                                          // де стане петля
-    const t = Tt(hover.x), c = P.clips.find(c => loopOk(c, t)), lx = X(t);
+  if ((loopKey || drag?.hook) && hover) {                         // де стане петля чи хук
+    const t = Tt(hover.x), hk = drag?.hook?.moved && drag.hook, c = !hk && P.clips.find(c => loopOk(c, t)), lx = X(t);
     if (c) { tx.strokeStyle = LOOP_COL; tx.lineWidth = 2; tx.setLineDash([5, 3]); tx.beginPath(); tx.moveTo(lx, CTOP); tx.lineTo(lx, cb); tx.stroke(); tx.setLineDash([]); }
-    tx.font = font(12, 600); const label = c ? 'Петля: шорт почнеться звідси' : 'Петля: наведи на кліп', lh = 22, w = tx.measureText(label).width + 16;
+    const label = hk ? `Хук ${hookLen(hk).toFixed(1)} с — на початок шорту` : c ? 'Клік — петля · тягни — хук на початок' : P.clips.some(c => t >= c.a && t <= c.b) ? 'Тягни — хук на початок' : 'Наведи на кліп';
+    tx.font = font(12, 600); const lh = 22, w = tx.measureText(label).width + 16, bgc_ = hk ? HOOK_COL : LOOP_COL;
     const lbx = clamp(hover.x + 12, 0, TW - w), lby = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
-    rr(lbx, lby, w, lh, 0); tx.fillStyle = LOOP_COL; tx.fill(); tx.fillStyle = '#10232a'; tx.fillText(label, lbx + 8, lby + lh * .68); tx.font = font(11);
+    rr(lbx, lby, w, lh, 0); tx.fillStyle = bgc_; tx.fill(); tx.fillStyle = '#10232a'; tx.fillText(label, lbx + 8, lby + lh * .68); tx.font = font(11);
   }
-  const mod = !loopKey && hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
+  const mod = !loopKey && !drag?.hook && hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
   if (mod) {                                                      // що зробить Shift / Alt / Ctrl
     const label = mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.label;
     tx.font = font(12, 600); const lh = 22, w = tx.measureText(label).width + 16, lx = clamp(hover.x + 12, 0, TW - w), ly = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
     rr(lx, ly, w, lh, 0); tx.fillStyle = mod.col; tx.fill(); tx.fillStyle = mod.ink; tx.fillText(label, lx + 8, ly + lh * .68); tx.font = font(11);
   }
 }
-let loopKey = false;                                              // затиснутий правий Alt: клік по кліпу ставить петлю
+let loopKey = false;                                              // затиснутий правий Alt: клік по кліпу — петля, перетягування — хук
 addEventListener('keydown', e => { if (e.code === 'AltRight') { loopKey = true; e.preventDefault(); } });
 addEventListener('keyup', e => { if (e.code === 'AltRight') loopKey = false; });
 addEventListener('blur', () => { loopKey = false; });
 const loopOk = (c, t) => t > c.a + .5 && t < c.b - .5 && !(c.cut || []).some(([x, y]) => t >= x && t < y);
-const LOOP_COL = '#5ec8e8';
+const LOOP_COL = '#5ec8e8', HOOK_COL = '#e07bd0';
+const hookOk = c => c.hook?.length === 2 && c.hook[1] - c.hook[0] >= .3 && c.hook[0] >= c.a - .01 && c.hook[1] <= c.b + .01;
+const hookLen = c => hookOk(c) ? toOut(c, c.hook[1]) - toOut(c, c.hook[0]) : 0;
+const clipLen = c => net(c) + hookLen(c);                           // довжина готового шорту: з хуком на початку
 const MODS = [{key: 'shift', label: 'Shift: новий кліп', col: '#3d4a5a', ink: '#e2dfda'}, {key: 'alt', label: 'Alt: вирізати шматок', col: '#5a2f2b', ink: '#f3dcd8'},
               {key: 'ctrl', label: 'Ctrl: нова область аналізу', col: '#f2b33d', ink: '#1b1712'}];
 let hover = null;                                                 // курсор над таймлайном і затиснуті модифікатори
@@ -1680,10 +1854,9 @@ function hit(x, y) {
 tl.onmousedown = tl.onauxclick = e => { if (e.button === 1) e.preventDefault(); };
 tl.onpointerdown = e => {
   if (!dur || !P) return;
-  if (loopKey) {                                                  // петля: шорт почнеться звідси, початок кліпу піде після кінця
-    const t = snap(Tt(e.offsetX), 'ph'), i = P.clips.findIndex(c => loopOk(c, t)); guide = null;
-    if (i >= 0) { P.clips[i].loop = t; sel = i; commit(); }
-    return;
+  if (loopKey) {                                                  // клік — петля (шорт почнеться звідси), перетягування — хук на початок
+    const t = snap(Tt(e.offsetX), 'ph'), c = P.clips.find(c => t >= c.a && t <= c.b); guide = null; if (!c) return;
+    tl.setPointerCapture(e.pointerId); drag = {hook: c, t0: t, x0: e.offsetX, prev: c.hook}; return;
   }
   tl.setPointerCapture(e.pointerId);
   if (e.button === 1) { e.preventDefault(); drag = {pan: e.offsetX, v: {...view}}; tl.style.cursor = 'grabbing'; return; }
@@ -1706,7 +1879,7 @@ tl.onpointerdown = e => {
     const c = P.clips[i]; (c.cut ||= []).push([t, t]); sel = i; drag = {i, cut: c.cut.length - 1, edge: 1}; return;
   }
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
-  if (drag.bar) { selEl = drag.bar.id; renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
+  if (drag.bar) { selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek) seek(snap(t, 'ph'));
   else if (drag.cue != null) selectCue(drag.cue, false);           // курсор лишається там, де був: B розріже саме там
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
@@ -1730,6 +1903,10 @@ tl.onpointermove = e => {
     if (!P || !dur) return;
     const h = hit(e.offsetX, e.offsetY);
     tl.style.cursor = e.shiftKey || e.altKey || e.ctrlKey ? 'crosshair' : h.scrub ? 'pointer' : h.move != null ? 'grab' : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
+  }
+  if (drag.hook) {
+    if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return; drag.moved = true;
+    const c = drag.hook, t = clamp(snap(clamp(Tt(e.offsetX), 0, dur), c), c.a, c.b); c.hook = [Math.min(drag.t0, t), Math.max(drag.t0, t)]; return;
   }
   if (drag.pan != null) { const d = (e.offsetX - drag.pan) / TW * (drag.v.t1 - drag.v.t0); view.t0 = drag.v.t0 - d; view.t1 = drag.v.t1 - d; return clampView(); }
   const raw = clamp(Tt(e.offsetX), 0, dur), g = Math.min(10, dur);
@@ -1777,12 +1954,18 @@ tl.onpointermove = e => {
 };
 tl.addEventListener('pointermove', e => { snapOff = !!drag && e.ctrlKey && drag.regionNew == null; }, true);
 tl.onpointerup = e => {
+  if (drag && drag.hook) {
+    const c = drag.hook;
+    if (!drag.moved) { if (loopOk(c, drag.t0)) c.loop = drag.t0; }
+    else if (!hookOk(c)) { if (drag.prev) c.hook = drag.prev; else delete c.hook; }
+    sel = P.clips.indexOf(c); drag = null; guide = null; return commit();
+  }
   if (drag && drag.create) {                                      // Shift+клік без перетягування — кліп типової довжини
     const c = drag.create; if (c.b - c.a < .5) c.b = Math.min(dur, c.a + (cfg.min_len + cfg.max_len) / 2); overwrite('clip', c); sel = P.clips.indexOf(c); commit();
   }
   if (drag && drag.createCue) {                                   // Shift+клік у рядку реплік — репліка на 1.5 с, одразу пишемо текст
     const q = drag.createCue, nx = P.cues.find(x => x !== q && rowOf(x) === rowOf(q) && x.a > q.a); if (q.b - q.a < .3) q.b = Math.min(q.a + 1.5, nx ? nx.a : dur);
-    overwrite('cue', q); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(q)); $('#cueText').focus(); $('#cueText').select(); save();
+    overwrite('cue', q); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(q)); editCueText(); save();
   }
   if (drag && drag.regionNew != null) {                           // Ctrl+клік без перетягування — область ±min від точки
     let [a, b] = P.region; const g = Math.min(10, dur); if (b - a < g) { a = clamp(a - g / 2, 0, dur - g); b = a + g; } P.region = [a, b]; save();
@@ -1852,7 +2035,9 @@ function syncSound() {
 }
 (function loop() {
   if ($('#editor').classList.contains('on')) {
-    if (loopRun && !vid.paused && vid.currentTime >= loopRun.b - .03) { const c = loopRun; seek(c.a); stopAt = c.loop; }   // кінець кліпу — далі його початок
+    if (playSeq && !vid.paused && vid.currentTime >= playSeq.parts[playSeq.i][1] - .03) {   // кінець шматка — далі наступний
+      if (++playSeq.i < playSeq.parts.length) vid.currentTime = playSeq.parts[playSeq.i][0]; else { vid.pause(); playSeq = null; }
+    }
     if (stopAt != null && vid.currentTime >= stopAt) { vid.pause(); stopAt = null; }
     if (P && (P.clips.length ? ctxClip() : null) !== listClip) renderEls();   // інший кліп — свій список елементів
     if (P && !vid.paused) {                                        // програвання перестрибує пропуски, як у рендері
@@ -1902,11 +2087,12 @@ function splitClip(c, t) {                                        // два кл
   const within = (a, b) => (c.cut || []).map(([u, v]) => [Math.max(u, a), Math.min(v, b)]).filter(([u, v]) => v - u >= .2);
   const right = {...structuredClone(c), a: t, cut: within(t, c.b)};
   if (c.loop >= t) delete c.loop; else delete right.loop;          // петля лишається в тій половині, де стоїть
+  if (c.hook?.[0] >= t) delete c.hook; else { delete right.hook; if (c.hook) c.hook[1] = Math.min(c.hook[1], t); }   // хук — теж
   c.cut = within(c.a, t); c.b = t; P.clips.push(right); commit();
 }
 function dupClip(c) {                                             // копія одразу після оригіналу
   const len = c.b - c.a, a = Math.min(c.b, dur - len);
-  P.clips.push({...structuredClone(c), a, b: a + len, cut: shiftCuts(c.cut, a - c.a), ...(c.loop != null ? {loop: c.loop + a - c.a} : {})}); sel = P.clips.length - 1; commit();
+  P.clips.push({...structuredClone(c), a, b: a + len, cut: shiftCuts(c.cut, a - c.a), ...(c.loop != null ? {loop: c.loop + a - c.a} : {}), ...(c.hook ? {hook: c.hook.map(x => x + a - c.a)} : {})}); sel = P.clips.length - 1; commit();
 }
 const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червоний'], ['#d08a3c', 'Помаранчевий'], ['#c9ad45', 'Жовтий'],
   ['#62a467', 'Зелений'], ['#4f94b8', 'Блакитний'], ['#8a70c4', 'Фіолетовий'], ['#c46a9e', 'Рожевий']];
@@ -1921,6 +2107,7 @@ function clipMenu(i, t, at) {
     {label: `Закінчити кліп ${at}`, key: 'W', off: t < c.a + 1, run: () => { c.b = t; commit(); }},
     loopOk(c, t) && {label: `Петля: шорт почнеться ${at}`, key: 'Правий Alt+клік', run: () => { c.loop = t; commit(); }},
     c.loop != null && {label: 'Прибрати петлю', run: () => { delete c.loop; commit(); }},
+    c.hook && {label: 'Прибрати хук', run: () => { delete c.hook; commit(); }},
     {label: `Розрізати на два ${at}`, key: 'B', off: t < c.a + .5 || t > c.b - .5, run: () => splitClip(c, t)},
     c.cut?.length && {label: 'Повернути всі вирізані шматки', run: () => { c.cut = []; commit(); }},
     '-',
@@ -1935,16 +2122,22 @@ function clipMenu(i, t, at) {
 // ── меню репліки ──
 const wordsOf = q => q.text.split(/\s+/).filter(Boolean);
 const splitIdx = (q, t, w = wordsOf(q)) => clamp(q.k?.length === w.length ? q.k.filter(s => s < t).length : Math.round(w.length * (t - q.a) / (q.b - q.a)), 1, w.length - 1);
-function splitCue(q, t) {                                         // слова діляться за їхнім часом, а без нього — пропорційно
-  const w = wordsOf(q), hasK = q.k?.length === w.length, n = splitIdx(q, t, w);
-  const r = {...q, a: t, text: w.slice(n).join(' '), k: hasK ? q.k.slice(n) : []};
-  Object.assign(q, {b: t, text: w.slice(0, n).join(' '), k: hasK ? q.k.slice(0, n) : []});
+function splitCue(q, t, n) {                                      // за часом t (слова діляться за їхнім часом, а без нього — пропорційно) або за словом n
+  const w = wordsOf(q), hasK = q.k?.length === w.length, f = fmtOf(q);
+  if (n == null) n = splitIdx(q, t, w); else t = hasK ? q.k[n] : q.a + (q.b - q.a) * n / w.length;
+  const tidy = x => x.some(Boolean) ? x : undefined;
+  const r = {...structuredClone(q), a: t, text: w.slice(n).join(' '), k: hasK ? q.k.slice(n) : [], fmt: tidy(f.slice(n))};
+  if (r.own) r.own._own = uid();
+  Object.assign(q, {b: t, text: w.slice(0, n).join(' '), k: hasK ? q.k.slice(0, n) : [], fmt: tidy(f.slice(0, n))});
+  for (const x of [q, r]) if (!x.fmt) delete x.fmt;
   P.cues.push(r); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(r), false); save();
 }
-function mergeCues(q, nx) {
-  const timed = c => c.k?.length === wordsOf(c).length;
+function mergeCues(q, nx) {                                       // стиль — від першої, форматування слів — кожного свого
+  const timed = c => c.k?.length === wordsOf(c).length, f = [...fmtOf(q), ...fmtOf(nx)];
   q.k = timed(q) && timed(nx) ? [...q.k, ...nx.k] : []; q.text = `${q.text} ${nx.text}`.trim(); q.b = nx.b;
-  P.cues.splice(P.cues.indexOf(nx), 1); selectCue(P.cues.indexOf(q), false); save();
+  if (f.some(Boolean)) q.fmt = f; else delete q.fmt;
+  if (selOwn === nx.own) selOwn = null;
+  P.cues.splice(P.cues.indexOf(nx), 1); selectCue(P.cues.indexOf(q), false); renderEls(); save();
 }
 async function pickAudio() {
   const {path} = await api('/api/pick', {kind: 'audio'}); if (!path) return null;
@@ -1954,7 +2147,7 @@ async function pickAudio() {
 }
 async function addMusicEl(c = P.clips.length ? ctxClip() : null) {   // музика живе всередині кліпу
   const a = await pickAudio(); if (!a) return;
-  const el = {...mk({type: 'music', vol: 1, fin: 0, fout: 1}), ...a, solo: !!c};   // кліпів ще немає — глобальна
+  const el = {...mk({type: 'music', vol: 1, fin: 0, fout: 1}), ...a, solo: !!c};   // кліпів ще немає — у всіх кліпах
   P.elements.push(el); if (c) (c.segs ||= {})[el.id] = [[0, a.dur < net(c) - .05 ? a.dur : 0]];
   selEl = el.id; focus = 'el'; renderEls(); save(true); loadPeaks(el.path);
 }
@@ -2029,7 +2222,8 @@ function moveCue(q, el) { q.sid = el.id; selectCue(P.cues.indexOf(q), false); re
 function cueMenu(j, t) {
   const q = P.cues[j], nx = P.cues.slice(j + 1).find(c => rowOf(c) === rowOf(q)); selectCue(j, false);
   return [{hd: 'Репліка'},
-    {label: 'Редагувати текст', key: 'Enter', run: () => { $('#cueText').focus(); $('#cueText').select(); }},
+    {label: 'Глобальний', key: q.own ? 'G' : '✓ G', on: !q.own, run: () => setCueGlobal(q, !!q.own)},
+    {label: 'Редагувати текст', key: 'Enter', run: () => { editCueText(); }},
     {label: 'Програти репліку', key: 'Shift+Space', run: () => { seek(q.a); stopAt = q.b; vid.play(); }},
     {label: 'Дублювати після неї', key: 'Ctrl+D', run: () => dupCue(q)},
     {label: 'Розділити тут', key: 'B', off: wordsOf(q).length < 2 || t <= q.a + .1 || t >= q.b - .1, run: () => splitCue(q, t)},
@@ -2066,11 +2260,12 @@ function laneMenu(t, inCues, sp) {
 const ALIGN = {l: () => ({x: 0}), ch: r => ({x: (1080 - r.w) / 2}), r: r => ({x: 1080 - r.w}),
                t: () => ({y: 0}), cv: r => ({y: (1920 - r.h) / 2}), b: r => ({y: 1920 - r.h})};
 const ALIGN_ROW = [['l', '⇤', 'Ліворуч'], ['ch', '↔', 'По центру горизонтально'], ['r', '⇥', 'Праворуч'], ['t', '⤒', 'Згори'], ['cv', '↕', 'По центру вертикально'], ['b', '⤓', 'Знизу']];
-function alignEl(el, how) { const p = ALIGN[how](rectOf(el)); for (const k in p) el[k] = Math.round(p[k]); save(); }
-const pickEl = el => { selEl = el.id; focus = 'el'; renderEls(); };
+const shownEl = el => { const g = elById(el.id); return g ? effEl(g, pvClip()) : el; };   // вирівнюємо те, що видно на прев'ю
+function alignEl(el, how) { el = shownEl(el); const p = ALIGN[how](rectOf(el)); for (const k in p) el[k] = Math.round(p[k]); save(); }
+const pickEl = el => { selEl = el.id; selOwn = null; focus = 'el'; renderEls(); };
 function timingItems(el, t, where) {                              // з якого й до якого моменту кліпу видно елемент
   const c = P.clips.length ? ctxClip() : null; if (!c || ['subs', 'bg'].includes(el.type)) return [];
-  if (el.solo && !c.segs?.[el.id]) return ['-', {label: `Додати в кліп #${P.clips.indexOf(c) + 1}`, run: () => addToClip(el, c)}, {label: 'Зробити глобальним', key: 'G', run: () => setGlobal(el, true)}];
+  if (el.solo && !c.segs?.[el.id]) return ['-', {label: `Додати в кліп #${P.clips.indexOf(c) + 1}`, run: () => addToClip(el, c)}, {label: 'Додати в усі кліпи', run: () => setEverywhere(el, true)}];
   const rel = toOut(c, clamp(t, c.a, c.b)), n = net(c), done = () => { save(); renderProps(); };
   const own = !!c.segs?.[el.id];
   return ['-', {hd: 'Коли видно'},
@@ -2098,14 +2293,16 @@ function segItems(e, c, t, k) {                                  // сховат
       : {label: 'Показати в цьому кліпі', run: () => { c.segs[e.id] = [[0, 0]]; done(); }},
     !e.solo && own && {label: 'Як у всіх кліпах', run: () => { delete c.segs[e.id]; done(); }},
     !e.solo && own && segs.length === 1 && {label: 'Так у всіх кліпах', run: () => { [e.from, e.to] = segs[0]; for (const o of P.clips) if (o.segs) delete o.segs[e.id]; done(); }},
-    {label: e.solo ? 'Зробити глобальним' : 'Зробити не глобальним', key: 'G', run: () => setGlobal(e, !!e.solo)},
+    {label: e.solo ? 'Додати в усі кліпи' : 'Не додавати в нові кліпи', run: () => setEverywhere(e, !!e.solo)},
     '-'];
 }
 function elMenu(el, t = vid.currentTime, where = 'з поточного кадру') {
-  pickEl(el); const isSrc = el.type === 'video' || el.type === 'cam';
+  el = elById(el.id) || el; pickEl(el); const isSrc = el.type === 'video' || el.type === 'cam', c = elClip();
+  if (c && ownOf(c, el)) selOwn = ownOf(c, el);
   return [{hd: TYPES[el.type].name},
+    c && canOwn(el) && inClip(c, el) && {label: 'Глобальний', key: ownOf(c, el) ? 'G' : '✓ G', on: !ownOf(c, el), run: () => setGlobalIn(el, c, !!ownOf(c, el))},
     !['bg', 'progress', 'music'].includes(el.type) && {row: ALIGN_ROW.map(([k, ic, title]) => ({ic, title, run: () => alignEl(el, k)}))},
-    ['video', 'cam', 'subs', 'image'].includes(el.type) && {label: 'На всю ширину', run: () => { el.x = 0; el.w = 1080; save(); }},
+    ['video', 'cam', 'subs', 'image'].includes(el.type) && {label: 'На всю ширину', run: () => { const v = shownEl(el); v.x = 0; v.w = 1080; save(); }},
     isSrc && {label: 'Кадрувати джерело', run: () => setMode('src')},
     el.type === 'cam' && {label: 'Знайти вебкамеру автоматично', run: () => detectCam(el)},
     ...timingItems(el, t, where), ...(el.type === 'music' ? [] : layerItems(el)), '-',
@@ -2137,7 +2334,7 @@ function cropMenu(el) {
 }
 pv.oncontextmenu = e => {
   e.preventDefault(); if (!P) return; const p = pvPoint(e);
-  if (mode === 'short') { const h = elAt(toShort(p)); return openMenu(e, h ? elMenu(h.el) : stageMenu()); }
+  if (mode === 'short') { const h = elAt(toShort(p)); return openMenu(e, h?.cue ? cueMenu(P.cues.indexOf(h.cue), vid.currentTime) : h ? elMenu(h.el) : stageMenu()); }
   openMenu(e, cropMenu(cropHit(p).el));
 };
 $('#els').oncontextmenu = e => { const r = e.target.closest('.el'); if (r) openMenu(e, elMenu(elById(r.dataset.id))); };
@@ -2148,7 +2345,7 @@ $('#rbar').oncontextmenu = e => { if (P && dur && e.target.closest('#rband,#ract
 $('#render').onclick = async () => {
   if (!P || !P.clips.some(c => c.on)) return msg('Немає увімкнених кліпів', 1);
   if (subsEl()?.on && !P.cues.length) msg('Субтитрів ще немає', 1);
-  const list = P.clips.slice().sort((x, y) => x.a - y.a).map(c => ({a: c.a, b: c.b, on: c.on, cut: c.cut || []}));
+  const list = structuredClone(P.clips).sort((x, y) => x.a - y.a).map(c => ({...c, cut: c.cut || []}));
   try { await save(true); await api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues, music: P.music}); poll(); } catch (e) { msg(e.message, 1); }
 };
 let outDir = '';
@@ -2172,7 +2369,7 @@ const TOUR = [
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#keysBtn', 'Клавіші', `<p>Усі клавіші — тут або ${key('?')}.</p>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
-  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Перемикач <b>Глобальний</b> робить елемент частиною всіх кліпів. Для іншого тексту чи треку додай новий елемент.</p>'],
+  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти <b>Глобальний</b> у меню правої кнопки — і в цьому кліпі елемент матиме свої налаштування: рядком під елементом.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>
@@ -2213,9 +2410,9 @@ const KEYS = [
     ['I', 'початок області аналізу'], ['O', 'кінець області аналізу'], ['Alt+перетягування', 'вирізати шматок кліпу']]],
   ['Створити', [['N', 'новий кліп'], ['M', 'музика в кліп'], ['Shift+перетягування', 'новий кліп; у рядку реплік — репліка'], ['Ctrl+перетягування', 'нова область аналізу'],
     ['Рядок зі списку на кліп', 'додати елемент у кліп']]],
-  ['Вибране', [['Del', 'прибрати з кліпу (глобальний — сховати)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
-    ['H', 'сховати / показати елемент'], ['G', 'глобальний / ні'], ['] / [', 'шар вище / нижче'], ['Shift+] / Shift+[', 'на передній / задній план'], ['Esc', 'зняти вибір']]],
-  ['Кліпи й репліки', [['Правий Alt+клік по кліпу', 'петля: шорт почнеться звідси, а початок кліпу піде в кінець'], ['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
+  ['Вибране', [['Del', 'прибрати з кліпу (той, що в усіх кліпах, — сховати тут)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
+    ['H', 'сховати / показати елемент'], ['G', 'глобальний у цьому кліпі чи репліці / свої налаштування'], ['] / [', 'шар вище / нижче'], ['Shift+] / Shift+[', 'на передній / задній план'], ['Esc', 'зняти вибір']]],
+  ['Кліпи й репліки', [['Правий Alt+клік по кліпу', 'петля: шорт почнеться звідси, а початок кліпу піде в кінець'], ['Правий Alt+перетягування', 'хук: цей шматок повториться на самому початку шорту'], ['Ctrl+B / Ctrl+I / Ctrl+U', 'форматування виділених слів репліки'], ['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
   ['Перетягування', [['Ctrl', 'без прилипання'], ['Shift', 'зберегти пропорції в прев\'ю'], ['Колесо', 'масштаб таймлайна чи прев\'ю'], ['Затиснуте колесо', 'рухати прев\'ю'], ['Права кнопка', 'усі дії з тим, що під курсором']]],
   ['Загальне', [['Ctrl+Z', 'скасувати'], ['Ctrl+Y / Ctrl+Shift+Z', 'повторити'], ['?', 'це вікно']]],
 ];
@@ -2228,7 +2425,7 @@ $('#keys').onclick = e => { if (e.target.id === 'keys') toggleKeys(false); };
 addEventListener('keydown', e => {
   const on = $('#keys').classList.contains('on');
   if (on && e.key === 'Escape') { toggleKeys(false); e.preventDefault(); e.stopImmediatePropagation(); return; }
-  if (e.key === '?' && !e.target.matches?.('input,textarea,select')) { toggleKeys(); e.preventDefault(); e.stopImmediatePropagation(); }
+  if (e.key === '?' && !e.target.matches?.('input,textarea,select,[contenteditable]')) { toggleKeys(); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
 
 function renderAll() { renderEls(); renderList(); $('#videoChip span').textContent = P && P.video ? P.video.split(/[\\/]/).pop() : 'Обрати відео'; $('#cueEdit').classList.remove('on'); }

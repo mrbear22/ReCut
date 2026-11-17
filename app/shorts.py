@@ -797,29 +797,60 @@ def cue_owner(c, subs_all):
     """Елемент «Субтитри», якому належить репліка (кожен спікер — свій елемент); без позначки — першому."""
     return next((e for e in subs_all if e["id"] == c.get("sid")), subs_all[0] if subs_all else None)
 
+SUB_STYLE = ("font", "size", "color", "hl", "karaoke", "upper", "outline", "anim", "x", "y", "w")   # що репліка може мати своє
+
+def cue_style(c, el):
+    """Стиль репліки: свій, якщо її від'єднали від глобального стилю доріжки, інакше — доріжки."""
+    own = c.get("own") or {}
+    return dict(el, **{k: own[k] for k in SUB_STYLE if k in own})
+
+def word_tags(f, size):
+    """Пословне форматування репліки: (теги перед словом, повернення до стилю після нього)."""
+    pre, post = "", ""
+    if "b" in f: pre += f"\\b{1 if f['b'] else 0}"; post += "\\b1"   # субтитри типово жирні
+    if f.get("i"): pre += "\\i1"; post += "\\i0"
+    if f.get("u"): pre += "\\u1"; post += "\\u0"
+    if f.get("s") and float(f["s"]) != 1: pre += f"\\fs{size * float(f['s']):.0f}"; post += f"\\fs{size:.0f}"
+    return pre, post
+
 def subs_ass(cues, keep, subs_all):
-    """ASS кліпу: кожен увімкнений елемент «Субтитри» — свій стиль і місце, зі своїми репліками; час — уже без вирізаних пропусків."""
+    """ASS кліпу: кожен увімкнений елемент «Субтитри» — свій стиль і місце, зі своїми репліками; репліка може мати свій стиль
+    і пословне форматування; час — уже без вирізаних пропусків."""
     ts = lambda t: f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"
-    styles, lines = [], []
-    for n, el in enumerate(subs_all):
-        if not on(el): continue
-        size = float(el.get("size", 84)); x, y, w = float(el["x"]), float(el["y"]), float(el.get("w", 900))
-        hl, base = ass_col(el.get("hl", "#ffcc33")), ass_col(el.get("color", "#ffffff"))
-        intro = {"pop": r"\fscx80\fscy80\t(0,90,\fscx100\fscy100)", "fade": r"\fad(150,0)"}.get(el.get("anim", "pop"), "")
-        styles.append(f"Style: S{n},{pick_font(el.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,"
-                      f"{float(el.get('outline', 6)):.1f},{size * 0.04:.1f},5,{max(0, x):.0f},{max(0, W - x - w):.0f},0,1")
-        for c in (c for c in cues if cue_owner(c, subs_all) is el):
-            text = re.sub(r"[{}\\]", "", c["text"].upper() if el.get("upper") else c["text"]); words = text.split()
-            if not words: continue
-            k = c.get("k") if len(c.get("k") or []) == len(words) else [c["a"] + i * (c["b"] - c["a"]) / len(words) for i in range(len(words))]
-            spans = list(zip(k, k[1:] + [c["b"]], range(len(words)))) if el.get("karaoke", True) else [(c["a"], c["b"], -1)]
-            first = True
-            for s0_, e_, i in spans:
-                body = " ".join(f"{{\\1c{hl}}}{t}{{\\1c{base}}}" if j == i else t for j, t in enumerate(words)); off = 0.0
-                for s0, s1 in keep:                                    # репліка через вирізаний пропуск ділиться на шматки
-                    a, b = max(s0_, s0) - s0 + off, min(e_, s1) - s0 + off; off += s1 - s0
-                    if b - a < 0.02: continue
-                    lines.append(f"Dialogue: 0,{ts(a)},{ts(b)},S{n},,0,0,0,,{{\\an5\\pos({x + w / 2:.0f},{y + size * 0.7:.0f}){intro * first}}}{body}"); first = False
+    styles, lines, names = [], [], {}
+    def style_name(st):
+        size, x, w, base, bord = float(st.get("size", 84)), float(st["x"]), float(st.get("w", 900)), ass_col(st.get("color", "#ffffff")), float(st.get("outline", 6))
+        key = json.dumps([st.get("font"), round(size), base, bord, round(x), round(w)])
+        if key not in names:
+            names[key] = f"S{len(names)}"
+            styles.append(f"Style: {names[key]},{pick_font(st.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,"
+                          f"{bord:.1f},{size * 0.04:.1f},5,{max(0, x):.0f},{max(0, W - x - w):.0f},0,1")
+        return names[key]
+    for c in cues:
+        el = cue_owner(c, subs_all)
+        if not el or not on(el): continue
+        st = cue_style(c, el); name = style_name(st)
+        size = float(st.get("size", 84)); x, y, w = float(st["x"]), float(st["y"]), float(st.get("w", 900))
+        hl, base = ass_col(st.get("hl", "#ffcc33")), ass_col(st.get("color", "#ffffff"))
+        intro = {"pop": r"\fscx80\fscy80\t(0,90,\fscx100\fscy100)", "fade": r"\fad(150,0)"}.get(st.get("anim", "pop"), "")
+        raw = c["text"].split()
+        if not raw: continue
+        fmt = c.get("fmt") if len(c.get("fmt") or []) == len(raw) else [None] * len(raw)
+        words = [re.sub(r"[{}\\]", "", t.upper() if st.get("upper") else t) for t in raw]
+        k = c.get("k") if len(c.get("k") or []) == len(words) else [c["a"] + i * (c["b"] - c["a"]) / len(words) for i in range(len(words))]
+        spans = list(zip(k, k[1:] + [c["b"]], range(len(words)))) if st.get("karaoke", True) else [(c["a"], c["b"], -1)]
+        def word(j, t, i):
+            f = fmt[j] or {}; col = hl if j == i else ass_col(f["c"]) if re.fullmatch(r"#[0-9a-fA-F]{6}", f.get("c") or "") else base
+            pre, post = word_tags(f, size)
+            if col != base: pre, post = f"\\1c{col}" + pre, f"\\1c{base}" + post
+            return f"{{{pre}}}{t}{{{post}}}" if pre else t
+        first = True
+        for s0_, e_, i in spans:
+            body = " ".join(word(j, t, i) for j, t in enumerate(words)); off = 0.0
+            for s0, s1 in keep:                                        # репліка через вирізаний пропуск ділиться на шматки
+                a, b = max(s0_, s0) - s0 + off, min(e_, s1) - s0 + off; off += s1 - s0
+                if b - a < 0.02: continue
+                lines.append(f"Dialogue: 0,{ts(a)},{ts(b)},{name},,0,0,0,,{{\\an5\\pos({x + w / 2:.0f},{y + size * 0.7:.0f}){intro * first}}}{body}"); first = False
     return (f"[Script Info]\nScriptType: v4.00+\nPlayResX: {W}\nPlayResY: {H}\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
             "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n" + "\n".join(styles) + "\n\n[Events]\n"
@@ -831,10 +862,14 @@ def when(e):
     if segs == [(0, 0)]: return ""
     return ":enable='" + "+".join(f"between(t,{a},{b or 1e9})" for a, b in segs) + "'"
 
+OWN_KEEP = ("id", "type", "on", "solo", "from", "to", "segs")      # це в кліпі завжди спільне, навіть у не глобального елемента
+
 def clip_elements(elements, c):
-    """Елементи для кліпу: свої частини показу (segs) замість спільних з/до; сховані в кліпі й ті, яких у кліп не додали, — геть."""
-    own, out = c.get("segs") or {}, []
+    """Елементи для кліпу: свої частини показу (segs) замість спільних з/до; сховані в кліпі й ті, яких у кліп не додали, — геть.
+    Не глобальний у цьому кліпі елемент (c["own"]) має свої налаштування замість спільних."""
+    own, mine, out = c.get("segs") or {}, c.get("own") or {}, []
     for e in elements:
+        if e["id"] in mine: e = dict(e, **{k: v for k, v in mine[e["id"]].items() if k not in OWN_KEEP and not k.startswith("_")})
         segs = own.get(e["id"])
         if segs is None:
             if not e.get("solo"): out.append(e)
@@ -887,20 +922,35 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
-def loop_cut(dst, at, net, bars, args, audio):
-    """Петля: шорт іде з моменту at до кінця, далі початок кліпу до at — коли відео повторюється, стику не видно.
+def rearrange(dst, parts, bars, args, audio):
+    """Переставити шматки готового кліпу: хук (смішний момент) — на самий початок, петля — шорт з мітки до кінця, далі початок до мітки,
+    тож коли відео повторюється, стику не видно. parts — [(з, до)] у часі готового файлу.
     bars — прогрес-бари: їх малюємо тут, щоб смуга росла від нового початку."""
-    f = [f"[0:v]trim=start={at:.3f},setpts=PTS-STARTPTS[v1]", f"[0:v]trim=end={at:.3f},setpts=PTS-STARTPTS[v2]"]
-    if audio: f += [f"[0:a]atrim=start={at:.3f},asetpts=PTS-STARTPTS[a1]", f"[0:a]atrim=end={at:.3f},asetpts=PTS-STARTPTS[a2]"]
-    f.append("[v1]" + "[a1]" * audio + "[v2]" + "[a2]" * audio + f"concat=n=2:v=1:a={int(audio)}[c0]" + "[a]" * audio); last = "c0"
-    for n, e in enumerate(bars, 1):
-        f += [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{n}]",
-              f"[{last}][pg{n}]overlay=x='-w+w*t/{net:.3f}':y={int(e['y'])}:shortest=1[c{n}]"]; last = f"c{n}"
-    tmp = dst.with_name(dst.stem + ".loop.mp4")
+    n, total = len(parts), sum(e - s for s, e in parts)
+    f = [f"[0:v]split={n}" + "".join(f"[sv{i}]" for i in range(n))] + ([f"[0:a]asplit={n}" + "".join(f"[sa{i}]" for i in range(n))] if audio else [])
+    for i, (s, e) in enumerate(parts):
+        f.append(f"[sv{i}]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        if audio: f.append(f"[sa{i}]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+    f.append("".join(f"[v{i}]" + f"[a{i}]" * audio for i in range(n)) + f"concat=n={n}:v=1:a={int(audio)}[c0]" + "[a]" * audio); last = "c0"
+    for k, e in enumerate(bars, 1):
+        f += [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{k}]",
+              f"[{last}][pg{k}]overlay=x='-w+w*t/{total:.3f}':y={int(e['y'])}:shortest=1[c{k}]"]; last = f"c{k}"
+    tmp = dst.with_name(dst.stem + ".parts.mp4")
     r = run([ffbin("ffmpeg"), "-y", "-v", "error", *HW, "-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
              *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)])
-    if r.returncode: tmp.unlink(missing_ok=True); raise RuntimeError("Петля: " + r.stderr.decode("utf-8", "replace")[-400:])
+    if r.returncode: tmp.unlink(missing_ok=True); raise RuntimeError("Хук і петля: " + r.stderr.decode("utf-8", "replace")[-400:])
     os.replace(tmp, dst)
+    return total
+
+def clip_parts(c, keep, net):
+    """Порядок шматків готового кліпу (час файлу): хук на початок, далі петля або кліп як є. None — переставляти нічого."""
+    inside = lambda t: any(s < t < e for s, e in keep)
+    loop = out_pos(float(c["loop"]), keep) if c.get("loop") is not None and inside(float(c["loop"])) else 0
+    if not .5 < loop < net - .5: loop = 0
+    hook = [out_pos(float(t), keep) for t in c["hook"]] if len(c.get("hook") or []) == 2 else None
+    if hook and hook[1] - hook[0] < .3: hook = None
+    if not loop and not hook: return None
+    return ([tuple(hook)] if hook else []) + ([(loop, net), (0, loop)] if loop else [(0, net)])
 
 def out_pos(x, keep):
     """Час у готовому кліпі для моменту x джерела (вирізані пропуски не рахуються)."""
@@ -962,25 +1012,36 @@ def render(pid, clips, elements, cues):
         save_rec = lambda: update_project(pid, lambda p: p.__setitem__("renders", [rec] + [r for r in p["renders"] if r["id"] != rec["id"]]))
         save_rec(); JOB["out"] = str(out)
         with tempfile.TemporaryDirectory() as tmp:
-            pngs, sizes = [], {}                                   # (id, роль, файл): картинки елементів, маски й рамки відео
-            def add(e, role, img): p = Path(tmp, f"{e['id']}_{role}.png"); img.save(p); pngs.append((e["id"], role, str(p))); return img.size
-            for e in (e for e in elements if on(e)):
-                if e["type"] in ART: sizes[e["id"]] = add(e, "art", art(e)[0])
-                if e["type"] in ("video", "cam"):
-                    mask, ring = frame(e, *layer(e, sw, sh)[1:])
-                    if mask: add(e, "mask", mask)
-                    if ring: add(e, "ring", ring)
-            inp = {(eid, role): n for n, (eid, role, _) in enumerate(pngs, 1)}
-            for e in subs_all:
-                if on(e): shutil.copy(pick_font(e.get("font"))[1], tmp)
+            made = {}                                              # вигляд елемента → файли картинок: однакові не малюємо двічі
+            def pics(e):
+                """Картинки елемента для ffmpeg: [(роль, файл, розмір)]. Не глобальний у кліпі елемент має свої."""
+                key = json.dumps({k: v for k, v in e.items() if k not in ("x", "y", "from", "to", "segs", "anim", "on", "id")}, sort_keys=True, default=str)
+                if key not in made:
+                    out = []
+                    def add(role, img): p = Path(tmp, f"{len(made)}_{role}.png"); img.save(p); out.append((role, str(p), img.size))
+                    if e["type"] in ART: add("art", art(e)[0])
+                    if e["type"] in ("video", "cam"):
+                        mask, ring = frame(e, *layer(e, sw, sh)[1:])
+                        if mask: add("mask", mask)
+                        if ring: add("ring", ring)
+                    made[key] = out
+                return made[key]
+            fonts = {pick_font(e.get("font"))[1] for e in subs_all if on(e)} | {pick_font((q.get("own") or {}).get("font") or cue_owner(q, subs_all).get("font"))[1]
+                                                                                  for q in cues if q.get("own") and subs_all}
+            for fp in fonts: shutil.copy(fp, tmp)
             for i, c in enumerate([c for c in clips if c.get("on", True)], 1):
                 cel = clip_elements(elements, c)
+                pngs, sizes = [], {}                               # (id, роль, файл): картинки елементів, маски й рамки відео
+                for e in (e for e in cel if on(e)):
+                    for role, path, size in pics(e):
+                        pngs.append((e["id"], role, path))
+                        if role == "art": sizes[e["id"]] = size
+                inp = {(eid, role): n for n, (eid, role, _) in enumerate(pngs, 1)}
                 keep = kept(float(c["a"]), float(c["b"]), c.get("cut", []))
                 if not keep: raise RuntimeError(f"Кліп {i} вирізано повністю")
                 a, b, net = keep[0][0], keep[-1][1], sum(e - s for s, e in keep)
-                loop = out_pos(float(c["loop"]), keep) if c.get("loop") is not None and any(s < float(c["loop"]) < e for s, e in keep) else 0
-                if not .5 < loop < net - .5: loop = 0
-                bars = [e for e in cel if e["type"] == "progress" and on(e)] if loop else []   # з петлею прогрес малюється вже після перестановки
+                order = clip_parts(c, keep, net)
+                bars = [e for e in cel if e["type"] == "progress" and on(e)] if order else []   # з хуком чи петлею прогрес малюється вже після перестановки
                 cel = [e for e in cel if e not in bars]
                 ca = float(c["a"]); stem = base = f"{name} {int(ca // 60):02d}-{int(ca % 60):02d}"
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
@@ -1002,10 +1063,10 @@ def render(pid, clips, elements, cues):
                     if line.startswith("out_time_us=") and line[12:].strip().isdigit():
                         JOB["pct"] = min(1.0, int(line[12:]) / 1e6 / net)
                 if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
-                if loop: loop_cut(dst, loop, net, bars, args, bool(alabel or na))
+                total = rearrange(dst, order, bars, args, bool(alabel or na)) if order else net
                 thumb = THUMBS / f"{rec['id']}_{i:02d}.jpg"
                 run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
-                rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=net)); save_rec()
+                rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=total)); save_rec()
     except Exception as e: JOB["err"] = str(e)
     finally: JOB["running"] = False
 
@@ -1034,7 +1095,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.9.1"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.10.0"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1107,14 +1168,23 @@ def unqueue(pid, path):
     if left: raise RuntimeError(err)
     return {}
 
-def publish_batch(pid, plan, privacy):
-    """Кожен шорт — у свої канали (вибрані на картці) на свій час; результат пишемо в проєкт, щоб бачити статус."""
+def publish_batch(pid, plan, privacy, limit=0):
+    """Кожен шорт — у свої канали (вибрані на картці) на свій час; результат пишемо в проєкт, щоб бачити статус.
+    limit — скільки постів тариф Buffer тримає в черзі каналу (0 — без межі): що не влазить, у сховище навіть не викладаємо."""
     threading.Thread(target=cleanup_media, daemon=True).start()     # заодно прибрати вже опубліковане
     chans = {c["id"]: c for c in BUFFER.channels()}; p = load_project(pid); ok, errors = 0, []; t0 = time.time()
+    room = {}
+    if limit:
+        for q in BUFFER.scheduled(): room[q["channelId"]] = room.get(q["channelId"], 0) + 1
+        room = {cid: int(limit) - room.get(cid, 0) for cid in chans}
     for i, item in enumerate(plan):
         n = f" {i + 1} з {len(plan)}" if len(plan) > 1 else ""
         say = lambda frac, i=i, n=n: report("upload", f"Викладаю відео{n}", (i + frac) / len(plan), t0)
         say(0)
+        if limit:
+            item["channels"] = [cid for cid in item.get("channels", []) if room.get(cid, 0) > 0]
+            if not item["channels"]: errors.append(f"черга Buffer повна ({limit} постів на канал)"); continue
+            for cid in item["channels"]: room[cid] -= 1
         f = next(iter(render_files(p, item["path"])), None)
         if not f: errors.append("файл не знайдено"); continue
         post, sent = f.get("post", {}), {}
@@ -1281,7 +1351,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/caption": return self.reply(clip_caption(d["id"], d["path"]))
             if p == "/api/post/save": save_post(d["id"], d["path"], d["post"]); return self.reply({})
             if p == "/api/post/unqueue": return self.reply(unqueue(d["id"], d["path"]))
-            if p == "/api/publish": return self.reply(publish_batch(d["id"], d["plan"], d.get("privacy", "public")))
+            if p == "/api/publish": return self.reply(publish_batch(d["id"], d["plan"], d.get("privacy", "public"), int(d.get("limit") or 0)))
             if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"])))
             if p == "/api/render":
                 if JOB["running"]: return self.reply(JOB, code=409)

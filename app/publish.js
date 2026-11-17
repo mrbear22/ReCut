@@ -15,7 +15,8 @@ const ICON = {
   youtube: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M21.6 7.2a2.6 2.6 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.6 2.6 0 0 0 2.4 7.2 27 27 0 0 0 2 12a27 27 0 0 0 .4 4.8 2.6 2.6 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.6 2.6 0 0 0 1.8-1.8A27 27 0 0 0 22 12a27 27 0 0 0-.4-4.8zM10 15V9l5.2 3z"/></svg>',
 };
 const newSeed = () => 1 + Math.floor(Math.random() * 1e6);
-const pub = {projects: [], pid: null, chosen: new Set(), buffer: null, busy: false, saveT: {}, sending: new Set(), seed: newSeed()};
+const pub = {projects: [], pid: null, chosen: new Set(), buffer: null, busy: false, saveT: {}, sending: new Set(), seed: newSeed(),
+  limit: (() => { try { const v = localStorage.getItem('bufferLimit'); return v == null ? PUB_FREE_QUEUE : +v; } catch (e) { return PUB_FREE_QUEUE; } })()};   // 0 — платний тариф, без межі
 
 const pubProject = () => pub.projects.find(p => p.id === pub.pid);
 const pubFiles = p => {                                           // найновіший рендер кожного файлу, лише ті, що є на диску
@@ -29,7 +30,7 @@ const pubChannels = () => (pub.buffer?.channels || []).filter(c => PUB_SERVICES[
 const pubShown = () => { const c = [...new Set(pubChannels().map(c => c.service))]; return c.length ? c : PUB_DEFAULT; };   // лише мережі, підключені в Buffer
 const pubTargets = f => f.post?.targets || pubShown();   // куди слати цей шорт; за замовчуванням — усюди
 const pubTargetChannels = f => pubChannels().filter(c => pubTargets(f).includes(c.service));
-const pubReady = () => !!pub.buffer?.channels && !!pub.media?.connected;   // є куди слати й де тримати відео
+const pubReady = () => !!pub.buffer?.channels && !!pub.media?.connected && !!pub.queue;   // є куди слати, де тримати відео, і відомо, скільки місця в черзі
 const pubSave = (path, post) => api('/api/post/save', {id: pub.pid, path, post});
 const plural = (n, one, few, many) => {                             // 1 шорт, 2 шорти, 5 шортів, 21 шорт
   const d = n % 10, h = n % 100;
@@ -73,6 +74,20 @@ function pubState(f) {
 const pubEditable = f => !PUB_SENT.includes(pubState(f).kind);
 const pubEditing = () => (pubProject() ? pubFiles(pubProject()) : []).filter(pubEditable);
 
+// ── місце в черзі Buffer (безкоштовний тариф — 10 запланованих постів на канал). Місце дістається спершу вибраним шортам,
+//    далі — по порядку; що не влазить, стоїть приглушеним: ні описів, ні черги, ні завантаження у сховище ──
+function pubRoom(chosen = pub.chosen) {                          // path → {fit: канали з місцем, full: канали без місця, ok}
+  const left = {}, out = {};
+  for (const c of pubChannels()) left[c.id] = pub.limit ? pub.limit - pubQueue().filter(q => q.channelId === c.id).length : Infinity;
+  const files = pubEditing(), order = [...files.filter(f => chosen.has(f.path)), ...files.filter(f => !chosen.has(f.path))];
+  for (const f of order) {
+    const ch = pubTargetChannels(f), fit = ch.filter(c => left[c.id] > 0);
+    fit.forEach(c => left[c.id]--); out[f.path] = {fit, full: ch.filter(c => !fit.includes(c)), ok: !pub.queue || !ch.length || fit.length > 0};
+  }
+  return out;
+}
+const pubFreeIn = () => Math.min(...pubChannels().map(c => pub.limit ? pub.limit - pubQueue().filter(q => q.channelId === c.id).length : Infinity));
+
 // ── рекомендовані дати: природний розклад одразу після того, що вже в черзі Buffer ──
 const PUB_FREQ = [[.5, 'Через день'], [1, '1 на день'], [2, '2 на день'], [3, '3 на день']];
 const PUB_MIN_GAP = 15 * 60e3;                                    // Buffer не приймає час, що вже минув або от-от настане
@@ -115,7 +130,8 @@ function pubDates() {                                             // path → {t
 function renderPubHead() {
   $('#pubProj').innerHTML = pub.projects.map(p => `<option value="${p.id}" ${p.id === pub.pid ? 'selected' : ''}>${esc(projName(p))} · ${pubFiles(p).length}</option>`).join('');
   const edit = pubEditing(), k = pub.chosen.size;
-  $('#pubAll').checked = edit.length > 0 && edit.every(f => pub.chosen.has(f.path)); $('#pubAll').indeterminate = k > 0 && !$('#pubAll').checked;
+  const room = pubRoom(), fits = edit.filter(f => room[f.path].ok);
+  $('#pubAll').checked = fits.length > 0 && fits.every(f => pub.chosen.has(f.path)); $('#pubAll').indeterminate = k > 0 && !$('#pubAll').checked;
   $('#pubCount').textContent = k ? `вибрано ${k} з ${edit.length}` : `вибрати всі · ${plural(edit.length, 'шорт', 'шорти', 'шортів')}`;
   $('#pubSelNote').textContent = k ? `Вибраним (${k})` : 'Вибраним';
   $('#pubAI').disabled = !k || pub.busy;
@@ -125,16 +141,21 @@ function renderPubHead() {
   const hours = (id, v) => `<select id="${id}">${[...Array(24).keys()].map(h => `<option value="${h}" ${h === v ? 'selected' : ''}>${hh(h)}</option>`).join('')}</select>`;
   $('#pubOptBody').innerHTML = `<label>Як часто</label><div class="seg" id="pubFreq">${PUB_FREQ.map(([v, l]) => `<button data-v="${v}" class="${v === o.perDay ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>У який час доби</label><div class="row">${hours('pubFrom', o.from)}<span>–</span>${hours('pubTo', o.to)}</div>
+    <label>Тариф Buffer</label><div class="seg" id="pubPlan">${[[PUB_FREE_QUEUE, `Безкоштовний · ${PUB_FREE_QUEUE} на канал`], [0, 'Платний']].map(([v, l]) =>
+      `<button data-v="${v}" class="${pub.limit === v ? 'on' : ''}">${l}</button>`).join('')}</div>
     <label>Хто бачить на YouTube</label><div class="seg" id="pubPriv">${[['public', 'Усі'], ['unlisted', 'За посиланням'], ['private', 'Лише я']].map(([v, l]) =>
       `<button data-v="${v}" class="${o.privacy === v ? 'on' : ''}">${l}</button>`).join('')}</div>
 `;
 }
 $('#pubProj').onchange = e => { pub.pid = e.target.value; pub.chosen.clear(); renderPub(); };
-$('#pubAll').onchange = e => { pub.chosen = new Set(e.target.checked ? pubEditing().map(f => f.path) : []); renderPub(); };
+$('#pubAll').onchange = e => {                                    // «усі» — ті, що вміщуються в чергу
+  const room = pubRoom(new Set()); pub.chosen = new Set(e.target.checked ? pubEditing().filter(f => room[f.path].ok).map(f => f.path) : []); renderPub();
+};
 $('#pubOpt').addEventListener('click', e => {
   const t = e.target;
   if (t.closest('#pubFreq') && t.dataset.v) pub.perDay = +t.dataset.v;
   else if (t.closest('#pubPriv') && t.dataset.v) pub.privacy = t.dataset.v;
+  else if (t.closest('#pubPlan') && t.dataset.v) { pub.limit = +t.dataset.v; try { localStorage.setItem('bufferLimit', pub.limit); } catch (e) {} renderPubSide(); }
   else return;
   renderPubHead(); renderPubGrid();
 });
@@ -145,12 +166,12 @@ $('#pubOpt').addEventListener('change', e => {
 document.addEventListener('pointerdown', e => { if (!e.target.closest('#pubOpt')) $('#pubOpt').open = false; });
 
 // ── картка шорту на редагуванні ──
-function pubTargetsHtml(f) {
-  const on = pubTargets(f), connected = new Set(pubChannels().map(c => c.service));
+function pubTargetsHtml(f, room) {
+  const on = pubTargets(f), connected = new Set(pubChannels().map(c => c.service)), full = new Set((room?.full || []).map(c => c.service));
   return pubShown().map(svc => [svc, PUB_SERVICES[svc]]).map(([svc, s]) => {
-    const missing = pub.buffer?.channels && !connected.has(svc);
+    const missing = pub.buffer?.channels && !connected.has(svc), nofit = on.includes(svc) && full.has(svc);
     return `<button class="ptg ${on.includes(svc) ? 'on' : ''}" style="--svc:${s.col};--svc-ink:${s.ink}" data-a="target" data-svc="${svc}" aria-pressed="${on.includes(svc)}"
-      title="${missing ? `${s.name} ще не підключено в Buffer` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : ''}</button>`;
+      title="${missing ? `${s.name} ще не підключено в Buffer` : nofit ? `Черга ${s.name} у Buffer повна` : `Публікувати в ${s.name}`}">${ICON[svc]}<span>${s.name}</span>${missing ? '<small>не підключено</small>' : nofit ? '<small>черга повна</small>' : ''}</button>`;
   }).join('');
 }
 // ── коли: кнопка «Завтра · 16:40»; клік — панель з днями, годинами й хвилинами, усе мишею ──
@@ -204,40 +225,49 @@ whenPop.onclick = e => {
 };
 document.addEventListener('pointerdown', e => { if (whenFor && !e.target.closest('#whenPop,[data-a=whenpick]')) closeWhenPop(); });
 addEventListener('keydown', e => { if (e.key === 'Escape' && whenFor) closeWhenPop(); });
-function pubQueueBtn(f) {
+function pubQueueBtn(f, room) {
   const sending = pub.sending.has(f.path), d = pubDates()[f.path], late = d && d.t - Date.now() < PUB_MIN_GAP;
-  const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.media?.connected ? 'Сховище відео для Buffer не налаштоване в цій версії' : !pubTargetChannels(f).length ? 'Обери, куди публікувати' : late ? 'Цей час уже минув' : '';
+  const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.media?.connected ? 'Сховище відео для Buffer не налаштоване в цій версії' : !pub.queue ? 'Читаю чергу Buffer…'
+    : !pubTargetChannels(f).length ? 'Обери, куди публікувати' : !room?.ok ? 'Черга Buffer повна' : late ? 'Цей час уже минув' : '';
   return `<button class="pri" data-a="queue" ${why || sending ? 'disabled' : ''} title="${esc(why)}">${sending ? 'Викладаю…' : 'Додати до черги'}</button>`;
 }
-function pubCard(f, i, d) {                                       // рядок списку на всю ширину: превʼю · тексти · куди й коли · дії
-  const p = f.post || {}, {kind, label} = pubState(f), on = pub.chosen.has(f.path), title = p.title || '';
-  return `<article class="pc ${on ? 'on' : ''} ${pub.sending.has(f.path) ? 'work' : ''}" data-path="${esc(f.path)}">
+function pubCard(f, i, d, room) {                                 // рядок списку на всю ширину: превʼю · тексти · куди й коли · дії
+  const p = f.post || {}, on = pub.chosen.has(f.path), title = p.title || '', out = room && !room.ok;
+  const {kind, label} = out ? {kind: 'out', label: 'Не вміщується в чергу Buffer'} : pubState(f), ro = out ? 'readonly tabindex="-1"' : '';
+  return `<article class="pc ${on ? 'on' : ''} ${pub.sending.has(f.path) ? 'work' : ''} ${out ? 'out' : ''}" data-path="${esc(f.path)}">
     <button class="pck" data-a="pick" aria-pressed="${on}" aria-label="Вибрати">${ICON.check}</button>
     <div class="pth" data-a="play" title="Переглянути">
       <img src="${fileUrl(f.thumb)}" alt="" loading="lazy" onerror="this.remove()"><span class="pplay">${ICON.play}</span><span class="pdur">${fmt(f.len ?? f.b - f.a)}</span>
     </div>
     <div class="pbody">
       <div class="phd"><span class="pnum">#${i + 1} · з ${fmt(f.a).replace(/\.\d$/, '')}</span><span class="pst ${kind}" title="${esc(label)}">${esc(label)}</span></div>
-      <div class="prow"><input data-f="title" value="${esc(title)}" maxlength="${PUB_TITLE_MAX}" placeholder="Назва" aria-label="Назва"><em data-count>${title.length}/${PUB_TITLE_MAX}</em></div>
-      <textarea data-f="description" rows="2" placeholder="Опис під відео" aria-label="Опис">${esc(p.description || '')}</textarea>
-      <input data-f="hashtags" value="${esc((p.hashtags || []).map(t => '#' + t).join(' '))}" placeholder="#shorts #стрім" aria-label="Хештеги">
+      <div class="prow"><input data-f="title" ${ro} value="${esc(title)}" maxlength="${PUB_TITLE_MAX}" placeholder="Назва" aria-label="Назва"><em data-count>${title.length}/${PUB_TITLE_MAX}</em></div>
+      <textarea data-f="description" ${ro} rows="2" placeholder="Опис під відео" aria-label="Опис">${esc(p.description || '')}</textarea>
+      <input data-f="hashtags" ${ro} value="${esc((p.hashtags || []).map(t => '#' + t).join(' '))}" placeholder="#shorts #стрім" aria-label="Хештеги">
     </div>
     <div class="pside">
-      <div class="pline"><div class="ptargets">${pubTargetsHtml(f)}</div>${pubWhenHtml(f, d)}</div>
-      <div class="pacts"><button class="ghost ptxt" data-a="ai">Написати опис</button>
+      <div class="pline"><div class="ptargets">${pubTargetsHtml(f, room)}</div>${pubWhenHtml(f, d)}</div>
+      <div class="pacts"><button class="ghost ptxt" data-a="ai" ${out ? 'disabled' : ''}>Написати опис</button>
         <button class="picon" data-a="reveal" title="Показати у папці" aria-label="Показати у папці">${ICON.folder}</button>
-        <span class="grow"></span>${pubQueueBtn(f)}</div>
+        <span class="grow"></span>${pubQueueBtn(f, room)}</div>
     </div></article>`;
 }
 function renderPubGrid() {
-  const p = pubProject(), all = p ? pubFiles(p) : [], dates = pubDates();
+  const p = pubProject(), all = p ? pubFiles(p) : [], dates = pubDates(), room = pubRoom();
   const cards = all.map((f, i) => [f, i]).filter(([f]) => pubEditable(f));
-  $('#pubGrid').innerHTML = p ? (cards.map(([f, i]) => pubCard(f, i, dates[f.path])).join('')
+  $('#pubGrid').innerHTML = p ? (cards.map(([f, i]) => pubCard(f, i, dates[f.path], room[f.path])).join('')
       || '<div class="empty">Усі шорти в черзі або вже вийшли</div>')
     : '<div class="empty">Готових шортів ще немає</div>';
 }
 function pubToggle(path) {
+  if (!pub.chosen.has(path)) {                                    // вибрати можна, поки є місце в черзі
+    const next = new Set(pub.chosen).add(path);
+    const r = pubRoom(next); if (![...next].every(x => !r[x] || r[x].ok)) return pubMsg(`У черзі Buffer вільно ${plural(Math.max(0, pubFreeIn()), 'місце', 'місця', 'місць')}, і всі вже зайняті вибраними`, 1);
+  }
+  const before = pubRoom();
   pub.chosen.has(path) ? pub.chosen.delete(path) : pub.chosen.add(path);
+  const fits = r => JSON.stringify(Object.entries(r).map(([k, v]) => [k, v.fit.map(c => c.id)]));
+  if (fits(pubRoom()) !== fits(before)) { renderPubGrid(); return renderPubHead(); }   // місце в черзі перейшло до іншого шорту
   const card = $(`.pc[data-path="${CSS.escape(path)}"]`), on = pub.chosen.has(path);
   card?.classList.toggle('on', on); card?.querySelector('.pck').setAttribute('aria-pressed', on);
   renderPubHead();
@@ -251,7 +281,7 @@ $('#pubGrid').onclick = e => {
   if (a === 'whenpick') return whenFor === path ? closeWhenPop() : openWhenPop(path, btn);
   if (a === 'play') { $('#mv').src = fileUrl(path); $('#mv').dataset.path = path; $('#modal').classList.add('on'); return $('#mv').play(); }
   if (a === 'reveal') return api('/api/reveal', {path});
-  if (a === 'ai') return captionMany([path]);
+  if (a === 'ai') return btn.disabled || captionMany([path]);
   if (a === 'auto') return pubSetPost(path, {when: null});
   if (a === 'queue') return pubEnqueue([path]);
   if (a === 'target') { const cur = pubTargets(f), s = btn.dataset.svc; return pubSetPost(path, {targets: cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]}); }
@@ -259,7 +289,7 @@ $('#pubGrid').onclick = e => {
 };
 const parseTags = s => [...new Set(s.split(/[\s,]+/).map(t => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))];
 $('#pubGrid').oninput = e => {
-  const card = e.target.closest('.pc'), k = e.target.dataset.f; if (!card || !k) return;
+  const card = e.target.closest('.pc'), k = e.target.dataset.f; if (!card || !k || e.target.readOnly) return;
   const f = pubFile(card.dataset.path); f.post ||= {};
   f.post[k] = k === 'hashtags' ? parseTags(e.target.value) : e.target.value;
   if (k === 'title') card.querySelector('[data-count]').textContent = `${e.target.value.length}/${PUB_TITLE_MAX}`;
@@ -269,17 +299,17 @@ $('#pubGrid').oninput = e => {
 
 // ── у чергу і назад ──
 async function pubEnqueue(paths) {
-  const dates = pubDates();
-  const plan = paths.map(pubFile).filter(f => f && pubTargetChannels(f).length && dates[f.path]?.t - Date.now() >= PUB_MIN_GAP)
-    .map(f => ({path: f.path, title: f.post?.title, dueAt: dates[f.path].t.toISOString(), channels: pubTargetChannels(f).map(c => c.id)}));
-  if (!plan.length) return pubMsg('Перевір соцмережі й дату на картках', 1);
+  const dates = pubDates(), room = pubRoom(new Set(paths));
+  const plan = paths.map(pubFile).filter(f => f && room[f.path]?.fit.length && dates[f.path]?.t - Date.now() >= PUB_MIN_GAP)   // лише те, що влазить у чергу
+    .map(f => ({path: f.path, title: f.post?.title, dueAt: dates[f.path].t.toISOString(), channels: room[f.path].fit.map(c => c.id)}));
+  if (!plan.length) return pubMsg(paths.some(p => room[p] && !room[p].ok) ? 'Черга Buffer повна' : 'Перевір соцмережі й дату на картках', 1);
   const untitled = plan.filter(x => !x.title).length;
   if (untitled && !confirm(`${plural(untitled, 'шорт', 'шорти', 'шортів')} без назви. Додати до черги як є?`)) return;
   plan.forEach(x => pub.sending.add(x.path)); renderPubGrid(); renderPubHead();
   pubMsg('');
   try {
     const r = await busy($('#pubQueueSel'), 'Відео в чергу', [['upload', 20 * plan.length]],
-      task => api('/api/publish', {id: pub.pid, privacy: pubOpt().privacy, plan: plan.map(({path, dueAt, channels}) => ({path, dueAt, channels})), task}));
+      task => api('/api/publish', {id: pub.pid, privacy: pubOpt().privacy, limit: pub.limit, plan: plan.map(({path, dueAt, channels}) => ({path, dueAt, channels})), task}));
     pubMsg(r.errors ? `У черзі ${r.ok}, помилок ${r.errors}: ${r.first_error}` : `Додано до черги: ${plural(r.ok, 'пост', 'пости', 'постів')}.`, !!r.errors);
   } catch (e) { pubMsg(e.message, 1); }
   plan.forEach(x => { pub.sending.delete(x.path); pub.chosen.delete(x.path); });
@@ -325,7 +355,7 @@ async function captionMany(paths) {                              // по одн�
   pub.busy = false; renderPubGrid(); renderPubHead();
   if (!failed) pubMsg(hasAI ? `Описів готово: ${done}` : 'ШІ недоступний: лише заготовки назв');
 }
-$('#pubAI').onclick = () => captionMany([...pub.chosen]);
+$('#pubAI').onclick = () => { const room = pubRoom(); captionMany([...pub.chosen].filter(p => room[p]?.ok)); };
 
 // ── права панель: черга Buffer по днях і те, що вже вийшло ──
 function pubOwnPosts() {                                          // id поста Buffer → шорт з будь-якого проєкту
@@ -377,10 +407,10 @@ function renderPubSide() {
   if (!ok) return;
   $('#pubQueueNote').textContent = pub.queue ? plural(pubQueue().length, 'пост', 'пости', 'постів') : 'читаю…';
   $('#pubChans').innerHTML = list.length ? list.map(c => `<span class="pch" style="--svc:${PUB_SERVICES[c.service].col}" title="${esc(c.displayName || c.name)} · ${PUB_SERVICES[c.service].name}${c.isQueuePaused ? ' · черга на паузі' : ''}">
-      <i>${ICON[c.service]}</i><span>${esc(c.displayName || c.name)}</span></span>`).join('')
+      <i>${ICON[c.service]}</i><span>${esc(c.displayName || c.name)}</span>${pub.limit && pub.queue ? `<small class="mut">${pubQueue().filter(q => q.channelId === c.id).length}/${pub.limit}</small>` : ''}</span>`).join('')
     : '<p class="mut small">У Buffer немає каналів TikTok чи YouTube</p>';
-  const full = list.filter(c => pubQueue().filter(q => q.channelId === c.id).length >= PUB_FREE_QUEUE);
-  $('#pubWarn').textContent = full.length ? `Черга ${full.map(c => PUB_SERVICES[c.service].name).join(', ')} повна (${PUB_FREE_QUEUE} постів)` : '';
+  const full = pub.limit ? list.filter(c => pubQueue().filter(q => q.channelId === c.id).length >= pub.limit) : [];
+  $('#pubWarn').textContent = full.length ? `Черга ${full.map(c => PUB_SERVICES[c.service].name).join(', ')} повна (${pub.limit} постів)` : '';
   $('#pubSchedule').innerHTML = pubQueueHtml() + pubDoneHtml();
 }
 $('#pubSide').addEventListener('click', async e => {
