@@ -2,7 +2,7 @@
 """ShortsMaker — горизонтальне відео / стрім -> вертикальні шорти.
 GUI відкривається вікном Edge (або в браузері). Дані: ../data (портативно) або ./data.
 """
-import base64, importlib, io, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.request, uuid, webbrowser, zipfile
+import base64, http.client, importlib, io, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid, webbrowser, zipfile
 from datetime import datetime
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -277,12 +277,30 @@ STT_LIBS = ("faster-whisper==1.2.1 ctranslate2==4.9.0 onnxruntime==1.32.0 av==19
 CV_LIBS = ["opencv-python-headless==4.14.0.94"]
 LIB_LOCK = threading.Lock()                                        # паралельні аналіз і субтитри не качають те саме двічі
 
+NET_TRIES, NET_TIMEOUT = 5, 120                                   # мережа буває повільна чи рветься: кілька спроб, перш ніж здатись
+
+def fetch(url, dst=None, progress=lambda got, total: None):
+    """Файл з інтернету (dst) або JSON-відповідь (без dst). Обрив чи завислий сервер — ще спроба з паузою.
+    progress(отримано байтів, розмір) — з початку на кожній спробі."""
+    for i in range(NET_TRIES):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=NET_TIMEOUT) as r:
+                if dst is None: return json.load(r)
+                total, got = int(r.headers.get("Content-Length") or 0), 0
+                with open(dst, "wb") as out:
+                    while chunk := r.read(1 << 20): out.write(chunk); got += len(chunk); progress(got, total)
+                if total and got < total: raise OSError(f"обрив: {got} з {total} байтів")
+                return
+        except (OSError, http.client.HTTPException, ValueError) as e:
+            if isinstance(e, urllib.error.HTTPError) and e.code < 500: raise RuntimeError(f"{Path(urllib.parse.urlsplit(url).path).name}: {e}") from e
+            print(datetime.now(), "download", i + 1, url, ascii(e))
+            if i == NET_TRIES - 1:
+                raise RuntimeError("Завантаження не вдалося: інтернет повільний чи переривається. Спробуй ще раз — уже завантажене не качатиметься знову") from e
+            time.sleep(3 * (i + 1))
+
 def download(url, dst, text, stage):
     t0 = time.time()
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=60) as r, open(dst, "wb") as out:
-        total, done = int(r.headers.get("Content-Length") or 0), 0
-        while chunk := r.read(1 << 20):
-            out.write(chunk); done += len(chunk); report(stage, text, done / total if total else None, t0)
+    fetch(url, dst, lambda got, total: report(stage, text, got / total if total else None, t0))
 
 def ffbin(name):
     """Шлях до ffmpeg/ffprobe. У зібраній програмі перший виклик завантажує ffmpeg у теку програми."""
@@ -298,23 +316,30 @@ def ffbin(name):
             shutil.rmtree(FFDIR, ignore_errors=True); part.rename(FFDIR); z.unlink(missing_ok=True)   # тека з'являється лише цілою
     return str(exe)
 
+def libs_missing(specs):
+    """Яких коліс з точними версіями ще немає в data/libs: обірване завантаження лишає частину — докачуємо решту."""
+    norm = lambda s: re.sub(r"[-_.]+", "_", s).lower()            # PyYAML-6.0.3 / pyyaml==6.0.3 → pyyaml_6_0_3
+    have = {norm(p.name[:-len(".dist-info")]) for p in LIBS.glob("*.dist-info")} if LIBS.is_dir() else set()
+    return [s for s in specs if norm(s.replace("==", "-")) not in have]
+
 def need_libs(specs, module, text, stage="libs"):
-    """Колеса з PyPI (точні версії) -> data/libs, якщо модуля ще немає."""
+    """Колеса з PyPI (точні версії) -> data/libs, яких ще немає. Модуль, встановлений поза data/libs (запуск із сорсів), — не чіпаємо."""
     with LIB_LOCK:
-        if importlib.util.find_spec(module): return
+        missing = libs_missing(specs)
+        if not missing: return
+        spec = importlib.util.find_spec(module)
+        if spec and LIBS not in Path(spec.origin or "-").parents: return
         files = []
-        for spec in specs:
-            name, ver = spec.split("==")
-            urls = json.load(urllib.request.urlopen(f"https://pypi.org/pypi/{name}/{ver}/json", timeout=30))["urls"]
+        for s in missing:
+            name, ver = s.split("==")
+            urls = fetch(f"https://pypi.org/pypi/{name}/{ver}/json")["urls"]
             files.append(next(f for f in urls if f["filename"].endswith("none-any.whl") or
                               (f["filename"].endswith("win_amd64.whl") and re.search(r"-(cp312|cp3\d+-abi3|py3)-", f["filename"]))))
         LIBS.mkdir(exist_ok=True); total, done, t0 = sum(f["size"] for f in files), 0, time.time()
         for f in files:
             whl = TMP / f["filename"]
-            with urllib.request.urlopen(f["url"], timeout=60) as r, open(whl, "wb") as out:
-                while chunk := r.read(1 << 20):
-                    out.write(chunk); done += len(chunk); report(stage, text, done / total, t0)
-            with zipfile.ZipFile(whl) as z: z.extractall(LIBS)
+            fetch(f["url"], whl, lambda got, _: report(stage, text, (done + got) / total, t0)); done += f["size"]
+            with zipfile.ZipFile(whl) as z: z.extractall(LIBS)        # dist-info — у тому ж архіві: є він, є й колесо
             whl.unlink()
         importlib.invalidate_caches()
 
@@ -324,16 +349,13 @@ def fetch_cuda():
     tag = "win_amd64" if os.name == "nt" else "manylinux"
     files = []
     for name, ver in CUDA_PKGS:
-        rel = json.load(urllib.request.urlopen(f"https://pypi.org/pypi/{name}/json", timeout=30))["releases"]
+        rel = fetch(f"https://pypi.org/pypi/{name}/json")["releases"]
         best = max((v for v, fs in rel.items() if v.startswith(ver) and not Version(v).is_prerelease and any(tag in f["filename"] for f in fs)), key=Version)
         files.append(next(f for f in rel[best] if tag in f["filename"] and f["filename"].endswith(".whl")))
     total, done, t0 = sum(f["size"] for f in files), 0, time.time()
     for f in files:
         whl = TMP / f["filename"]
-        with urllib.request.urlopen(f["url"], timeout=60) as r, open(whl, "wb") as out:
-            while chunk := r.read(1 << 20):
-                out.write(chunk); done += len(chunk)
-                report("stt", f"Завантажую бібліотеки NVIDIA, {total / 1e9:.1f} ГБ", done / total, t0)
+        fetch(f["url"], whl, lambda got, _: report("stt", f"Завантажую бібліотеки NVIDIA, {total / 1e9:.1f} ГБ", (done + got) / total, t0)); done += f["size"]
         with zipfile.ZipFile(whl) as z: z.extractall(CUDA, [n for n in z.namelist() if n.startswith("nvidia/")])
         whl.unlink()
     use_cuda_dlls()
@@ -384,7 +406,7 @@ def stt_model():
     gpu = ctranslate2.get_cuda_device_count() > 0 and STT.gpu_failures < 2   # двічі впала відеокарта — до перезапуску програми лише процесор
     if gpu and not any(b.parent.name == "cublas" for b in cuda_dirs()):
         try: fetch_cuda()
-        except OSError as e: print("CUDA не завантажено, розпізнаю на процесорі:", e); gpu = False   # без інтернету — повільніше, але працює
+        except (OSError, RuntimeError) as e: print("CUDA не завантажено, розпізнаю на процесорі:", e); gpu = False   # без інтернету — повільніше, але працює
     mdir = lambda: [d for d in MODELS.glob(f"models--*faster-whisper-{model}") if d.is_dir()]
     loading = not any(f for d in mdir() for f in d.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
     def watch():                                               # прогрес першого завантаження моделі — за розміром теки
@@ -1095,7 +1117,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.10.1"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.10.2"                     # VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
