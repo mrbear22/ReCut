@@ -30,7 +30,7 @@ const pubChannels = () => (pub.buffer?.channels || []).filter(c => PUB_SERVICES[
 const pubShown = () => { const c = [...new Set(pubChannels().map(c => c.service))]; return c.length ? c : PUB_DEFAULT; };   // лише мережі, підключені в Buffer
 const pubTargets = f => f.post?.targets || pubShown();   // куди слати цей шорт; за замовчуванням — усюди
 const pubTargetChannels = f => pubChannels().filter(c => pubTargets(f).includes(c.service));
-const pubReady = () => !!pub.buffer?.channels && !!pub.media?.connected && !!pub.queue;   // є куди слати, де тримати відео, і відомо, скільки місця в черзі
+const pubReady = () => !!pub.buffer?.channels && !!pub.queue;   // є куди слати і відомо, скільки місця в черзі
 const pubSave = (path, post) => api('/api/post/save', {id: pub.pid, path, post});
 const plural = (n, one, few, many) => {                             // 1 шорт, 2 шорти, 5 шортів, 21 шорт
   const d = n % 10, h = n % 100;
@@ -53,8 +53,8 @@ async function loadBrands() {                                     // назви,
 }
 async function loadPubStatus() {
   await loadBrands();
-  const [ai, buf, media] = await Promise.all([api('/api/ai').catch(() => ({})), api('/api/buffer').catch(e => ({connected: true, error: e.message})), api('/api/media').catch(() => ({}))]);
-  pub.ai = ai.model; pub.buffer = buf; pub.media = media;
+  const [ai, buf] = await Promise.all([api('/api/ai').catch(() => ({})), api('/api/buffer').catch(e => ({connected: true, error: e.message}))]);
+  pub.ai = ai.model; pub.buffer = buf;
   pub.queue = buf.channels ? (await api('/api/buffer/queue').catch(() => ({posts: []}))).posts : null;
   renderPub();                                                    // черга уточнює, що на редагуванні, а що вже ні
 }
@@ -227,7 +227,7 @@ document.addEventListener('pointerdown', e => { if (whenFor && !e.target.closest
 addEventListener('keydown', e => { if (e.key === 'Escape' && whenFor) closeWhenPop(); });
 function pubQueueBtn(f, room) {
   const sending = pub.sending.has(f.path), d = pubDates()[f.path], late = d && d.t - Date.now() < PUB_MIN_GAP;
-  const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.media?.connected ? 'Сховище відео для Buffer не налаштоване в цій версії' : !pub.queue ? 'Читаю чергу Buffer…'
+  const why = !pub.buffer?.channels ? 'Спершу підключи Buffer праворуч' : !pub.queue ? 'Читаю чергу Buffer…'
     : !pubTargetChannels(f).length ? 'Обери, куди публікувати' : !room?.ok ? 'Черга Buffer повна' : late ? 'Цей час уже минув' : '';
   return `<button class="pri" data-a="queue" ${why || sending ? 'disabled' : ''} title="${esc(why)}">${sending ? 'Викладаю…' : 'Додати до черги'}</button>`;
 }
@@ -388,7 +388,7 @@ function pubQueueHtml() {
   return rows.map(r => {
     const d = fmtDay(r.t), head = d !== last ? `<div class="pday">${d}</div>` : ''; last = d;
     const icons = [...new Set(r.svcs.filter(Boolean))].map(s => `<i style="--svc:${PUB_SERVICES[s].col}" title="${PUB_SERVICES[s].name}">${ICON[s]}</i>`).join('');
-    const title = r.own ? (r.own.f.post?.title || 'без назви') : (r.text || '').split(/\r?\n/)[0] || 'пост не з ShortsMaker';
+    const title = r.own ? (r.own.f.post?.title || 'без назви') : (r.text || '').split(/\r?\n/)[0] || 'пост не з ReCut';
     return head + `<div class="pq ${r.own ? 'own' : 'ext'}">
       ${r.own ? `<img src="${fileUrl(r.own.f.thumb)}" alt="">` : '<span class="pqx"></span>'}
       <div class="pqb"><div class="pqh"><b>${fmtT(r.t)}</b>${icons}</div><span class="pqt" title="${esc(title)}">${esc(title)}</span>

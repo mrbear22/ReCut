@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ShortsMaker — горизонтальне відео / стрім -> вертикальні шорти.
+"""ReCut — горизонтальне відео / стрім -> вертикальні шорти.
 GUI відкривається вікном Edge (або в браузері). Дані: ../data (портативно) або ./data.
 """
 import base64, http.client, importlib, io, json, os, re, shutil, subprocess, sys, tempfile, threading, time, urllib.error, urllib.parse, urllib.request, uuid, webbrowser, zipfile
@@ -17,7 +17,7 @@ ROOT = HERE.parent if PACKAGED else HERE
 DATA = ROOT / "data"; THUMBS, TRANS, PROJ, MODELS, MIXES, WAVES = DATA / "thumbs", DATA / "transcripts", DATA / "projects", DATA / "models", DATA / "mixes", DATA / "waves"
 TMP, RENDERS, CUDA, LIBS, FFDIR = DATA / "tmp", ROOT / "renders", DATA / "cuda", DATA / "libs", ROOT / "ffmpeg"
 sys.path.insert(0, str(LIBS))                                      # бібліотеки, завантажені, коли вперше знадобились
-for d in (THUMBS, TRANS, MODELS, MIXES, WAVES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
+for d in (THUMBS, TRANS, PROJ, MODELS, MIXES, WAVES, TMP, RENDERS): d.mkdir(parents=True, exist_ok=True)
 # портативно: тимчасові файли й кеш моделей — лише в теці програми, ніде більше в системі
 SYS_ENV = dict(os.environ)                                         # для вікна Edge: його тимчасові файли не мають жити в нашій теці (їх тримає BITS і програму не видалити)
 tempfile.tempdir = str(TMP); os.environ.update(TMP=str(TMP), TEMP=str(TMP), HF_HOME=str(DATA / "hf"), HF_HUB_DISABLE_TELEMETRY="1")
@@ -36,16 +36,14 @@ if sys.stdout is None or sys.executable.lower().endswith("pythonw.exe"):
     sys.stdout = sys.stderr = open(DATA / "log.txt", "a", encoding="utf-8", buffering=1)
 SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без вікон консолі для ffmpeg
 
-CFG_FILE, HIST_FILE = DATA / "settings.json", DATA / "history.json"
+CFG_FILE = DATA / "settings.json"
 CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], port=8765,
            speed=dict(scan=5.0, stt=10.0))          # секунд відео за секунду роботи; уточнюється після кожного запуску
-LEGACY = ("video", "preview", "logo", "font", "style", "title", "channel", "category", "badge", "layout", "region", "ai_key", "lang")
 W, H = 1080, 1920
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
 STT_MODELS, OLLAMA = {"large-v3-turbo": 1.62e9, "large-v3": 3.09e9}, "http://127.0.0.1:11434/api/"   # модель розпізнавання -> розмір
 sttm = lambda: CFG.get("stt_model") if CFG.get("stt_model") in STT_MODELS else "large-v3-turbo"
-ART = ("card", "stream", "text", "image", "chat", "alert", "shape", "emoji", "social")   # елементи, що малюються картинкою поверх відео
 PAD = 40                                       # поле під тінь навколо плашки
 ENC = {"nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "{q}", "-b:v", "0", "-pix_fmt", "yuv420p"],
        "amf":   ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "{q}", "-qp_p", "{q}", "-pix_fmt", "yuv420p"],
@@ -82,9 +80,12 @@ def probe(src):
     v = next(s for s in j["streams"] if s["codec_type"] == "video")
     return v["width"], v["height"], float(j["format"]["duration"]), sum(s["codec_type"] == "audio" for s in j["streams"])
 
+def amix(n, out):
+    """Фільтр, що зводить усі n звукових доріжок (OBS пише гру й мікрофон окремо) в одну [out]."""
+    return "".join(f"[0:a:{i}]" for i in range(n)) + f"amix=inputs={n}:normalize=0[{out}]"
+
 def all_audio(n):
-    """Аргументи ffmpeg, що зводять усі n звукових доріжок (OBS пише гру й мікрофон окремо) в одну."""
-    return [] if n < 2 else ["-filter_complex", "".join(f"[0:a:{i}]" for i in range(n)) + f"amix=inputs={n}:normalize=0[a]", "-map", "[a]"]
+    return [] if n < 2 else ["-filter_complex", amix(n, "a"), "-map", "[a]"]
 
 PREPARING, FAILED = set(), set()
 def prepared(out, args):
@@ -150,33 +151,6 @@ def new_project(**kw):
 
 def projects():
     return sorted((json.loads(f.read_text("utf-8")) for f in PROJ.glob("*.json")), key=lambda p: -p["updated"])
-
-def legacy_elements(q):
-    """Плашка й розкладка старих версій -> елементи."""
-    L = q.get("layout") or {}
-    if "main" not in L: return []
-    base = lambda: {"id": uuid.uuid4().hex[:8], "on": True, "anim": "none", "from": 0, "to": 0}
-    els = [dict(base(), type="video", **{k: L["main"][k] for k in ("src", "x", "y", "w")})]
-    if L.get("cam", {}).get("on"): els.append(dict(base(), type="cam", **{k: L["cam"][k] for k in ("src", "x", "y", "w")}))
-    els.append(dict(base(), type="stream" if q.get("style") == "stream" else "card", x=L["card"]["x"], y=L["card"]["y"],
-                    s=L["card"].get("s", 1), **{k: q.get(k, "") for k in ("preview", "logo", "title", "channel", "category", "badge", "font")}))
-    return els
-
-def migrate():
-    """Історія рендерів і поточний стан старих версій -> окремі проєкти (один раз)."""
-    if PROJ.is_dir(): return
-    PROJ.mkdir()
-    legacy = lambda q: dict(video=q.get("video", ""), region=q.get("region"), clips=q.get("clips", []), elements=legacy_elements(q))
-    last = None
-    for r in reversed(rd(HIST_FILE, [])):
-        q = r.get("project", {})
-        last = new_project(name=r.get("title", ""), created=r["date"], **legacy(q),
-                           renders=[dict(id=r["id"], date=r["date"], out=r["out"], files=r["files"])])
-        if legacy(q) == legacy(CFG): CFG["project"] = last["id"]
-    if CFG.get("video") and not CFG["project"]: last = new_project(name=CFG.get("title", ""), **legacy(CFG)); CFG["project"] = last["id"]
-    if last: CFG["defaults"] = load_project(CFG["project"] or last["id"])["elements"]
-    for k in LEGACY: CFG.pop(k, None)
-    save_cfg()
 
 # ── системні шрифти ──
 FONTS, _fonts_ready = {}, threading.Event()
@@ -279,13 +253,13 @@ LIB_LOCK = threading.Lock()                                        # парал�
 
 NET_TRIES, NET_TIMEOUT = 5, 120                                   # мережа буває повільна чи рветься: кілька спроб, перш ніж здатись
 
-def fetch(url, dst=None, progress=lambda got, total: None):
-    """Файл з інтернету (dst) або JSON-відповідь (без dst). Обрив чи завислий сервер — ще спроба з паузою.
+def fetch(url, dst=None, progress=lambda got, total: None, raw=False):
+    """Файл з інтернету (dst) або відповідь (без dst): JSON, а з raw — байти. Обрив чи завислий сервер — ще спроба з паузою.
     progress(отримано байтів, розмір) — з початку на кожній спробі."""
     for i in range(NET_TRIES):
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=NET_TIMEOUT) as r:
-                if dst is None: return json.load(r)
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ReCut"}), timeout=NET_TIMEOUT) as r:
+                if dst is None: return r.read() if raw else json.load(r)
                 total, got = int(r.headers.get("Content-Length") or 0), 0
                 with open(dst, "wb") as out:
                     while chunk := r.read(1 << 20): out.write(chunk); got += len(chunk); progress(got, total)
@@ -316,6 +290,15 @@ def ffbin(name):
             shutil.rmtree(FFDIR, ignore_errors=True); part.rename(FFDIR); z.unlink(missing_ok=True)   # тека з'являється лише цілою
     return str(exe)
 
+def install_wheels(files, dest, stage, text, only=None):
+    """Колеса з PyPI -> dest, з поступом; only — розпакувати лише файли з цим префіксом."""
+    dest.mkdir(exist_ok=True); total, done, t0 = sum(f["size"] for f in files), 0, time.time()
+    for f in files:
+        whl = TMP / f["filename"]
+        fetch(f["url"], whl, lambda got, _: report(stage, text, (done + got) / total, t0)); done += f["size"]
+        with zipfile.ZipFile(whl) as z: z.extractall(dest, [n for n in z.namelist() if n.startswith(only)] if only else None)
+        whl.unlink()
+
 def libs_missing(specs):
     """Яких коліс з точними версіями ще немає в data/libs: обірване завантаження лишає частину — докачуємо решту."""
     norm = lambda s: re.sub(r"[-_.]+", "_", s).lower()            # PyYAML-6.0.3 / pyyaml==6.0.3 → pyyaml_6_0_3
@@ -335,12 +318,7 @@ def need_libs(specs, module, text, stage="libs"):
             urls = fetch(f"https://pypi.org/pypi/{name}/{ver}/json")["urls"]
             files.append(next(f for f in urls if f["filename"].endswith("none-any.whl") or
                               (f["filename"].endswith("win_amd64.whl") and re.search(r"-(cp312|cp3\d+-abi3|py3)-", f["filename"]))))
-        LIBS.mkdir(exist_ok=True); total, done, t0 = sum(f["size"] for f in files), 0, time.time()
-        for f in files:
-            whl = TMP / f["filename"]
-            fetch(f["url"], whl, lambda got, _: report(stage, text, (done + got) / total, t0)); done += f["size"]
-            with zipfile.ZipFile(whl) as z: z.extractall(LIBS)        # dist-info — у тому ж архіві: є він, є й колесо
-            whl.unlink()
+        install_wheels(files, LIBS, stage, text)                  # dist-info — у тому ж архіві: є він, є й колесо
         importlib.invalidate_caches()
 
 def fetch_cuda():
@@ -352,12 +330,7 @@ def fetch_cuda():
         rel = fetch(f"https://pypi.org/pypi/{name}/json")["releases"]
         best = max((v for v, fs in rel.items() if v.startswith(ver) and not Version(v).is_prerelease and any(tag in f["filename"] for f in fs)), key=Version)
         files.append(next(f for f in rel[best] if tag in f["filename"] and f["filename"].endswith(".whl")))
-    total, done, t0 = sum(f["size"] for f in files), 0, time.time()
-    for f in files:
-        whl = TMP / f["filename"]
-        fetch(f["url"], whl, lambda got, _: report("stt", f"Завантажую бібліотеки NVIDIA, {total / 1e9:.1f} ГБ", (done + got) / total, t0)); done += f["size"]
-        with zipfile.ZipFile(whl) as z: z.extractall(CUDA, [n for n in z.namelist() if n.startswith("nvidia/")])
-        whl.unlink()
+    install_wheels(files, CUDA, "stt", f"Завантажую бібліотеки NVIDIA, {sum(f['size'] for f in files) / 1e9:.1f} ГБ", only="nvidia/")
     use_cuda_dlls()
 
 # ── розпізнавання мови — в окремому процесі: збій відеокарти (скидання драйвера) вбиває лише його, а не всю програму ──
@@ -503,24 +476,18 @@ PROMPT = """Ти вирізаєш вірусні вертикальні шорт
 
 {lines}"""
 
-def ollama_model():
-    """Модель локального ШІ або None (портативна Ollama стартує сама, якщо вже завантажена)."""
-    return AI.model()
-
 def safe_ollama_model():
-    try: return ollama_model()
+    """Модель локального ШІ або None (портативна Ollama стартує сама, якщо вже завантажена)."""
+    try: return AI.model()
     except Exception as e: print(datetime.now(), "local AI unavailable:", ascii(e)); return None
 
 LLM_TIMEOUT, LLM_TRIES = 180, 2                                   # завислий ШІ не тримає аналіз; збій — ще одна спроба
 
 def ask_llm(model, prompt):
     """Кандидати від ШІ для одного вікна; збій чи сміття у відповіді — порожньо (аналіз не падає)."""
-    body = json.dumps(dict(model=model, stream=False, format="json", options=dict(temperature=0, seed=0, num_ctx=16384),
-                           messages=[{"role": "user", "content": prompt}])).encode()
     for attempt in range(LLM_TRIES):
         try:
-            with STT_LOCK, urllib.request.urlopen(urllib.request.Request(OLLAMA + "chat", body), timeout=LLM_TIMEOUT) as r:   # не разом з Whisper: ділять відеокарту
-                raw = json.loads(json.load(r)["message"]["content"]).get("clips", [])
+            with STT_LOCK: raw = AI.chat(model, prompt, LLM_TIMEOUT, temperature=0, seed=0, num_ctx=16384).get("clips", [])   # не разом з Whisper: ділять відеокарту
             return [dict(start=float(c["start"]), end=float(c["end"]), score=float(c.get("score", 0)), why=str(c.get("why", "")))
                     for c in raw if isinstance(c, dict) and "start" in c and "end" in c]
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e: print(datetime.now(), "llm attempt", attempt + 1, "failed:", ascii(e))
@@ -631,8 +598,7 @@ def make_card(el):
         blocks = [(nf, nl, (255, 255, 255), k(42) * 1.3), (tf, tl, (222, 222, 227), ts * 1.3), (cf, cl, (191, 148, 255), k(28) * 1.4)]
         text_h = int(sum(len(l) * lh for _, l, _, lh in blocks))
         ch = max(av + k(22), text_h) + 2 * pad
-        img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); shadow(img, cw, ch, k(18))
-        d = ImageDraw.Draw(img); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), k(18), fill=(24, 24, 27))
+        img, d = panel(cw, ch, k(18), (24, 24, 27))
         ax, ay = PAD + pad, PAD + (ch - av - k(10)) // 2
         d.ellipse((ax - k(5), ay - k(5), ax + av + k(5), ay + av + k(5)), fill=(233, 25, 22))
         if a := avatar(g("logo"), av): img.paste(a[0], (ax, ay), a[1])
@@ -651,8 +617,7 @@ def make_card(el):
         cf = ImageFont.truetype(font, k(32)); lh = int(size * 1.3)
         text_h = lh * len(lines) + (int(k(32) * 1.6) if g("channel") else 0)
         ch = max(th, text_h) + 2 * pad
-        img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); shadow(img, cw, ch, k(44))
-        d = ImageDraw.Draw(img); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), k(44), fill="white")
+        img, d = panel(cw, ch, k(44), "white")
         src = Image.open(g("preview")) if Path(g("preview") or "-").is_file() else Image.new("RGB", (16, 9), (205, 205, 210))
         t, m = round_img(src, (tw, th), k(18)); tx0 = PAD + pad; img.paste(t, (tx0, PAD + (ch - th) // 2), m)
         x, y = tx0 + tw + pad, PAD + (ch - text_h) // 2
@@ -719,8 +684,7 @@ def make_chat(el):
     name, pad, lh = (el.get("name") or "").strip(), k(20), round(k(36) * 1.3)
     lines = wrap((f"{name}: " if name else "") + (el.get("text") or ""), f, k(720) - 2 * pad) or [""]
     cw, ch = round(max(map(f.getlength, lines))) + 2 * pad, lh * len(lines) + 2 * pad - (lh - k(36))
-    img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); shadow(img, cw, ch, k(16))
-    d = ImageDraw.Draw(img); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), k(16), fill=(20, 20, 24, 235))
+    img, d = panel(cw, ch, k(16), (20, 20, 24, 235))
     for i, l in enumerate(lines):
         x, y = PAD + pad, PAD + pad + i * lh
         if i == 0 and name and l.startswith(name + ":"):
@@ -735,8 +699,7 @@ def make_alert(el):
     tl, ml = wrap(el.get("title") or "", f1, cw - 2 * pad), wrap(el.get("text") or "", f2, cw - 2 * pad)[:4] if el.get("text") else []
     lh1, lh2 = round(k(46) * 1.25), round(k(32) * 1.35)
     ch = k(10) + 2 * pad + lh1 * len(tl) + (k(12) + lh2 * len(ml) if ml else 0)
-    img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); shadow(img, cw, ch, k(22))
-    d = ImageDraw.Draw(img); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), k(22), fill=acc)
+    img, d = panel(cw, ch, k(22), acc)
     d.rounded_rectangle((PAD, PAD + k(10), PAD + cw, PAD + ch), k(22), fill=(24, 24, 28))
     y = PAD + k(10) + pad
     for l in tl: d.text((PAD + cw / 2, y), l, font=f1, fill=acc, anchor="ma"); y += lh1
@@ -760,13 +723,15 @@ def make_shape(el):
 
 def make_emoji(el):
     """Емодзі-реакція кольоровим шрифтом системи."""
-    pick_font(None); path = next((FONTS[n] for n in ("Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji") if n in FONTS), pick_font(None)[1])
+    path = next((FONTS[n] for n in ("Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji") if n in FONTS), pick_font(None)[1])
     f = ImageFont.truetype(path, max(16, round(float(el.get("size", 160))))); txt = el.get("text") or "😂"
     l, t, r, b = f.getbbox(txt); img = Image.new("RGBA", (r - l + 2 * PAD, b - t + 2 * PAD), (0, 0, 0, 0))
     ImageDraw.Draw(img).text((PAD - l, PAD - t), txt, font=f, embedded_color=True); return img, r - l, b - t
 
-def art(el): return {"card": make_card, "stream": make_card, "text": make_text, "image": make_image,
-                     "chat": make_chat, "alert": make_alert, "shape": make_shape, "emoji": make_emoji, "social": make_social}[el["type"]](el)
+ART = {"card": make_card, "stream": make_card, "text": make_text, "image": make_image,   # елементи, що малюються картинкою поверх відео
+       "chat": make_chat, "alert": make_alert, "shape": make_shape, "emoji": make_emoji, "social": make_social}
+
+def art(el): return ART[el["type"]](el)
 
 def layer(l, sw, sh):
     """Кадрування шару відео: (фільтр, ширина, висота) на місці призначення."""
@@ -800,9 +765,12 @@ def shadow_of(img, mask):
     img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(16)))
 
 def shadow(img, cw, ch, r):
-    sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sh).rounded_rectangle((PAD, PAD + 12, PAD + cw, PAD + ch + 12), r, fill=(0, 0, 0, 110))
-    img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(16)))
+    m = Image.new("L", img.size, 0); ImageDraw.Draw(m).rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), r, fill=255); shadow_of(img, m)
+
+def panel(cw, ch, r, fill):
+    """Плашка cw×ch з тінню на прозорому полотні з полем PAD: (картинка, малювання)."""
+    img = Image.new("RGBA", (cw + 2 * PAD, ch + 2 * PAD), (0, 0, 0, 0)); shadow(img, cw, ch, r)
+    d = ImageDraw.Draw(img); d.rounded_rectangle((PAD, PAD, PAD + cw, PAD + ch), r, fill=fill); return img, d
 
 # ── рендер ──
 def kept(a, b, cuts):
@@ -910,12 +878,17 @@ def overlay_art(e, i, size, last, nxt):
     f = [f"[{i}:v]{','.join(pre)}[a{i}]"] if pre else []
     return f + [f"[{last}][{f'a{i}' if pre else f'{i}:v'}]overlay={x}:{y}:shortest=1{when(e)}[{nxt}]"]
 
+def bar_filter(e, k, last, out, total, enable=""):
+    """Прогрес-бар: смуга росте від 0 до повної ширини за total с."""
+    return [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{k}]",
+            f"[{last}][pg{k}]overlay=x='-w+w*t/{total:.3f}':y={int(e['y'])}:shortest=1{enable}[{out}]"]
+
 def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     """na: скільки звукових доріжок; inp: (id елемента, роль) -> номер входу ffmpeg; sizes: id -> розмір картинки елемента."""
     els = [e for e in elements if on(e) and e["type"] not in ("subs", "bg", "music")]; vids = [e for e in els if e["type"] in ("video", "cam")]
     bg = next((e for e in elements if e["type"] == "bg" and on(e)), {}); net = sum(e - s for s, e in keep)
     f, src, audio, asrc = [], "0:v", int(na > 0), "0:a"
-    if na > 1: f.append("".join(f"[0:a:{i}]" for i in range(na)) + f"amix=inputs={na}:normalize=0[am]"); asrc = "am"   # звучать усі доріжки
+    if na > 1: f.append(amix(na, "am")); asrc = "am"                 # звучать усі доріжки
     if len(keep) > 1:                                              # пропуски вирізано: склеюємо збережені шматки
         n, seg = len(keep), [(s - keep[0][0], e - keep[0][0]) for s, e in keep]
         for t, p, s0 in (("v", "", "0:v"), ("a", "a", asrc))[:1 + audio]:
@@ -931,8 +904,7 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     for n, e in enumerate(els, 1):
         if e["type"] in ART: f += overlay_art(e, inp[e["id"], "art"], sizes[e["id"]], last, f"l{n}")
         elif e["type"] == "progress":                              # смуга росте від 0 до повної ширини за кліп
-            f += [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{n}]",
-                  f"[{last}][pg{n}]overlay=x='-w+w*t/{net:.3f}':y={int(e['y'])}:shortest=1{when(e)}[l{n}]"]
+            f += bar_filter(e, n, last, f"l{n}", net, when(e))
         else:
             c, dw, dh = layer(e, sw, sh); i, x, y = vids.index(e), int(e["x"]), int(e["y"])
             if (e["id"], "mask") in inp: f += [f"[s{i}]{c},format=rgba[c{n}]", f"[c{n}][{inp[e['id'], 'mask']}:v]alphamerge[e{n}]"]
@@ -955,8 +927,7 @@ def rearrange(dst, parts, bars, args, audio):
         if audio: f.append(f"[sa{i}]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
     f.append("".join(f"[v{i}]" + f"[a{i}]" * audio for i in range(n)) + f"concat=n={n}:v=1:a={int(audio)}[c0]" + "[a]" * audio); last = "c0"
     for k, e in enumerate(bars, 1):
-        f += [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{k}]",
-              f"[{last}][pg{k}]overlay=x='-w+w*t/{total:.3f}':y={int(e['y'])}:shortest=1[c{k}]"]; last = f"c{k}"
+        f += bar_filter(e, k, last, f"c{k}", total); last = f"c{k}"
     tmp = dst.with_name(dst.stem + ".parts.mp4")
     r = run([ffbin("ffmpeg"), "-y", "-v", "error", *HW, "-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
              *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)])
@@ -1078,7 +1049,7 @@ def render(pid, clips, elements, cues):
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
                                       "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs)), *afx]),
-                                      "-map", "[v]", "-map", f"[{alabel}]" if alabel else "[ca]" if len(keep) > 1 and na else "[am]" if na > 1 else "0:a?", *args,
+                                      "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
                 for line in p.stdout:
@@ -1112,19 +1083,17 @@ def ask_file(kind):
     p = filedialog.askopenfilename(parent=t, filetypes=[(kind, flt[1]), ("*", "*.*")]); t.destroy(); return p
 
 # ── публікація: опис від локального ШІ, відправка через Buffer ──
-AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP)
+AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP, fetch)
 BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.10.2"                     # VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.11.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
 def github(path, raw=False):
-    url = f"https://raw.githubusercontent.com/{REPO}/{path}" if raw else f"https://api.github.com/repos/{REPO}/{path}"
-    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ShortsMaker"}), timeout=30) as r:
-        return r.read() if raw else json.load(r)
+    return fetch(f"https://raw.githubusercontent.com/{REPO}/{path}" if raw else f"https://api.github.com/repos/{REPO}/{path}", raw=raw)
 
 def check_update():
     if not PACKAGED: return                                         # із сорсів не оновлюємось
@@ -1143,10 +1112,8 @@ def apply_update():
     """'app' — файли з app/ вже замінено (беремо їх з репозиторію на тезі релізу); 'full' — шлях до інсталятора."""
     u, say = UPDATE, lambda frac: report("update", f"Завантажую версію {UPDATE['version']}", frac)
     if u.get("kind") == "full":
-        dst = TMP / f"ShortsMaker-Setup-{u['version']}.exe"
-        with urllib.request.urlopen(urllib.request.Request(u["setup"], headers={"User-Agent": "ShortsMaker"}), timeout=60) as r, open(dst, "wb") as f:
-            total, got = int(r.headers.get("Content-Length") or 0), 0
-            while chunk := r.read(256 * 1024): f.write(chunk); got += len(chunk); say(got / total if total else None)
+        dst = TMP / f"ReCut-Setup-{u['version']}.exe"
+        fetch(u["setup"], dst, lambda got, total: say(got / total if total else None))
         return dst
     new = {}
     for i, f in enumerate(u["files"]):                               # спершу все завантажити, потім підмінити — без напівоновленої програми
@@ -1170,7 +1137,7 @@ def clip_caption(pid, path):
     speech = " ".join(q["text"] for q in p["cues"] if q["b"] > a and q["a"] < b)
     if not speech and Path(p["video"]).is_file():                 # реплік немає — транскрипт (кешується на диску)
         speech = " ".join(t for t, s, e in transcript(p["video"], a, b, "")[1])
-    return publish.caption(source, why, speech, OLLAMA, ollama_model())
+    return publish.caption(source, why, speech, AI.model(), AI.chat)
 
 def save_post(pid, path, post):
     def put(p):
@@ -1234,7 +1201,7 @@ def cleanup_media():
 def media_url(pid, f, progress=lambda frac: None):
     """Публічне посилання на файл шорту: викладаємо один раз, далі беремо збережене (поки файл той самий і лежить у нашому сховищі)."""
     post, stamp = f.get("post", {}), f"{os.path.getsize(f['path'])}:{os.path.getmtime(f['path'])}"
-    if MEDIA.base and post.get("mediaUrl", "").startswith(MEDIA.base) and post.get("mediaStamp") == stamp: return post["mediaUrl"]   # старі посилання catbox — у смітник
+    if post.get("mediaUrl", "").startswith(MEDIA.base) and post.get("mediaStamp") == stamp: return post["mediaUrl"]
     name = uuid.uuid5(uuid.NAMESPACE_URL, f["path"] + stamp).hex[:24] + ".mp4"
     url = MEDIA.upload(f["path"], name, progress)
     save_post(pid, f["path"], {"mediaUrl": url, "mediaStamp": stamp}); f.setdefault("post", {}).update(mediaUrl=url, mediaStamp=stamp)
@@ -1294,20 +1261,18 @@ class Handler(BaseHTTPRequestHandler):
                         for f in r["files"]: f["exists"] = Path(f["path"]).is_file()
                 return self.reply(ps)
             if u.path == "/api/project": return self.reply(load_project(q["id"]))
-            if u.path == "/api/ai": return self.reply(dict(model=ollama_model(), setup=AI.setup_state, can_setup=AI.can_setup(), size_gb=5))
+            if u.path == "/api/ai": return self.reply(dict(model=AI.model(), setup=AI.setup_state, can_setup=AI.can_setup(), size_gb=5))
             if u.path == "/api/buffer":
                 if not BUFFER.key: return self.reply(dict(connected=False))
                 return self.reply(dict(connected=True, channels=BUFFER.channels()))
             if u.path == "/api/brands": return self.reply({k: dict(name=n, color=c, path=d) for k, (n, c, d) in brands.BRANDS.items()})
-            if u.path == "/api/media": return self.reply(dict(connected=bool(MEDIA.base)))
-            if u.path == "/api/buffer/schema": return self.reply(BUFFER.schema_summary())
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
             if u.path == "/api/peaks": return self.reply(peaks(q["p"], int(q["track"]) if q.get("track") else None))
             if u.path == "/api/audio":                            # тривалість музичного файлу
                 r = run([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", q["p"]])
                 return self.reply(dict(dur=float(r.stdout.decode().strip() or 0)))
             if u.path == "/api/probe":
-                sw, sh, dur, na = probe(q["p"]); return self.reply(dict(sw=sw, sh=sh, dur=dur, region=REGION, tracks=na, mix=preview_mix(q["p"], na), play=preview_video(q["p"])))
+                sw, sh, dur, na = probe(q["p"]); return self.reply(dict(sw=sw, sh=sh, dur=dur, tracks=na, mix=preview_mix(q["p"], na), play=preview_video(q["p"])))
             if u.path == "/file": return self.send_file(q.get("p") if q.get("p") in allowed_files() else "")
             self.reply({"error": "404"}, code=404)
         except Exception as e: self.reply({"error": str(e)}, code=500)
@@ -1447,11 +1412,11 @@ def port_owner(port):
     return int(m.group(1)) if m else None
 
 def stop_old_server(url):
-    """На порту інша версія ShortsMaker, що не рендерить, — зупиняємо її, щоб оновлення почало працювати одразу.
+    """На порту інша версія ReCut, що не рендерить, — зупиняємо її, щоб оновлення почало працювати одразу.
     True, якщо зупинили; False — лишаємо як є (та сама версія, йде рендер, чужа програма або не Windows)."""
     get = lambda path: json.loads(urllib.request.urlopen(url + path, timeout=3).read())
     try: busy = get("/api/status")["running"]
-    except Exception: return False                              # порт зайняв не ShortsMaker
+    except Exception: return False                              # порт зайняв не ReCut
     try: same = get("/api/version").get("version") == CODE_VERSION
     except Exception: same = False                              # версії до цієї не знають /api/version
     pid = None if same or busy or os.name != "nt" else port_owner(CFG["port"])
@@ -1476,7 +1441,7 @@ def prepare_ffmpeg():
     finally: TASKS.pop("ffmpeg", None)
 
 def main():
-    CFG.update(rd(CFG_FILE, {})); migrate()
+    CFG.update(rd(CFG_FILE, {}))
     url = f"http://127.0.0.1:{CFG['port']}"
     srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно

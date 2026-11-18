@@ -1,4 +1,4 @@
-; Інсталятор ShortsMaker (Inno Setup 6). Збирає build.sh: ISCC /DAppVersion=1.2.3 installer.iss
+; Інсталятор ReCut (Inno Setup 6). Збирає build.sh: ISCC /DAppVersion=1.2.3 installer.iss
 ; Тека — на вибір користувача, без прав адміністратора: програма пише у свою теку (data, renders), тож потрібен дозвіл на запис.
 ; Оновлення ставиться в ту саму теку поверх, data й renders лишаються.
 #ifndef AppVersion
@@ -7,23 +7,23 @@
 
 [Setup]
 AppId={{8F2A5C4E-7B3D-4E1A-9C6F-2D8B0A4E1F37}
-AppName=ShortsMaker
+AppName=ReCut
 AppVersion={#AppVersion}
-AppVerName=ShortsMaker {#AppVersion}
+AppVerName=ReCut {#AppVersion}
 AppPublisher=mrbear22
 AppPublisherURL=https://github.com/mrbear22/ShortsMaker
 AppUpdatesURL=https://github.com/mrbear22/ShortsMaker/releases
-DefaultDirName={localappdata}\Programs\ShortsMaker
+DefaultDirName={localappdata}\Programs\ReCut
 DisableProgramGroupPage=yes
 DisableReadyPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=dist
-OutputBaseFilename=ShortsMaker-Setup
+OutputBaseFilename=ReCut-Setup
 SetupIconFile=launcher\icon.ico
-UninstallDisplayIcon={app}\ShortsMaker.exe
-UninstallDisplayName=ShortsMaker
+UninstallDisplayIcon={app}\ReCut.exe
+UninstallDisplayName=ReCut
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -40,17 +40,21 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; код і вбудований Python — начисто, щоб від старої версії не лишилось зайвих файлів; data, renders і завантажений ffmpeg не чіпаємо
 Type: filesandordirs; Name: "{app}\app"
 Type: filesandordirs; Name: "{app}\runtime"
+; програма раніше звалась ShortsMaker: старий запускач і ярлики
+Type: files; Name: "{app}\ShortsMaker.exe"
+Type: files; Name: "{autoprograms}\ShortsMaker.lnk"
+Type: files; Name: "{autodesktop}\ShortsMaker.lnk"
 
 [Files]
-Source: "dist\ShortsMaker\*"; DestDir: "{app}"; Excludes: "\data,\renders,__pycache__,*.bat"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "dist\ReCut\*"; DestDir: "{app}"; Excludes: "\data,\renders,__pycache__,*.bat"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\ShortsMaker"; Filename: "{app}\ShortsMaker.exe"
-Name: "{autodesktop}\ShortsMaker"; Filename: "{app}\ShortsMaker.exe"; Tasks: desktopicon
+Name: "{autoprograms}\ReCut"; Filename: "{app}\ReCut.exe"
+Name: "{autodesktop}\ReCut"; Filename: "{app}\ReCut.exe"; Tasks: desktopicon
 
 [Run]
 ; і після звичайного встановлення, і після тихого оновлення з програми
-Filename: "{app}\ShortsMaker.exe"; Description: "{cm:LaunchProgram,ShortsMaker}"; Flags: nowait postinstall
+Filename: "{app}\ReCut.exe"; Description: "{cm:LaunchProgram,ReCut}"; Flags: nowait postinstall
 
 [UninstallRun]
 ; програма й її вікно Edge (профіль вікна лежить у data\window), інакше теку не видалити
@@ -69,7 +73,7 @@ var Probe: String;
 begin
   Result := True;
   if CurPageID <> wpSelectDir then Exit;
-  Probe := AddBackslash(WizardDirValue) + 'shortsmaker-write.tmp';
+  Probe := AddBackslash(WizardDirValue) + 'recut-write.tmp';
   if ForceDirectories(WizardDirValue) and SaveStringToFile(Probe, '', False) then DeleteFile(Probe)
   else begin
     MsgBox('У цю теку не можна записувати без прав адміністратора. Обери іншу, наприклад на диску D: або у своїй теці користувача.', mbError, MB_OK);

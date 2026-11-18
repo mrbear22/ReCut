@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
-OUT=dist/ShortsMaker; W=dist/.cache
+OUT=dist/ReCut; W=dist/.cache
 PY=$(python -c "print('python')" 2>/dev/null || echo python3)   # на Windows python3 — заглушка Microsoft Store
 rm -rf "$OUT/runtime" "$OUT/app" "$OUT/ffmpeg"   # data і renders користувача не чіпаємо
 mkdir -p "$OUT/runtime/Lib/site-packages" "$OUT/app" "$W"
@@ -17,9 +17,9 @@ for whl in (w / "wheels").glob("*.whl"): zipfile.ZipFile(whl).extractall(out / "
 next((out / "runtime").glob("python*._pth")).write_text("python312.zip\n.\nLib\\site-packages\n..\\app\nimport site\n")
 PY
 cp app/shorts.py app/publish.py app/localai.py app/brands.py app/ui.html app/publish.js "$OUT/app/"
-(cd launcher && $PY -m ziglang cc -target x86_64-windows-gnu -municode -O2 -s -Wl,--subsystem,windows launcher.c app.rc -o "../$OUT/ShortsMaker.exe")
-printf '@echo off\r\n"%%~dp0runtime\\python.exe" "%%~dp0app\\shorts.py"\r\npause\r\n' > "$OUT/ShortsMaker (debug).bat"
+(cd launcher && $PY -m ziglang cc -target x86_64-windows-gnu -municode -O2 -s -Wl,--subsystem,windows launcher.c app.rc -o "../$OUT/ReCut.exe")
+printf '@echo off\r\n"%%~dp0runtime\\python.exe" "%%~dp0app\\shorts.py"\r\npause\r\n' > "$OUT/ReCut (debug).bat"
 VER=$(sed -n 's/^REPO, VERSION = .*"\([0-9.]*\)".*/\1/p' app/shorts.py)   # версія — тег релізу
 "${ISCC:-/c/Program Files (x86)/Inno Setup 6/ISCC.exe}" //Q //DAppVersion="$VER" installer.iss
-echo "dist/ShortsMaker-Setup.exe (v$VER)"
+echo "dist/ReCut-Setup.exe (v$VER)"
 echo "$OUT"

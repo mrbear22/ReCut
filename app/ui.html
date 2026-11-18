@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk"><head><meta charset="utf-8"><title>ShortsMaker</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect x='40' y='40' width='944' height='944' rx='230' fill='%2316161c'/%3E%3Crect x='150' y='330' width='724' height='364' rx='54' fill='none' stroke='%23fff' stroke-opacity='.28' stroke-width='26'/%3E%3Cg transform='rotate(8 512 476)'%3E%3Crect x='352' y='192' width='320' height='568' rx='64' fill='%23ffcc33'/%3E%3Cpath d='M470 382V570L618 476Z' fill='%2316161c'/%3E%3C/g%3E%3Crect x='312' y='838' width='400' height='32' rx='16' fill='%23ffcc33'/%3E%3Crect x='312' y='838' width='158' height='32' rx='16' fill='%23fff'/%3E%3C/svg%3E">
+<html lang="uk"><head><meta charset="utf-8"><title>ReCut</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1024 1024'%3E%3Crect x='40' y='40' width='944' height='944' rx='230' fill='%2316161c'/%3E%3Crect x='150' y='330' width='724' height='364' rx='54' fill='none' stroke='%23fff' stroke-opacity='.28' stroke-width='26'/%3E%3Cg transform='rotate(8 512 476)'%3E%3Crect x='352' y='192' width='320' height='568' rx='64' fill='%23ffcc33'/%3E%3Cpath d='M470 382V570L618 476Z' fill='%2316161c'/%3E%3C/g%3E%3Crect x='312' y='838' width='400' height='32' rx='16' fill='%23ffcc33'/%3E%3Crect x='312' y='838' width='158' height='32' rx='16' fill='%23fff'/%3E%3C/svg%3E">
 <style>
 /* У дусі DaVinci Resolve: теплі нейтральні сірі, майже монохромно; один теплий акцент лише для головного —
    основна дія, вибране, область аналізу. Статуси й мережі — крапками й іконками, а не заливками. */
@@ -310,13 +310,13 @@ footer{padding:0 8px 8px}
 </style></head>
 <body>
 <header>
-  <span class="logo"><svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="40" y="40" width="944" height="944" rx="230" fill="#16161c"/><rect x="150" y="330" width="724" height="364" rx="54" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="26"/><g transform="rotate(8 512 476)"><rect x="352" y="192" width="320" height="568" rx="64" fill="#ffcc33"/><path d="M470 382V570L618 476Z" fill="#16161c"/></g><rect x="312" y="838" width="400" height="32" rx="16" fill="#ffcc33"/><rect x="312" y="838" width="158" height="32" rx="16" fill="#fff"/></svg><span>Shorts<b>Maker</b></span></span>
+  <span class="logo"><svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="40" y="40" width="944" height="944" rx="230" fill="#16161c"/><rect x="150" y="330" width="724" height="364" rx="54" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="26"/><g transform="rotate(8 512 476)"><rect x="352" y="192" width="320" height="568" rx="64" fill="#ffcc33"/><path d="M470 382V570L618 476Z" fill="#16161c"/></g><rect x="312" y="838" width="400" height="32" rx="16" fill="#ffcc33"/><rect x="312" y="838" width="158" height="32" rx="16" fill="#fff"/></svg><span>Re<b>Cut</b></span></span>
   <nav><button data-view="home">Проєкти</button><button data-view="editor">Редактор</button><button data-view="pub">Публікація</button></nav>
   <input id="pname" placeholder="Назва проєкту" aria-label="Назва проєкту">
   <span class="grow"></span>
   <div id="busy" role="status" aria-live="polite"></div>
   <button id="upd" class="ghost" hidden></button>
-  <button id="support" class="ghost" data-link="patreon" title="ShortsMaker безкоштовний; підтримати автора на Patreon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1z"/></svg>Підтримати</button>
+  <button id="support" class="ghost" data-link="patreon" title="ReCut безкоштовний; підтримати автора на Patreon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1z"/></svg>Підтримати</button>
   <button id="keysBtn" class="ghost" title="Клавіші (?)">Клавіші</button>
   <button id="help" class="ghost" title="Довідка" aria-label="Довідка">?</button>
 </header>
@@ -327,7 +327,7 @@ footer{padding:0 8px 8px}
 <section id="home" class="view">
   <div class="hh"><h2 class="hero"><svg class="mark" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="40" y="40" width="944" height="944" rx="230" fill="#16161c"/><rect x="150" y="330" width="724" height="364" rx="54" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="26"/><g transform="rotate(8 512 476)"><rect x="352" y="192" width="320" height="568" rx="64" fill="#ffcc33"/><path d="M470 382V570L618 476Z" fill="#16161c"/></g><rect x="312" y="838" width="400" height="32" rx="16" fill="#ffcc33"/><rect x="312" y="838" width="158" height="32" rx="16" fill="#fff"/></svg><span>Проєкти</span></h2><button class="pri" id="new">+ Новий проєкт</button></div>
   <div id="plist"></div>
-  <p class="support">ShortsMaker безкоштовний. Підтримати розробку можна на <button class="link" data-link="patreon">Patreon</button>.</p>
+  <p class="support">ReCut безкоштовний. Підтримати розробку можна на <button class="link" data-link="patreon">Patreon</button>.</p>
 </section>
 
 <section id="editor" class="view">
@@ -551,7 +551,6 @@ const els = () => P ? P.elements : [];
 const elById = id => els().find(e => e.id === id);
 const region = () => P.region || [0, Math.min(dur, 1800)];
 const msg = (t, err) => { $('#msg').textContent = t; $('#msg').classList.toggle('err', !!err); };
-const subsEl = () => els().find(e => e.type === 'subs');
 // кожен спікер — окремий елемент «Субтитри» зі своїм стилем і місцем; репліка знає свій елемент (sid), без нього — першого
 const SUB_COLORS = ['#ffffff', '#ffd84d', '#6fd3ff', '#ff8ad8', '#9dff7a', '#ffa45c'];
 const subsEls = (list = els()) => list.filter(e => e.type === 'subs');
@@ -676,7 +675,6 @@ $('#mreveal').onclick = () => api('/api/reveal', {path: $('#mv').dataset.path});
 async function openProject(p) {
   await api('/api/project/open', {id: p.id});
   P = p; migrateMusic(); sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
-  if (!P.clips.length && P.video) try { P.clips = JSON.parse(localStorage.getItem('clips:' + P.video)) || []; } catch (e) {}   // незбережені кліпи старих версій
   const oldLang = subsEls()[0]?.lang;                                // мова й слів на екрані були в елементі «Субтитри» — тепер біля генерації
   if (oldLang && ['uk', 'en'].includes(oldLang) && !cfg.stt_lang) { cfg.stt_lang = oldLang; api('/api/config', {stt_lang: oldLang}).catch(() => {}); }
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
@@ -911,7 +909,6 @@ async function detectCam(cam, btn = {}) {
 
 // ── картинки елементів малює сервер тим самим кодом, що й у відео ──
 const artKey = el => JSON.stringify(el, (k, v) => ['x', 'y', 'from', 'to', 'anim', 'on', 'id'].includes(k) ? undefined : v);
-const isArt = el => !['video', 'cam', 'subs', 'bg', 'progress'].includes(el.type);
 function ensureArt(el) {
   const key = artKey(el), a = arts.get(aid(el));
   if (a && (a.key === key || a.pending === key)) return a.ready;
@@ -1002,7 +999,7 @@ async function loadVideo() {
   vid.removeAttribute('src'); if (!P.video) return;
   const pr = await api('/api/probe?p=' + encodeURIComponent(P.video)).catch(e => (msg(e.message, 1), null)); if (!pr) return;
   dur = pr.dur; S = {w: pr.sw, h: pr.sh}; view = {t0: 0, t1: dur}; fitCanvas();
-  showPlayable(P.video, pr.play ?? P.video);                       // старий сервер не знає «play» — граємо оригінал
+  showPlayable(P.video, pr.play);
   audioTracks = pr.tracks || 1;
   if (pr.tracks > 1) waitMix(P.video, pr.mix);
   if (!P.elements.length || (oldStarter(P.elements) && !P.clips.length)) await defaultElements();   // стара заготовка з плашкою відео — на нову
@@ -1656,7 +1653,6 @@ const inClip = (c, e) => !e.solo || !!c?.segs?.[e.id];
 const segsOf = (c, e) => c?.segs?.[e.id] ?? (e.solo ? [] : [[e.from || 0, e.to || 0]]);
 const ownSegs = (c, e) => ((c.segs ||= {})[e.id] ||= segsOf(c, e).map(x => [...x]));   // перша зміна в кліпі — копія спільних
 const segSpan = (c, x) => [toSrc(c, x[0] || 0), x[1] ? toSrc(c, x[1]) : c.b];
-const barSpan = (c, e) => segSpan(c, segsOf(c, e)[0] || [0, 0]);
 function tidySegs(c, e) {                                         // по порядку; ті, що перекрились, — злити (дотичні лишаються окремими)
   const n = net(c), out = [];
   for (const [a, b] of [...(c.segs[e.id] || [])].sort((x, y) => x[0] - y[0])) {
@@ -2348,7 +2344,7 @@ $('#rbar').oncontextmenu = e => { if (P && dur && e.target.closest('#rband,#ract
 // ── рендер ──
 $('#render').onclick = async () => {
   if (!P || !P.clips.some(c => c.on)) return msg('Немає увімкнених кліпів', 1);
-  if (subsEl()?.on && !P.cues.length) msg('Субтитрів ще немає', 1);
+  if (subsEls()[0]?.on && !P.cues.length) msg('Субтитрів ще немає', 1);
   const list = structuredClone(P.clips).sort((x, y) => x.a - y.a).map(c => ({...c, cut: c.cut || []}));
   try { await save(true); await api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues, music: P.music}); poll(); } catch (e) { msg(e.message, 1); }
 };
@@ -2368,7 +2364,7 @@ async function poll() {
 // ── міні-туторіал: підсвічує місце й пояснює фішку; сам запускається при першому відкритті редактора ──
 const key = (k, col = '#383634', ink = '#e2dfda') => `<i style="background:${col};color:${ink}">${k}</i>`;
 const TOUR = [
-  [null, 'ShortsMaker', '<p>Основні інструменти. Довідка знову — кнопка <b>?</b> угорі.</p>'],
+  [null, 'ReCut', '<p>Основні інструменти. Довідка знову — кнопка <b>?</b> угорі.</p>'],
   ['#videoChip', 'Відео', '<p>Запис стріму, з якого робимо шорти.</p>'],
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#keysBtn', 'Клавіші', `<p>Усі клавіші — тут або ${key('?')}.</p>`],

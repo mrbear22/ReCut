@@ -11,8 +11,9 @@ START_WAIT_S = 20
 
 
 class LocalAI:
-    def __init__(self, home: Path, url: str, report, popen_flags: dict):
+    def __init__(self, home: Path, url: str, report, popen_flags: dict, fetch):
         self.home, self.url, self.report, self.flags = home.resolve(), url, report, popen_flags   # відносний OLLAMA_MODELS Ollama відкидає
+        self.fetch = fetch                                          # завантаження зі спробами: повільний інтернет не обриває
         self.proc, self.lock = None, threading.Lock()
         self.setup_state = dict(running=False, err="")
 
@@ -22,20 +23,22 @@ class LocalAI:
     def can_setup(self): return os.name == "nt"
 
     def installed(self):
-        """Назви моделей у запущеній Ollama або None, якщо вона не відповідає."""
+        """Моделі запущеної Ollama ([{name, size, …}]) або None, якщо вона не відповідає."""
         try:
-            with urllib.request.urlopen(self.url + "tags", timeout=1) as r: return [m["name"] for m in json.load(r)["models"]]
+            with urllib.request.urlopen(self.url + "tags", timeout=1) as r: return json.load(r)["models"]
         except (OSError, ValueError): return None
 
     def model(self):
         """Модель для роботи: найбільша встановлена; портативну Ollama запускаємо, якщо вона вже завантажена."""
-        names = self.installed()
-        if names is None and self.exe.is_file() and not self.setup_state["running"]: self.start(); names = self.installed()   # під час розпакування — не чіпати
-        if not names: return None
-        try:
-            with urllib.request.urlopen(self.url + "tags", timeout=2) as r: ms = json.load(r)["models"]
-            return max(ms, key=lambda m: m["size"])["name"]
-        except (OSError, ValueError): return names[0]
+        ms = self.installed()
+        if ms is None and self.exe.is_file() and not self.setup_state["running"]: self.start(); ms = self.installed()   # під час розпакування — не чіпати
+        return max(ms, key=lambda m: m["size"])["name"] if ms else None
+
+    def chat(self, model, prompt, timeout, **options):
+        """Відповідь моделі — JSON-об'єкт."""
+        body = dict(model=model, stream=False, format="json", options=options, messages=[{"role": "user", "content": prompt}])
+        with urllib.request.urlopen(urllib.request.Request(self.url + "chat", json.dumps(body).encode()), timeout=timeout) as r:
+            return json.loads(json.load(r)["message"]["content"])
 
     def start(self):
         with self.lock:
@@ -70,11 +73,7 @@ class LocalAI:
         if shutil.disk_usage(self.home).free < NEED_FREE_GB * 1e9:
             raise RuntimeError(f"Замало місця на диску: для ШІ потрібно ~{NEED_FREE_GB} ГБ вільних")
         tmp, t0 = self.home / "ollama.zip.part", time.time()
-        with urllib.request.urlopen(OLLAMA_ZIP, timeout=60) as r, open(tmp, "wb") as out:
-            total, done = int(r.headers.get("Content-Length") or 0), 0
-            while chunk := r.read(1 << 20):
-                out.write(chunk); done += len(chunk)
-                self.report("ai", f"Завантажую ШІ, {total / 1e9:.1f} ГБ", done / total if total else None, t0)
+        self.fetch(OLLAMA_ZIP, tmp, lambda done, total: self.report("ai", f"Завантажую ШІ, {total / 1e9:.1f} ГБ", done / total if total else None, t0))
         self.report("ai", "Розпаковую локальний ШІ…", None)
         with zipfile.ZipFile(tmp) as z: z.extractall(self.home)
         tmp.unlink()

@@ -25,7 +25,7 @@ YOUTUBE_CATEGORY = "20"                                            # «Ігри�
 # Buffer бере відео лише за публічним посиланням і завантажує його в момент публікації (може бути за дні),
 # тож файл має жити, поки пост не вийде. Анонімні файлообмінники або блокують Buffer (catbox, x0.at, pomf),
 # або видаляють файл за години (uguu). Тому відео лежать у сховищі розробника: Cloudflare R2 за Worker (cloudflare/worker.js).
-MEDIA_BASE = "https://shortsmaker-media.mykhailoholotiuk.workers.dev/"                                                    # адреса Worker, напр. https://shortsmaker-media.<акаунт>.workers.dev/
+MEDIA_BASE = "https://shortsmaker-media.mykhailoholotiuk.workers.dev/"           # адреса Worker (cloudflare/worker.js)
 MEDIA_KEY = "b32da63b13f2f4263d6baf0f3ecb65fa"                    # такий самий у worker.js: не пароль, а захист від випадкових завантажень
 MEDIA_MAX_MB, UPLOAD_CHUNK = 95, 256 * 1024                        # безкоштовний Worker не приймає понад 100 МБ
 
@@ -59,15 +59,21 @@ class Buffer:
         if out.get("errors"): raise RuntimeError("Buffer: " + "; ".join(e.get("message", "?") for e in out["errors"]))
         return out["data"]
 
+    def _orgs(self, fields="id"): return self.gql("query { account { organizations { %s } } }" % fields)["account"]["organizations"]
+
+    def _fields(self, tname):
+        """Назви полів вводу типу з живої схеми."""
+        return {x["name"] for x in (self.gql('query($n: String!) { __type(name: $n) { inputFields { name } } }', {"n": tname})["__type"] or {}).get("inputFields", [])}
+
     def channels(self):
         """Канали всіх організацій акаунта (TikTok, YouTube, …)."""
-        orgs = self.gql("query { account { organizations { id name } } }")["account"]["organizations"]
+        orgs = self._orgs("id name")
         q = "query { channels(input: {organizationId: %s}) { id name displayName service avatar isQueuePaused } }"
         return [dict(c, org=o["name"], orgId=o["id"]) for o in orgs for c in self.gql(q % json.dumps(o["id"]))["channels"]]
 
     def scheduled(self):
         """Уже заплановані пости всіх організацій: щоб нові йшли в чергу після них."""
-        orgs = self.gql("query { account { organizations { id } } }")["account"]["organizations"]
+        orgs = self._orgs()
         q = """query { posts(input: {organizationId: %s, filter: {status: [scheduled]}, sort: [{field: dueAt, direction: asc}]}) {
                  edges { node { id text dueAt channelId } } } }"""
         return [e["node"] for o in orgs for e in self.gql(q % json.dumps(o["id"]))["posts"]["edges"]]
@@ -81,9 +87,7 @@ class Buffer:
             t = self.gql('query { __type(name: "PostInputMetaData") { inputFields { name type { name ofType { name } } } } }')["__type"] or {}
             for f in t.get("inputFields", []):
                 kind, tn = f["name"].lower(), f["type"]["name"] or (f["type"]["ofType"] or {}).get("name")
-                if kind in VIDEO_SERVICES and tn:
-                    sub = self.gql('query($n: String!) { __type(name: $n) { inputFields { name } } }', {"n": tn})["__type"] or {}
-                    self._meta[kind] = (f["name"], {x["name"] for x in sub.get("inputFields", [])})
+                if kind in VIDEO_SERVICES and tn: self._meta[kind] = (f["name"], self._fields(tn))
         except RuntimeError: self._meta = {}
         return self._meta
 
@@ -119,7 +123,7 @@ class Buffer:
         tname = lambda t: t["name"] or (t.get("ofType") or {}).get("name")
         arg = f["args"][0]; aname, atype = arg["name"], tname(arg["type"])
         if arg["name"] == "input":                                 # deletePost(input: {id: …})
-            fields = {x["name"] for x in (self.gql('query($n: String!) { __type(name: $n) { inputFields { name } } }', {"n": atype})["__type"] or {}).get("inputFields", [])}
+            fields = self._fields(atype)
             value = {next((k for k in ("id", "postId") if k in fields), "id"): post_id}
         else: value = post_id
         ret = self.gql('query($n: String!) { __type(name: $n) { possibleTypes { name fields { name } } } }', {"n": tname(f["type"])})["__type"] or {}
@@ -129,21 +133,6 @@ class Buffer:
             if "not found" in str(e).lower(): return
             raise
         if r.get("message") and "not found" not in r["message"].lower(): raise RuntimeError(r["message"])
-
-    def schema_summary(self):
-        """Що вміє API насправді: мутації й поля вводу поста (документація відстає від схеми)."""
-        q = """query { __schema { mutationType { fields { name args { name type { name kind ofType { name } } } } } }
-                       post: __type(name: "CreatePostInput") { inputFields { name type { name kind ofType { name } } } }
-                       meta: __type(name: "PostInputMetaData") { inputFields { name type { name ofType { name } } } }
-                       video: __type(name: "VideoAssetInput") { inputFields { name type { name ofType { name } } } } }"""
-        return self.gql(q)
-
-
-def _ollama(url, model, prompt):
-    body = dict(model=model, stream=False, format="json", options=dict(temperature=.7, num_ctx=4096),
-                messages=[{"role": "user", "content": prompt}])
-    with urllib.request.urlopen(urllib.request.Request(url + "chat", json.dumps(body).encode()), timeout=300) as r:
-        return json.loads(json.load(r)["message"]["content"])
 
 
 def clean_caption(raw):
@@ -155,12 +144,12 @@ def clean_caption(raw):
                 description=str(raw.get("description", "")).strip()[:DESC_MAX], hashtags=tags)
 
 
-def caption(source, why, speech, ollama_url, model):
+def caption(source, why, speech, model, chat):
     """Опис кліпу. Без Ollama — заготовка з назви джерела й того, що відбувається в кліпі."""
     if not model:
         return dict(clean_caption(dict(title=why or source, description="", hashtags=["shorts"])), ai=False)
     prompt = CAPTION_PROMPT.format(source=source, why=why or "невідомо", speech=speech[:6000] or "(мовлення немає)")
-    return dict(clean_caption(_ollama(ollama_url, model, prompt)), ai=True, model=model)
+    return dict(clean_caption(chat(model, prompt, 300, temperature=.7, num_ctx=4096)), ai=True, model=model)
 
 
 def post_text(post):
@@ -173,17 +162,15 @@ class WorkerMedia:
     """Шорти для Buffer у сховищі розробника (Cloudflare R2 за Worker, код у cloudflare/worker.js).
     Користувачеві нічого налаштовувати: програма кладе файл, Buffer забирає його в момент публікації, потім файл прибираємо."""
 
-    def __init__(self, base=MEDIA_BASE):
-        self.base = base.rstrip("/") + "/" if base else ""
+    base = MEDIA_BASE
 
     def upload(self, path, name, progress=lambda frac: None):
         path = Path(path); size = path.stat().st_size
-        if not self.base: raise RuntimeError("Сховище відео для Buffer ще не налаштоване в цій версії програми")
         if size > MEDIA_MAX_MB * 2 ** 20: raise RuntimeError(f"Шорт більший за {MEDIA_MAX_MB} МБ — сховище не прийме")
         u = urllib.parse.urlsplit(self.base + "v/" + name); c = http.client.HTTPSConnection(u.netloc, timeout=120)
         try:
             c.putrequest("PUT", u.path)
-            for k, v in {"Content-Type": "video/mp4", "Content-Length": size, "X-Upload-Key": MEDIA_KEY, "User-Agent": "ShortsMaker"}.items(): c.putheader(k, str(v))
+            for k, v in {"Content-Type": "video/mp4", "Content-Length": size, "X-Upload-Key": MEDIA_KEY, "User-Agent": "ReCut"}.items(): c.putheader(k, str(v))
             c.endheaders(); sent = 0
             with path.open("rb") as fh:                              # частинами: великий файл не в пам'яті й видно поступ
                 while chunk := fh.read(UPLOAD_CHUNK):
@@ -196,6 +183,6 @@ class WorkerMedia:
 
     def delete(self, url):
         """Прибрати відео, яке Buffer уже опублікував. Не вийшло — не біда: сховище саме чистить усе старше 45 днів."""
-        if not self.base or not url.startswith(self.base): return
-        try: urllib.request.urlopen(urllib.request.Request(url, method="DELETE", headers={"X-Upload-Key": MEDIA_KEY, "User-Agent": "ShortsMaker"}), timeout=30).close()
+        if not url.startswith(self.base): return
+        try: urllib.request.urlopen(urllib.request.Request(url, method="DELETE", headers={"X-Upload-Key": MEDIA_KEY, "User-Agent": "ReCut"}), timeout=30).close()
         except OSError: pass
