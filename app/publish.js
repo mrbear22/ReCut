@@ -242,7 +242,7 @@ function pubCard(f, i, d, room) {                                 // рядок 
       <div class="phd"><span class="pnum">#${i + 1} · з ${fmt(f.a).replace(/\.\d$/, '')}</span><span class="pst ${kind}" title="${esc(label)}">${esc(label)}</span></div>
       <div class="prow"><input data-f="title" ${ro} value="${esc(title)}" maxlength="${PUB_TITLE_MAX}" placeholder="Назва" aria-label="Назва"><em data-count>${title.length}/${PUB_TITLE_MAX}</em></div>
       <textarea data-f="description" ${ro} rows="2" placeholder="Опис під відео" aria-label="Опис">${esc(p.description || '')}</textarea>
-      <input data-f="hashtags" ${ro} value="${esc((p.hashtags || []).map(t => '#' + t).join(' '))}" placeholder="#shorts #стрім" aria-label="Хештеги">
+      <input data-f="hashtags" ${ro} value="${esc((p.hashtags || []).map(t => '#' + t).join(' '))}" placeholder="#shorts #етер" aria-label="Хештеги">
     </div>
     <div class="pside">
       <div class="pline"><div class="ptargets">${pubTargetsHtml(f, room)}</div>${pubWhenHtml(f, d)}</div>

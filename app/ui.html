@@ -451,7 +451,7 @@ kbd{font-family:var(--mono)}
 <section id="home" class="view">
  <div class="hwrap">
   <section class="hero2">
-    <div><h1 class="disp">Три години стріму&nbsp;—<br><em>десять</em> шортів</h1>
+    <div><h1 class="disp">Три години етеру&nbsp;—<br><em>десять</em> шортів</h1>
       <form class="hpaste" id="hLink"><input id="hUrl" placeholder="✂ встав twitch.tv/videos/…" aria-label="Посилання на запис Twitch"><button class="pri">Різати</button></form>
       <p>або <button class="link" id="hFile">відкрий файл з диска</button></p></div>
     <div class="tapes" id="hTapes"></div>
@@ -596,7 +596,7 @@ const TYPES = {
   cam:    T('Вебкамера', '◉', '#b8789a', ['w'], [['detect', 'button', 'Знайти вебкамеру автоматично'], ...SHAPE]),
   card:   T('Плашка відео', '▤', '#c9a75a', ['s'], [['preview', 'file', 'Прев\'ю'], ['logo', 'file', 'Аватар'], ['title', 'area', 'Назва'],
             ['channel', 'text', 'Канал'], ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [30, 250, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
-  stream: T('Плашка стріму', '◎', '#c9a75a', ['s'], [['logo', 'file', 'Аватар'], ['channel', 'text', 'Нікнейм'], ['title', 'area', 'Назва стріму'],
+  stream: T('Плашка етеру', '◎', '#c9a75a', ['s'], [['logo', 'file', 'Аватар'], ['channel', 'text', 'Нікнейм'], ['title', 'area', 'Назва етеру'],
             ['category', 'text', 'Гра / категорія'], ['badge', 'text', 'Бейдж'], ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [30, 250, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
   social: T('Соцмережа', '@', '#6b95c9', ['size'], [['net', 'seg', 'Мережа', NETS], ['handle', 'text', 'Нікнейм чи посилання'],
             ['style', 'seg', 'Вигляд', [['dark', 'Темна плашка'], ['brand', 'Колір мережі'], ['clean', 'Без плашки']]], ['font', 'font', 'Шрифт'],
@@ -616,8 +616,8 @@ const TYPES = {
             ['upper', 'toggle', 'ВЕЛИКІ ЛІТЕРИ'], ['outline', 'range', 'Обведення', [0, 16, 1, 'px']], ['anim', 'seg', 'Поява фрази', ANIM.slice(0, 3)]]),
 };
 const CATALOG = [
-  ['Для стрімерів', [
-    ['Плашка стріму', 'аватар з LIVE, нік, гра', {type: 'stream', s: 1, y: 170, channel: 'Нікнейм', title: 'Назва стріму', category: 'Гра', badge: 'LIVE'}],
+  ['Для етерів', [
+    ['Плашка етеру', 'аватар з LIVE, нік, гра', {type: 'stream', s: 1, y: 170, channel: 'Нікнейм', title: 'Назва етеру', category: 'Гра', badge: 'LIVE'}],
     ['Чат-повідомлення', 'репліка глядача з ніком', {type: 'chat', s: 1, name: 'viewer42', nameColor: '#a970ff', text: 'ахахах це було епічно', y: 1000, anim: 'slide', from: 1}],
     ['Нікнейм у соцмережі', 'логотип мережі й @нік', {type: 'social', net: 'tiktok', handle: '@nickname', style: 'dark', size: 46, y: 1700, anim: 'none'}]]],
   ['Текст', [
@@ -850,7 +850,7 @@ function renderTwitch() {
   $('#twList').innerHTML = twVideos.length ? twVideos.map((v, i) => `<button class="vc ${byVideo.has(v.url) ? 'inp' : ''}" data-vod="${i}">
       <span class="vt">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${fmtLen(v.dur)}</i>${byVideo.has(v.url) ? '<em>У проєкті</em>' : ''}</span>
       <b>${esc(v.title)}</b><small>${[v.date && new Date(v.date).toLocaleDateString('uk-UA', {day: 'numeric', month: 'short'}), v.views && (v.views >= 1000 ? `${Math.round(v.views / 1000)} тис. переглядів` : plural(v.views, 'перегляд', 'перегляди', 'переглядів'))].filter(Boolean).join(' · ')}</small></button>`).join('')
-    : '<p class="mut">Записів трансляцій немає</p>';
+    : '<p class="mut">Записів етерів немає</p>';
   for (const v of twVideos) {                                     // проєкт із цим записом без обкладинки — бере її зі списку
     const c = v.thumb && [...$$('.pcov[data-cov]')].find(x => x.dataset.cov === v.url); if (c && !c.querySelector('img')) c.insertAdjacentHTML('beforeend', `<img src="${esc(v.thumb)}" alt="" onerror="this.remove()">`);
   }
@@ -947,7 +947,7 @@ $('#vFile').onclick = () => { $('#vPop').classList.remove('on'); pickVideo(); };
 $('#vLink').onsubmit = e => { e.preventDefault(); openLink($('#vUrl').value); };
 async function openLink(url) {                                    // запис Twitch: на диск нічого не качаємо — лише потрібні шматки, коли знадобляться
   const id = (url.match(/twitch\.tv\/(?:\w+\/)?videos?\/(\d+)/) || [])[1];
-  if (!id) return msg('Потрібне посилання на запис стріму: twitch.tv/videos/…', 1);
+  if (!id) return msg('Потрібне посилання на запис етеру: twitch.tv/videos/…', 1);
   $('#vPop').classList.remove('on'); url = 'https://www.twitch.tv/videos/' + id;
   try {
     const v = await busy($('#videoChip'), 'Twitch', [['twitch', 10]], task => api('/api/vod', {url, task}));
@@ -2725,7 +2725,7 @@ async function rendering(plan, start, key) {                      // рядок 
 const key = (k, col = '#383634', ink = '#e2dfda') => `<i style="background:${col};color:${ink}">${k}</i>`;
 const TOUR = [
   [null, 'ReCut', '<p>Основні інструменти. Довідка знову — кнопка <b>?</b> угорі.</p>'],
-  ['#videoChip', 'Відео', '<p>Запис стріму, з якого робимо шорти: файл на диску або посилання на запис Twitch.</p>'],
+  ['#videoChip', 'Відео', '<p>Запис етеру, з якого робимо шорти: файл на диску або посилання на запис Twitch.</p>'],
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#keysBtn', 'Клавіші', `<p>Усі клавіші — тут або ${key('?')}.</p>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
