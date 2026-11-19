@@ -1385,7 +1385,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.15.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.15.1"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1538,6 +1538,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
+            if u.path in ("/icon-32.png", "/icon-256.png"): return self.reply((HERE / u.path[1:]).read_bytes(), "image/png")   # значок вікна
             if u.path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := u.path[7:]) and (HERE / "fonts" / name).is_file():   # шрифти бренду
                 return self.reply((HERE / "fonts" / name).read_bytes(), "text/css; charset=utf-8" if name.endswith(".css") else "font/woff2")
             if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))

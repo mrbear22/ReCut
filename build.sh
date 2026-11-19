@@ -16,7 +16,7 @@ zipfile.ZipFile(w / "py.zip").extractall(out / "runtime")
 for whl in (w / "wheels").glob("*.whl"): zipfile.ZipFile(whl).extractall(out / "runtime/Lib/site-packages")
 next((out / "runtime").glob("python*._pth")).write_text("python312.zip\n.\nLib\\site-packages\n..\\app\nimport site\n")
 PY
-cp app/shorts.py app/publish.py app/localai.py app/brands.py app/ui.html app/publish.js "$OUT/app/" && cp -r app/fonts "$OUT/app/"   # шрифти бренду
+cp app/shorts.py app/publish.py app/localai.py app/brands.py app/ui.html app/publish.js app/icon-32.png app/icon-256.png "$OUT/app/" && cp -r app/fonts "$OUT/app/"   # шрифти й значок вікна
 (cd launcher && $PY -m ziglang cc -target x86_64-windows-gnu -municode -O2 -s -Wl,--subsystem,windows launcher.c app.rc -o "../$OUT/ReCut.exe")
 printf '@echo off\r\n"%%~dp0runtime\\python.exe" "%%~dp0app\\shorts.py"\r\npause\r\n' > "$OUT/ReCut (debug).bat"
 VER=$(sed -n 's/^REPO, VERSION = .*"\([0-9.]*\)".*/\1/p' app/shorts.py)   # версія — тег релізу
