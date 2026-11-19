@@ -37,9 +37,9 @@ if sys.stdout is None or sys.executable.lower().endswith("pythonw.exe"):
 SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без вікон консолі для ffmpeg
 
 CFG_FILE = DATA / "settings.json"
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], port=8765,
+CANVAS = (1080, 1920)                                             # полотно за замовчуванням (9:16); проєкт може мати своє
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), port=8765,
            speed=dict(scan=5.0, stt=10.0))          # секунд відео за секунду роботи; уточнюється після кожного запуску
-W, H = 1080, 1920
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
 STT_MODELS, OLLAMA = {"large-v3-turbo": 1.62e9, "large-v3": 3.09e9}, "http://127.0.0.1:11434/api/"   # модель розпізнавання -> розмір
@@ -146,7 +146,7 @@ def update_project(pid, fn):
 def new_project(**kw):
     now = time.time()
     p = dict(id=uuid.uuid4().hex[:10], name="", created=now, video="", region=None, clips=[],
-             elements=json.loads(json.dumps(CFG["defaults"])), cues=[], renders=[])
+             elements=json.loads(json.dumps(CFG["defaults"])), canvas=CFG["canvas"], cues=[], renders=[])
     with LOCK: return write_project({**p, **kw})
 
 def projects():
@@ -803,10 +803,10 @@ def word_tags(f, size):
     if f.get("s") and float(f["s"]) != 1: pre += f"\\fs{size * float(f['s']):.0f}"; post += f"\\fs{size:.0f}"
     return pre, post
 
-def subs_ass(cues, keep, subs_all):
+def subs_ass(cues, keep, subs_all, canvas):
     """ASS кліпу: кожен увімкнений елемент «Субтитри» — свій стиль і місце, зі своїми репліками; репліка може мати свій стиль
     і пословне форматування; час — уже без вирізаних пропусків."""
-    ts = lambda t: f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"
+    ts = lambda t: f"{int(t // 3600)}:{int(t % 3600 // 60):02d}:{t % 60:05.2f}"; W, H = canvas
     styles, lines, names = [], [], {}
     def style_name(st):
         size, x, w, base, bord = float(st.get("size", 84)), float(st["x"]), float(st.get("w", 900)), ass_col(st.get("color", "#ffffff")), float(st.get("outline", 6))
@@ -878,15 +878,15 @@ def overlay_art(e, i, size, last, nxt):
     f = [f"[{i}:v]{','.join(pre)}[a{i}]"] if pre else []
     return f + [f"[{last}][{f'a{i}' if pre else f'{i}:v'}]overlay={x}:{y}:shortest=1{when(e)}[{nxt}]"]
 
-def bar_filter(e, k, last, out, total, enable=""):
+def bar_filter(e, k, last, out, total, W, enable=""):
     """Прогрес-бар: смуга росте від 0 до повної ширини за total с."""
     return [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{k}]",
             f"[{last}][pg{k}]overlay=x='-w+w*t/{total:.3f}':y={int(e['y'])}:shortest=1{enable}[{out}]"]
 
-def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
+def build_filter(sw, sh, elements, keep, na, inp, sizes, subs, canvas):
     """na: скільки звукових доріжок; inp: (id елемента, роль) -> номер входу ffmpeg; sizes: id -> розмір картинки елемента."""
     els = [e for e in elements if on(e) and e["type"] not in ("subs", "bg", "music")]; vids = [e for e in els if e["type"] in ("video", "cam")]
-    bg = next((e for e in elements if e["type"] == "bg" and on(e)), {}); net = sum(e - s for s, e in keep)
+    bg = next((e for e in elements if e["type"] == "bg" and on(e)), {}); net = sum(e - s for s, e in keep); W, H = canvas
     f, src, audio, asrc = [], "0:v", int(na > 0), "0:a"
     if na > 1: f.append(amix(na, "am")); asrc = "am"                 # звучать усі доріжки
     if len(keep) > 1:                                              # пропуски вирізано: склеюємо збережені шматки
@@ -904,7 +904,7 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     for n, e in enumerate(els, 1):
         if e["type"] in ART: f += overlay_art(e, inp[e["id"], "art"], sizes[e["id"]], last, f"l{n}")
         elif e["type"] == "progress":                              # смуга росте від 0 до повної ширини за кліп
-            f += bar_filter(e, n, last, f"l{n}", net, when(e))
+            f += bar_filter(e, n, last, f"l{n}", net, W, when(e))
         else:
             c, dw, dh = layer(e, sw, sh); i, x, y = vids.index(e), int(e["x"]), int(e["y"])
             if (e["id"], "mask") in inp: f += [f"[s{i}]{c},format=rgba[c{n}]", f"[c{n}][{inp[e['id'], 'mask']}:v]alphamerge[e{n}]"]
@@ -916,7 +916,7 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs):
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
-def rearrange(dst, parts, bars, args, audio):
+def rearrange(dst, parts, bars, args, audio, W):
     """Переставити шматки готового кліпу: хук (смішний момент) — на самий початок, петля — шорт з мітки до кінця, далі початок до мітки,
     тож коли відео повторюється, стику не видно. parts — [(з, до)] у часі готового файлу.
     bars — прогрес-бари: їх малюємо тут, щоб смуга росла від нового початку."""
@@ -927,7 +927,7 @@ def rearrange(dst, parts, bars, args, audio):
         if audio: f.append(f"[sa{i}]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
     f.append("".join(f"[v{i}]" + f"[a{i}]" * audio for i in range(n)) + f"concat=n={n}:v=1:a={int(audio)}[c0]" + "[a]" * audio); last = "c0"
     for k, e in enumerate(bars, 1):
-        f += bar_filter(e, k, last, f"c{k}", total); last = f"c{k}"
+        f += bar_filter(e, k, last, f"c{k}", total, W); last = f"c{k}"
     tmp = dst.with_name(dst.stem + ".parts.mp4")
     r = run([ffbin("ffmpeg"), "-y", "-v", "error", *HW, "-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
              *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)])
@@ -995,12 +995,19 @@ def audio_filter(main, parts, first_input, video_vol, net):
     f.append("".join(mix) + f"amix=inputs={len(mix)}:normalize=0:duration=longest,atrim=0:{net:.3f}[aout]")   # мікс не довший за кліп
     return f, "aout"
 
-def render(pid, clips, elements, cues):
+def out_name(pr):
+    return re.sub(r'[<>:"/\\|?*]+', " ", pr["name"] or Path(pr["video"]).stem).strip(" .") or "shorts"
+
+def render_dir(pr):
+    """Тека для діалогу рендеру: куди рендерили востаннє, інакше renders/<проєкт> (або renders, поки її немає)."""
+    last = next((r["out"] for r in pr["renders"] if Path(r["out"]).is_dir()), None)
+    return last or str(RENDERS / out_name(pr) if (RENDERS / out_name(pr)).is_dir() else RENDERS)
+
+def render(pid, clips, elements, cues, out_dir):
     try:
-        pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder()
+        pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder(); canvas = tuple(pr.get("canvas") or CANVAS)
         subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
-        name = re.sub(r'[<>:"/\\|?*]+', " ", pr["name"] or Path(src).stem).strip(" .") or "shorts"
-        out = RENDERS / name; out.mkdir(parents=True, exist_ok=True); used = set()   # тека проєкту; той самий кліп — той самий файл
+        name = out_name(pr); out = Path(out_dir); out.mkdir(parents=True, exist_ok=True); used = set()   # тека, яку обрав користувач; той самий кліп — той самий файл
         rec = dict(id=JOB["id"], date=time.time(), out=str(out), files=[])
         save_rec = lambda: update_project(pid, lambda p: p.__setitem__("renders", [rec] + [r for r in p["renders"] if r["id"] != rec["id"]]))
         save_rec(); JOB["out"] = str(out)
@@ -1039,7 +1046,7 @@ def render(pid, clips, elements, cues):
                 ca = float(c["a"]); stem = base = f"{name} {int(ca // 60):02d}-{int(ca % 60):02d}"
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
                 used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
-                if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all), "utf-8")
+                if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all, canvas), "utf-8")
                 inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
                 parts = music_parts(cel, net)
                 inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
@@ -1048,7 +1055,7 @@ def render(pid, clips, elements, cues):
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
                 p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
                                       "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs)), *afx]),
+                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs), canvas), *afx]),
                                       "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
                                       "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
@@ -1056,7 +1063,7 @@ def render(pid, clips, elements, cues):
                     if line.startswith("out_time_us=") and line[12:].strip().isdigit():
                         JOB["pct"] = min(1.0, int(line[12:]) / 1e6 / net)
                 if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
-                total = rearrange(dst, order, bars, args, bool(alabel or na)) if order else net
+                total = rearrange(dst, order, bars, args, bool(alabel or na), canvas[0]) if order else net
                 thumb = THUMBS / f"{rec['id']}_{i:02d}.jpg"
                 run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
                 rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=total)); save_rec()
@@ -1068,19 +1075,61 @@ def ask_file(kind):
     flt = {"video": ("Відео|*.mp4;*.mov;*.mkv;*.webm;*.flv;*.ts", "*.mp4 *.mov *.mkv *.webm *.flv *.ts"),
            "audio": ("Музика|*.mp3;*.wav;*.m4a;*.ogg;*.flac;*.aac;*.opus", "*.mp3 *.wav *.m4a *.ogg *.flac *.aac *.opus")}.get(
           kind, ("Зображення|*.png;*.jpg;*.jpeg;*.webp;*.bmp", "*.png *.jpg *.jpeg *.webp *.bmp"))
-    if os.name == "nt":                                            # системний діалог Windows без tkinter
-        ps = ("Add-Type -AssemblyName System.Windows.Forms;"
-              # невидимий власник «поверх усіх»: фоновий процес не може вивести діалог наперед, а власник-topmost — може
-              "$o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false;Opacity=0;StartPosition='CenterScreen'};"
-              "$o.Show();$o.Activate();"
-              f"$d=New-Object System.Windows.Forms.OpenFileDialog;$d.Filter='{flt[0]}|Усі|*.*';"
-              "if($d.ShowDialog($o) -eq 'OK'){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName))}")
-        r = run(["powershell", "-NoProfile", "-STA", "-EncodedCommand", base64.b64encode(ps.encode("utf-16-le")).decode()])
-        out = r.stdout.decode("ascii", "ignore").strip()                # base64 — кирилиця в шляху не ламається
-        return base64.b64decode(out).decode("utf-8") if out else ""
+    if os.name == "nt": return win_dialog(f"$d=New-Object System.Windows.Forms.OpenFileDialog;$d.Filter='{flt[0]}|Усі|*.*';if($d.ShowDialog($o) -eq 'OK'){{$p=$d.FileName}}")
     import tkinter as tk; from tkinter import filedialog
     t = tk.Tk(); t.withdraw(); t.attributes("-topmost", True)
     p = filedialog.askopenfilename(parent=t, filetypes=[(kind, flt[1]), ("*", "*.*")]); t.destroy(); return p
+
+FOLDER_CS = r'''using System; using System.Runtime.InteropServices;
+public static class FolderPick {
+  [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")] class FileOpenDialog {}
+  [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IFileDialog {
+    [PreserveSig] int Show(IntPtr owner);
+    void SetFileTypes(uint n, IntPtr specs); void SetFileTypeIndex(uint i); void GetFileTypeIndex(out uint i);
+    void Advise(IntPtr sink, out uint cookie); void Unadvise(uint cookie);
+    void SetOptions(uint fos); void GetOptions(out uint fos);
+    void SetDefaultFolder(IShellItem si); void SetFolder(IShellItem si);
+    void GetFolder(out IShellItem si); void GetCurrentSelection(out IShellItem si);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string name); void GetFileName(out IntPtr name);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string title); void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string text);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string label); void GetResult(out IShellItem si);
+  }
+  [ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+  interface IShellItem {
+    void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv); void GetParent(out IShellItem si);
+    void GetDisplayName(uint sigdn, [MarshalAs(UnmanagedType.LPWStr)] out string name);
+  }
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+  static extern void SHCreateItemFromParsingName(string path, IntPtr pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out IShellItem item);
+  public static string Pick(IntPtr owner, string title, string ok, string start) {
+    var d = (IFileDialog)new FileOpenDialog(); uint o; d.GetOptions(out o); d.SetOptions(o | 0x20 | 0x40);   // теки, лише справжні шляхи
+    d.SetTitle(title); d.SetOkButtonLabel(ok);
+    if (!string.IsNullOrEmpty(start)) try { IShellItem f; SHCreateItemFromParsingName(start, IntPtr.Zero, typeof(IShellItem).GUID, out f); d.SetFolder(f); } catch {}
+    if (d.Show(owner) != 0) return "";
+    IShellItem r; d.GetResult(out r); string p; r.GetDisplayName(0x80058000, out p); return p;
+  }
+}'''                                                                   # сучасний діалог вибору теки (IFileOpenDialog), не старе дерево FolderBrowserDialog
+
+def ask_dir(start):
+    """Тека для рендеру або '' — користувач передумав."""
+    if os.name == "nt":
+        b64 = lambda s: base64.b64encode(s.encode("utf-8")).decode()
+        txt = lambda s: f"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64(s)}'))"   # кирилиця й лапки в шляху не ламають команду
+        return win_dialog(f"Add-Type -TypeDefinition @'\n{FOLDER_CS}\n'@\n$p=[FolderPick]::Pick($o.Handle,{txt('Куди зберегти шорти')},{txt('Рендерити сюди')},{txt(start)})")
+    import tkinter as tk; from tkinter import filedialog
+    t = tk.Tk(); t.withdraw(); t.attributes("-topmost", True)
+    p = filedialog.askdirectory(parent=t, initialdir=start, title="Куди зберегти шорти"); t.destroy(); return p
+
+def win_dialog(body):
+    """Системний діалог Windows через PowerShell: body кладе вибраний шлях у $p, власник діалогу — $o. Повертає шлях або ''."""
+    ps = ("Add-Type -AssemblyName System.Windows.Forms;"
+          # невидимий власник «поверх усіх»: фоновий процес не може вивести діалог наперед, а власник-topmost — може
+          "$o=New-Object System.Windows.Forms.Form -Property @{TopMost=$true;ShowInTaskbar=$false;Opacity=0;StartPosition='CenterScreen'};"
+          "$o.Show();$o.Activate();$p='';" + body + "\nif($p){[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($p))}")
+    r = run(["powershell", "-NoProfile", "-STA", "-EncodedCommand", base64.b64encode(ps.encode("utf-16-le")).decode()])
+    out = r.stdout.decode("ascii", "ignore").strip()                    # base64 — кирилиця в шляху не ламається
+    return base64.b64decode(out).decode("utf-8") if out else ""
 
 # ── публікація: опис від локального ШІ, відправка через Buffer ──
 AI = localai.LocalAI(DATA / "ollama", OLLAMA, lambda *a: report_as("ai", *a), SP, fetch)
@@ -1088,7 +1137,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.11.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.12.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1291,17 +1340,18 @@ class Handler(BaseHTTPRequestHandler):
                 if known and not PAGES: threading.Thread(target=quit_app, daemon=True).start()
                 return self.reply({})
             if p == "/api/config":
-                CFG.update({k: v for k, v in d.items() if k in CFG and k not in ("project", "defaults")}); save_cfg(); return self.reply(CFG)
+                CFG.update({k: v for k, v in d.items() if k in CFG and k not in ("project", "defaults", "canvas")}); save_cfg(); return self.reply(CFG)
             if p == "/api/pick":
                 if f := ask_file(d["kind"]): PICKED.add(f)
                 return self.reply(dict(path=f))
+            if p == "/api/pick_dir": return self.reply(dict(path=ask_dir(render_dir(load_project(d["id"])))))
             if p == "/api/project/new":
                 pr = new_project(); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
             if p == "/api/project/open": load_project(d["id"]); CFG["project"] = d["id"]; save_cfg(); return self.reply({})
             if p == "/api/project/save":
-                keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music")
+                keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music", "canvas")
                 pr = update_project(d["id"], lambda pr: pr.update({k: d[k] for k in keys if k in d}))
-                if "elements" in d: CFG["defaults"] = d["elements"]; save_cfg()        # новий проєкт почне з цих налаштувань
+                if "elements" in d: CFG.update(defaults=d["elements"], canvas=d.get("canvas") or list(CANVAS)); save_cfg()   # новий проєкт почне з цих налаштувань і полотна
                 return self.reply(dict(updated=pr["updated"]))
             if p == "/api/project/delete":
                 for r in load_project(d["id"])["renders"]:
@@ -1342,10 +1392,11 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"])))
             if p == "/api/render":
                 if JOB["running"]: return self.reply(JOB, code=409)
+                if not d.get("out"): return self.reply({"error": "Не обрано теку для шортів"}, code=400)
                 update_project(d["id"], lambda pr: pr.update(clips=d["clips"], elements=d["elements"], cues=d["cues"], music=d.get("music", [])))
                 JOB.update(running=True, i=0, n=sum(c.get("on", True) for c in d["clips"]), pct=0.0, err="", out="",
                            id=uuid.uuid4().hex[:10], project=d["id"])
-                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"]), daemon=True).start()
+                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"], d["out"]), daemon=True).start()
                 return self.reply(JOB)
             if p == "/api/reveal":
                 if d["path"] not in allowed_files(): return self.reply({"error": "заборонено"}, code=403)
