@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk"><head><meta charset="utf-8"><title>ReCut</title><link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256"><link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png">
+<html lang="uk"><head><meta charset="utf-8"><title>ReCut</title><script src="/i18n.js"></script><link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256"><link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png">
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>
 /* Бренд ReCut — «монтажна»: майже чорне тепле полотно, фірмовий жовтий з логотипа лише для головного,
@@ -423,7 +423,7 @@ input[type=checkbox]:indeterminate{background:var(--acc) linear-gradient(var(--a
 .chtag button{background:none;border:0;padding:0 4px;color:var(--mut)}.chtag button:hover{background:none;color:var(--hi)}
 /* службові кнопки шапки: «Клавіші» й «?» — як клавіші на клавіатурі, «Підтримати» — квиток під скотч */
 #keysBtn,#help{font:500 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--mut);background:var(--s2);border:1.5px solid var(--line2);border-bottom-width:3px;border-radius:3px;padding:3px 8px;height:auto}
-#support,#keysBtn,#help{flex:none}#help{width:26px;padding:3px 0;text-align:center;font-weight:700}
+#support,#keysBtn,#help,#langSw{flex:none}#langSw{display:inline-flex}#langSw button{font:500 11px var(--mono);letter-spacing:.04em;color:var(--dim);background:var(--s2);border:1.5px solid var(--line2);border-bottom-width:3px;border-radius:0;padding:3px 7px;height:auto}#langSw button:first-child{border-radius:3px 0 0 3px}#langSw button:last-child{border-radius:0 3px 3px 0;margin-left:-1.5px}#langSw button:hover{color:var(--hi);background:var(--s3)}#langSw button.on{color:var(--acc-ink);background:var(--acc);border-color:var(--acc);border-bottom-color:#a8831a;position:relative}#help{width:26px;padding:3px 0;text-align:center;font-weight:700}
 #keysBtn:hover,#help:hover{color:var(--hi);background:var(--s3);border-color:var(--line2)}
 #keysBtn:active,#help:active{border-bottom-width:1.5px;transform:translateY(1.5px)}
 #support{font:500 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;border:1.5px dashed var(--line2);border-radius:2px;padding:4px 10px;margin-right:6px}
@@ -441,6 +441,7 @@ kbd{font-family:var(--mono)}
   <button id="upd" class="ghost" hidden></button>
   <span class="anchor"><button id="twHead" class="ghost twh" hidden></button><div class="pop" id="twMenu"></div></span>
   <button id="support" class="ghost" data-link="patreon" title="ReCut безкоштовний; підтримати автора на Patreon"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 8a4.3 4.3 0 0 1 7.5 2.4c0 5.5-7.5 10.1-7.5 10.1z"/></svg>Підтримати</button>
+  <span id="langSw" title="Мова інтерфейсу"><button data-lang="uk">УКР</button><button data-lang="en">ENG</button></span>
   <button id="keysBtn" class="ghost" title="Клавіші (?)">Клавіші</button>
   <button id="help" class="ghost" title="Довідка" aria-label="Довідка">?</button>
 </header>
@@ -582,6 +583,8 @@ const fileUrl = p => '/file?p=' + encodeURIComponent(p);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const vid = $('#vid'), pv = $('#pv'), px = pv.getContext('2d'), tl = $('#tl'), tx = tl.getContext('2d');
+if (LANG === 'en') for (const f of ['fillText', 'strokeText', 'measureText']) { const o = tx[f].bind(tx); tx[f] = (s, ...a) => o(tr(s), ...a); }   // написи таймлайна — мовою інтерфейсу
+$$('#langSw [data-lang]').forEach(b => { b.classList.toggle('on', b.dataset.lang === LANG); b.onclick = () => b.dataset.lang !== LANG && setLang(b.dataset.lang); });
 
 // ── елементи: що вміє кожен і як це показати людині ──
 const ANIM = [['none', 'Без'], ['fade', 'Поява'], ['pop', 'Вистрибує'], ['slide', 'Знизу']];
@@ -636,7 +639,8 @@ const CATALOG = [
     ['Музика', 'трек з файлу, з хвилею на таймлайні', {type: 'music', vol: 1, fin: 0, fout: 1}]]]
 ];
 const SINGLE = ['bg'];
-const mk = p => ({id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, to: 0, ...structuredClone(p)});
+const mk = p => { const o = structuredClone(p); for (const k of ['text', 'channel', 'title', 'category']) if (typeof o[k] === 'string') o[k] = tr(o[k]);   // типовий текст нового елемента — мовою інтерфейсу
+  return {id: uid(), on: true, x: null, y: 800, anim: 'none', from: 0, to: 0, ...o}; };
 const BASE = [1080, 1920];                                         // полотно 9:16: у ньому задано заготовки елементів
 const canvasOf = r => r < 1 ? [1080, Math.round(1080 / r)] : [Math.round(1080 * r), 1080];   // коротша сторона — 1080
 const CW = () => P?.canvas?.[0] || BASE[0], CH = () => P?.canvas?.[1] || BASE[1];
@@ -672,10 +676,10 @@ const subsEls = (list = els()) => list.filter(e => e.type === 'subs');
 const cueOwner = (c, list) => subsEls(list).find(e => e.id === c.sid) || subsEls(list)[0];
 const rowOf = c => Math.max(0, subsEls().indexOf(cueOwner(c)));    // рядок на таймлайні
 const subRows = () => subsEls().length ? subsEls() : [{name: '', color: '#ffffff'}];
-const subName = (e, i) => e.name || `Субтитри ${i + 1}`;
+const subName = (e, i) => e.name || tr(`Субтитри ${i + 1}`);
 function addSubsEl(list, name, from) {                            // новий спікер: копія стилю, інший колір, рядком вище
   const n = subsEls(list).length, base = from || subsEls(list).at(-1) || CATALOG[1][1][2][2];
-  const el = {...mk(base), id: uid(), name: name ?? `Спікер ${n + 1}`, color: SUB_COLORS[n % SUB_COLORS.length], on: true};
+  const el = {...mk(base), id: uid(), name: name ?? tr(`Спікер ${n + 1}`), color: SUB_COLORS[n % SUB_COLORS.length], on: true};
   if (from || n) el.y = Math.max(0, (base.y ?? 1380) - (base.size || 84) * 1.6);
   list.push(el); return el;
 }
@@ -806,7 +810,7 @@ async function loadHome() {
     return `<div class="pj ${P && P.id === p.id ? 'cur' : ''}" data-open="${p.id}">
       <div class="pcov" data-cov="${esc(p.video || '')}">${/\p{L}/u.test(projName(p)[0]) ? esc(projName(p)[0].toUpperCase()) : '▶'}${cov ? `<img src="${esc(cov)}" alt="" onerror="this.remove()">` : ''}${tw ? '<span class="src">Twitch</span>' : ''}</div>
       <div class="pact">${p.renders[0] ? `<button data-reveal="${esc(p.renders[0].out)}" title="Папка з шортами">Папка</button><button data-publish="${p.id}">Опублікувати</button>` : ''}<button data-del="${p.id}" title="Видалити проєкт" aria-label="Видалити проєкт">✕</button></div>
-      <div class="pinfo"><b>${esc(projName(p))}</b><small>${new Date(p.updated * 1000).toLocaleDateString('uk-UA', {day: 'numeric', month: 'short'})} · ${plural(p.clips.length, 'кліп', 'кліпи', 'кліпів')} · ${plural(shorts.length, 'шорт', 'шорти', 'шортів')}</small></div>
+      <div class="pinfo"><b>${esc(projName(p))}</b><small>${new Date(p.updated * 1000).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'})} · ${plural(p.clips.length, 'кліп', 'кліпи', 'кліпів')} · ${plural(shorts.length, 'шорт', 'шорти', 'шортів')}</small></div>
       ${shorts.length ? `<div class="pshorts">${shorts.slice(0, 6).map(f => `<div class="sf" data-play="${esc(f.path)}"><img src="${fileUrl(f.thumb)}" alt="" onerror="this.remove()"><span>${fmt(f.len ?? f.b - f.a).replace(/\.\d$/, '')}</span></div>`).join('')}${shorts.length > 6 ? `<span class="more">+${shorts.length - 6}</span>` : ''}</div>` : ''}
     </div>`;
   }).join('') + '<button class="pnew" id="new2">+ Новий проєкт</button>';
@@ -849,7 +853,7 @@ function renderTwitch() {
   const byVideo = new Map(homeProjects.map(p => [p.video, p]));
   $('#twList').innerHTML = twVideos.length ? twVideos.map((v, i) => `<button class="vc ${byVideo.has(v.url) ? 'inp' : ''}" data-vod="${i}">
       <span class="vt">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${fmtLen(v.dur)}</i>${byVideo.has(v.url) ? '<em>У проєкті</em>' : ''}</span>
-      <b>${esc(v.title)}</b><small>${[v.date && new Date(v.date).toLocaleDateString('uk-UA', {day: 'numeric', month: 'short'}), v.views && (v.views >= 1000 ? `${Math.round(v.views / 1000)} тис. переглядів` : plural(v.views, 'перегляд', 'перегляди', 'переглядів'))].filter(Boolean).join(' · ')}</small></button>`).join('')
+      <b>${esc(v.title)}</b><small>${[v.date && new Date(v.date).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'}), v.views && (v.views >= 1000 ? `${Math.round(v.views / 1000)} тис. переглядів` : plural(v.views, 'перегляд', 'перегляди', 'переглядів'))].filter(Boolean).join(' · ')}</small></button>`).join('')
     : '<p class="mut">Записів етерів немає</p>';
   for (const v of twVideos) {                                     // проєкт із цим записом без обкладинки — бере її зі списку
     const c = v.thumb && [...$$('.pcov[data-cov]')].find(x => x.dataset.cov === v.url); if (c && !c.querySelector('img')) c.insertAdjacentHTML('beforeend', `<img src="${esc(v.thumb)}" alt="" onerror="this.remove()">`);
@@ -1364,8 +1368,8 @@ async function makeSubs() {
     await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task}), null, true), (pr, r, open) => {
       cfg.speed = r.speed;
       if (r.tracks > 1) {                                             // доріжка = спікер = свій елемент «Субтитри»; бракує — додаємо
-        const first = subsEls(pr.elements)[0]; if (first && !first.name) first.name = 'Доріжка 1';
-        while (subsEls(pr.elements).length < r.tracks) addSubsEl(pr.elements, `Доріжка ${subsEls(pr.elements).length + 1}`);
+        const first = subsEls(pr.elements)[0]; if (first && !first.name) first.name = tr('Доріжка 1');
+        while (subsEls(pr.elements).length < r.tracks) addSubsEl(pr.elements, tr(`Доріжка ${subsEls(pr.elements).length + 1}`));
       }
       const own = subsEls(pr.elements); r.cues.forEach(c => { if (own[c.sp]) c.sid = own[c.sp].id; delete c.sp; });
       pr.cues = [...pr.cues.filter(c => !inSpans(c)), ...r.cues].sort((x, y) => x.a - y.a);
@@ -1680,7 +1684,7 @@ function shapePath(el, x, y, w, h) {
 }
 function drawSubs(el, k) {                                        // наближення ASS-стилю рендеру
   const t = vid.currentTime, now = P.cues.filter(c => t >= c.a && t < c.b && cueOwner(c) === el);
-  if (!P.cues.some(c => cueOwner(c) === el)) now.push({a: 0, b: 1e9, text: subsEls().length > 1 ? subName(el, subsEls().indexOf(el)) : 'Тут будуть субтитри', k: [0]});
+  if (!P.cues.some(c => cueOwner(c) === el)) now.push({a: 0, b: 1e9, text: tr(subsEls().length > 1 ? subName(el, subsEls().indexOf(el)) : 'Тут будуть субтитри'), k: [0]});
   for (const c of now) drawCue(c.own ? cueStyle(c) : el, k, c, t);
 }
 function drawCue(el, k, c, t) {
@@ -1728,7 +1732,7 @@ function drawShort() {
     if (el.type === 'video' || el.type === 'cam') {
       if (!vid.videoWidth) continue; const [x, y, w, h] = el.src, r = rectOf(el);
       px.save(); shapePath(el, r.x * k, r.y * k, r.w * k, r.h * k); px.clip();
-      px.drawImage(vid, x * S.w, y * S.h, w * S.w, h * S.h, r.x * k, r.y * k, r.w * k, r.h * k); px.restore();
+      px.drawImage(vid, x * vid.videoWidth, y * vid.videoHeight, w * vid.videoWidth, h * vid.videoHeight, r.x * k, r.y * k, r.w * k, r.h * k); px.restore();
       if (el.bw > 0) { const b = el.bw * k; shapePath(el, (r.x - el.bw / 2) * k, (r.y - el.bw / 2) * k, (r.w + el.bw) * k, (r.h + el.bw) * k); px.lineWidth = b; px.strokeStyle = el.border; px.stroke(); }
     } else if (el.type === 'subs') drawSubs(el, k);
     else if (el.type === 'progress') { const c = clipAt(vid.currentTime); px.fillStyle = el.color; px.fillRect(0, el.y * k, (c ? toOut(c, vid.currentTime) / net(c) : .4) * pv.width, el.h * k); }
@@ -1782,7 +1786,7 @@ function drawCropBox(el, f, on) {
     const hs = HANDLE_PX * s; px.strokeStyle = '#000';
     cropHandles(el.src).slice(0, el.ratio ? 4 : 8).forEach(([hx, hy]) => { px.fillRect(f.x + hx * f.w - hs, f.y + hy * f.h - hs, hs * 2, hs * 2); px.strokeRect(f.x + hx * f.w - hs, f.y + hy * f.h - hs, hs * 2, hs * 2); });
   }
-  const label = `${TYPES[el.type].name} · ${Math.round(w * S.w)}×${Math.round(h * S.h)}`;
+  const label = `${tr(TYPES[el.type].name)} · ${Math.round(w * S.w)}×${Math.round(h * S.h)}`;
   px.font = `600 ${12 * s}px system-ui`; px.fillStyle = 'rgba(15,14,13,.85)'; px.fillRect(X0, Y0, px.measureText(label).width + 12 * s, 20 * s);
   px.fillStyle = TYPES[el.type].col; px.fillText(label, X0 + 6 * s, Y0 + 14 * s);
 }
@@ -2566,7 +2570,7 @@ function multiMenu() {
   const cl = P.clips.filter(c => multi.has(c)), qs = P.cues.filter(q => multi.has(q));
   return [{hd: `Вибрано: ${[cl.length && plural(cl.length, 'кліп', 'кліпи', 'кліпів'), qs.length && plural(qs.length, 'репліка', 'репліки', 'реплік')].filter(Boolean).join(', ')}`},
     ...(qs.length ? [{hd: 'Перенести репліки до спікера'}, ...subsEls().map((s, r) => ({label: subName(s, r), on: qs.every(q => cueOwner(q) === s), run: () => moveCues(qs, s)})),
-      {label: 'Новий спікер', run: () => { const from = cueOwner(qs[0]) || ensureSubs(); if (!from.name) from.name = 'Спікер 1'; moveCues(qs, addSubsEl(P.elements, '', from)); }}, '-'] : []),
+      {label: 'Новий спікер', run: () => { const from = cueOwner(qs[0]) || ensureSubs(); if (!from.name) from.name = tr('Спікер 1'); moveCues(qs, addSubsEl(P.elements, '', from)); }}, '-'] : []),
     ...(cl.length ? [{label: cl.every(c => c.on) ? 'Не рендерити ці кліпи' : 'Рендерити ці кліпи', run: () => { const v = !cl.every(c => c.on); cl.forEach(c => c.on = v); commit(); }},
       {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: cl.every(c => (c.col || null) === col), run: () => { cl.forEach(c => c.col = col || undefined); commit(); }}))}, '-'] : []),
     {label: 'Видалити вибране', key: 'Del', run: deleteMulti}];
@@ -2583,7 +2587,7 @@ function cueMenu(j, t) {
     {label: 'Об\'єднати з наступною', key: 'J', off: !nx, run: () => mergeCues(q, nx)},
     '-',
     ...subsEls().map((x, i) => x !== cueOwner(q) && {label: `Перенести до: ${subName(x, i)}`, run: () => moveCue(q, x)}),
-    {label: 'Перенести до нового спікера', run: () => { const from = cueOwner(q) || ensureSubs(); if (!from.name) from.name = 'Спікер 1'; moveCue(q, addSubsEl(P.elements, '', from)); }},
+    {label: 'Перенести до нового спікера', run: () => { const from = cueOwner(q) || ensureSubs(); if (!from.name) from.name = tr('Спікер 1'); moveCue(q, addSubsEl(P.elements, '', from)); }},
     '-',
     {label: 'Копіювати', key: 'Ctrl+C', run: copySel},
     {label: 'Видалити репліку', key: 'Del', run: () => $('#cueDel').click()}];
@@ -2729,7 +2733,7 @@ const TOUR = [
   ['#rbar', 'Область аналізу', '<p><b>Знайти моменти</b> шукає кліпи в області, <b>Згенерувати субтитри</b> розпізнає мовлення. Область тягнеться за плашку й краї.</p>'],
   ['#keysBtn', 'Клавіші', `<p>Усі клавіші — тут або ${key('?')}.</p>`],
   ['#tl', 'Таймлайн', `<p>Кліп і його краї тягнуться мишею, ${key('Ctrl')} вимикає прилипання. Покладене зверху підрізає те, що під ним. Смужки в кліпі показують, коли видно кожен елемент: права кнопка розріже смужку чи сховає елемент лише в цьому кліпі.</p>`],
-  ['#addEl', 'Елементи', '<p>Плашка, чат, алерт, емодзі, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти <b>Глобальний</b> у меню правої кнопки — і в цьому кліпі елемент матиме свої налаштування: рядком під елементом.</p>'],
+  ['#addEl', 'Елементи', '<p>Плашка, чат, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти <b>Глобальний</b> у меню правої кнопки — і в цьому кліпі елемент матиме свої налаштування: рядком під елементом.</p>'],
   ['#pv', 'Прев\'ю', `<p>Елементи тягнуться мишею, кут змінює розмір. ${key('Ctrl')} вимикає прилипання.</p><div class="combo">
     <span>${key('Ctrl')} + ${key('C')} / ${key('V')} / ${key('D')}</span><span>копіювати, вставити, дублювати</span>
     <span>${key('Del')}</span><span>видалити вибране</span>

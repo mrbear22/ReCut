@@ -10,7 +10,7 @@ from pathlib import Path
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 from brands import polygons                                       # той самий розбір контурів SVG, що й для логотипів мереж
 
@@ -55,6 +55,25 @@ def raster(parts, n):
     return img.resize((n, n), Image.LANCZOS)
 
 
+def pixel(ttf, n):
+    """Дрібний знак (≤48 px) — не зменшений великий, а намальований під піксельну сітку: літери з хінтингом шрифту, без нахилу.
+    Від 24 px — «RE» над стрічкою «CUT», як великий знак; ще дрібніше — лише стрічка «CUT»."""
+    def fit(text, w, h):
+        for sz in range(64, 4, -1):
+            f = ImageFont.truetype(ttf, sz); l, t, r, b = f.getbbox(text)
+            if r - l <= w and b - t <= h: return f
+    im = Image.new("RGBA", (n, n), TILE); d = ImageDraw.Draw(im)
+    if n < 24:
+        y0, y1 = round(n * .2), n - round(n * .2); d.rectangle((0, y0, n, y1 - 1), fill=TAPE)
+        d.text((n / 2, (y0 + y1) / 2), "CUT", font=fit("CUT", n - 4, y1 - y0 - 2), fill=INK, anchor="mm")
+    else:
+        ty = round(n * .47); d.rectangle((0, ty, n, n), fill=TAPE)
+        d.text((n / 2, ty / 2 + n * .03), "RE", font=fit("RE", n - round(n * .22), ty - round(n * .14)), fill=PAPER, anchor="mm")
+        d.text((n / 2, (ty + n) / 2 - n * .02), "CUT", font=fit("CUT", n - round(n * .14), n - ty - round(n * .16)), fill=INK, anchor="mm")
+    m = Image.new("L", (n * 4, n * 4), 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, n * 4 - 1, n * 4 - 1), n * .8, fill=255)   # згладжені кути
+    im.putalpha(m.resize((n, n), Image.LANCZOS)); return im
+
+
 def main(ttf, out_dir, ico):
     font, out = TTFont(ttf), Path(out_dir)
     re_ = text_path(font, "RE", 430, 512, 478)
@@ -65,8 +84,7 @@ def main(ttf, out_dir, ico):
            f'<path d="{re_}" fill="{PAPER}"/><polygon points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in tape)}" fill="{TAPE}"/><path d="{cut}" fill="{INK}"/></svg>')
     (out / "logo.svg").write_text(svg, "utf-8")
     big = raster(parts, 1024); big.save(out / "logo-1024.png")
-    small = [("poly", tape_poly(512, 540, 940, 520, TILT), TAPE), ("path", text_path(font, "CUT", 430, 512, 690, TILT, (512, 540)), INK)]   # дрібно два рядки не читаються — лише стрічка «CUT»
-    pick = lambda s: raster(small if s <= 48 else parts, s)
+    pick = lambda s: pixel(ttf, s) if s <= 48 else raster(parts, s)
     sizes = (16, 20, 24, 32, 40, 48, 64, 128, 256)
     imgs = {s: pick(s) for s in sizes}
     app = Path(__file__).resolve().parent.parent / "app"           # значок вікна: Edge у режимі застосунку бере для вікна й панелі задач лише растр

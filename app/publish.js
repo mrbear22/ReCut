@@ -32,10 +32,6 @@ const pubTargets = f => f.post?.targets || pubShown();   // куди слати 
 const pubTargetChannels = f => pubChannels().filter(c => pubTargets(f).includes(c.service));
 const pubReady = () => !!pub.buffer?.channels && !!pub.queue;   // є куди слати і відомо, скільки місця в черзі
 const pubSave = (path, post) => api('/api/post/save', {id: pub.pid, path, post});
-const plural = (n, one, few, many) => {                             // 1 шорт, 2 шорти, 5 шортів, 21 шорт
-  const d = n % 10, h = n % 100;
-  return `${n} ${d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many}`;
-};
 
 async function loadPub(pid) {
   pub.projects = (await api('/api/projects')).filter(p => pubFiles(p).length);
@@ -61,7 +57,7 @@ async function loadPubStatus() {
 const renderPub = () => { renderPubHead(); renderPubGrid(); renderPubSide(); };
 
 // ── стан шорту: на редагуванні (зліва) чи в черзі / вже вийшов (справа) ──
-const pubWhen = t => new Date(t).toLocaleString('uk-UA', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+const pubWhen = t => new Date(t).toLocaleString(LOCALE, {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 function pubState(f) {
   const recs = Object.values(f.post?.buffer || {}), sent = recs.filter(s => s.id), bad = recs.find(s => s.error);
   if (!sent.length) return bad ? {kind: 'err', label: `Помилка: ${bad.error}`} : f.post?.title ? {kind: 'ready', label: 'Опис готовий'} : {kind: 'none', label: 'Без опису'};
@@ -179,7 +175,7 @@ const hhmm = d => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinute
 const dayStart = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 function dayName(d) {
   const n = Math.round((dayStart(d) - dayStart(new Date())) / 864e5);
-  return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'});
+  return n === 0 ? 'Сьогодні' : n === 1 ? 'Завтра' : d.toLocaleDateString(LOCALE, {weekday: 'short', day: 'numeric', month: 'short'});
 }
 function pubWhenHtml(f, d) {
   const late = d && d.t - Date.now() < PUB_MIN_GAP;
@@ -198,7 +194,7 @@ function renderWhenPop() {
     return [...ms].sort((x, y) => x - y).map(m => [m, at(t, 0, m)]);
   };
   whenPop.innerHTML = `<div class="wp-body"><div class="wp-days">${days.map(x => `<button data-day="${+x}" class="${+x === +dayStart(t) ? 'on' : ''} ${+x === +today ? 'today' : ''}">
-        <small>${x.toLocaleDateString('uk-UA', {weekday: 'short'})}</small><b>${x.getDate()}</b></button>`).join('')}</div>
+        <small>${x.toLocaleDateString(LOCALE, {weekday: 'short'})}</small><b>${x.getDate()}</b></button>`).join('')}</div>
     <div class="wp-times">${times(t).map(([m, x]) => `<button data-min="${m}" class="${m === t.getHours() * 60 + t.getMinutes() ? 'on' : ''}" ${x < soon ? 'disabled' : ''}>${hhmm(x)}</button>`).join('')}</div>
     </div><div class="wp-foot">${d.own ? '<button class="ghost" data-auto>Як у розкладі</button>' : '<small>за розкладом</small>'}<span class="grow"></span><button class="pri" data-done>Готово</button></div>`;
 }
@@ -337,8 +333,8 @@ function pubConnectHtml() {
   return '';
 }
 function pubQueueHtml() {
-  const fmtDay = d => d.toLocaleDateString('uk-UA', {weekday: 'short', day: 'numeric', month: 'short'});
-  const fmtT = d => d.toLocaleTimeString('uk-UA', {hour: '2-digit', minute: '2-digit'});
+  const fmtDay = d => d.toLocaleDateString(LOCALE, {weekday: 'short', day: 'numeric', month: 'short'});
+  const fmtT = d => d.toLocaleTimeString(LOCALE, {hour: '2-digit', minute: '2-digit'});
   const own = pubOwnPosts(), svc = id => pubChannels().find(c => c.id === id)?.service, rows = [], byShort = {};
   for (const q of pubQueue()) {                                   // один шорт у кількох мережах — один рядок
     const o = own[q.id], t = new Date(q.dueAt);

@@ -39,7 +39,7 @@ SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без 
 
 CFG_FILE = DATA / "settings.json"
 CANVAS = (1080, 1920)                                             # полотно за замовчуванням (9:16); проєкт може мати своє
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), twitch_channel="", port=8765,
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), twitch_channel="", port=8765, lang="",
            speed=dict(scan=5.0, stt=10.0, llm=20.0, render=1.0))   # секунд відео за секунду роботи; уточнюється після кожного запуску
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
@@ -1327,11 +1327,15 @@ def render(pid, clips, elements, cues, out_dir, task):
     finally: JOB["running"] = False; TASKS.pop(task, None); CANCEL.discard(task)
 
 # ── системні дії ──
+DIALOG_EN = {"Відео": "Video", "Музика": "Music", "Зображення": "Images", "Усі": "All", "Куди зберегти шорти": "Where to save the shorts", "Рендерити сюди": "Render here"}
+tr = lambda s: DIALOG_EN.get(s, s) if CFG.get("lang") == "en" else s   # системні діалоги — мовою інтерфейсу (решту тексту перекладає сторінка)
+
 def ask_file(kind):
     flt = {"video": ("Відео|*.mp4;*.mov;*.mkv;*.webm;*.flv;*.ts", "*.mp4 *.mov *.mkv *.webm *.flv *.ts"),
            "audio": ("Музика|*.mp3;*.wav;*.m4a;*.ogg;*.flac;*.aac;*.opus", "*.mp3 *.wav *.m4a *.ogg *.flac *.aac *.opus")}.get(
           kind, ("Зображення|*.png;*.jpg;*.jpeg;*.webp;*.bmp", "*.png *.jpg *.jpeg *.webp *.bmp"))
-    if os.name == "nt": return win_dialog(f"$d=New-Object System.Windows.Forms.OpenFileDialog;$d.Filter='{flt[0]}|Усі|*.*';if($d.ShowDialog($o) -eq 'OK'){{$p=$d.FileName}}")
+    flt = (tr(flt[0].split("|")[0]) + "|" + flt[0].split("|", 1)[1], flt[1])
+    if os.name == "nt": return win_dialog(f"$d=New-Object System.Windows.Forms.OpenFileDialog;$d.Filter='{flt[0]}|{tr('Усі')}|*.*';if($d.ShowDialog($o) -eq 'OK'){{$p=$d.FileName}}")
     import tkinter as tk; from tkinter import filedialog
     t = tk.Tk(); t.withdraw(); t.attributes("-topmost", True)
     p = filedialog.askopenfilename(parent=t, filetypes=[(kind, flt[1]), ("*", "*.*")]); t.destroy(); return p
@@ -1372,10 +1376,10 @@ def ask_dir(start):
     if os.name == "nt":
         b64 = lambda s: base64.b64encode(s.encode("utf-8")).decode()
         txt = lambda s: f"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{b64(s)}'))"   # кирилиця й лапки в шляху не ламають команду
-        return win_dialog(f"Add-Type -TypeDefinition @'\n{FOLDER_CS}\n'@\n$p=[FolderPick]::Pick($o.Handle,{txt('Куди зберегти шорти')},{txt('Рендерити сюди')},{txt(start)})")
+        return win_dialog(f"Add-Type -TypeDefinition @'\n{FOLDER_CS}\n'@\n$p=[FolderPick]::Pick($o.Handle,{txt(tr('Куди зберегти шорти'))},{txt(tr('Рендерити сюди'))},{txt(start)})")
     import tkinter as tk; from tkinter import filedialog
     t = tk.Tk(); t.withdraw(); t.attributes("-topmost", True)
-    p = filedialog.askdirectory(parent=t, initialdir=start, title="Куди зберегти шорти"); t.destroy(); return p
+    p = filedialog.askdirectory(parent=t, initialdir=start, title=tr("Куди зберегти шорти")); t.destroy(); return p
 
 def win_dialog(body):
     """Системний діалог Windows через PowerShell: body кладе вибраний шлях у $p, власник діалогу — $o. Повертає шлях або ''."""
@@ -1393,7 +1397,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ReCut", "1.16.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1544,7 +1548,7 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
-            if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path in ("/publish.js", "/i18n.js"): return self.reply((HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
             if u.path in ("/icon-32.png", "/icon-256.png", "/favicon.ico"):   # значок вікна: кожен розмір намальований окремо
                 return self.reply((HERE / u.path[1:]).read_bytes(), "image/x-icon" if u.path.endswith(".ico") else "image/png")
@@ -1720,6 +1724,27 @@ def reopen_window(url):
     time.sleep(8)
     if not PAGES and (w := open_window(url)): threading.Thread(target=watch_window, args=(w,), daemon=True).start()
 
+def window_icon():
+    """Edge дає вікну-застосунку фавікон 16 px, і панель задач його розтягує до розмитого — ставимо вікну наш значок у потрібному розмірі.
+    Edge може повернути свій (перезавантаження сторінки), тож перевіряємо раз на кілька секунд."""
+    import ctypes
+    from ctypes import wintypes as W
+    u = ctypes.windll.user32
+    u.LoadImageW.restype = W.HANDLE; u.SendMessageW.restype = ctypes.c_ssize_t; u.SendMessageW.argtypes = (W.HWND, W.UINT, W.WPARAM, W.LPARAM)
+    dpi = getattr(u, "GetDpiForSystem", lambda: 96)()
+    big, small = (u.LoadImageW(None, str(HERE / "favicon.ico"), 1, n * dpi // 96, n * dpi // 96, 0x10) for n in (24, 16))   # кнопка панелі задач — 24 px: свій кадр без масштабування
+    if not big: return
+    buf, found = ctypes.create_unicode_buffer(64), []
+    def ours(h, _):                                                # вікно Edge з нашою сторінкою
+        if u.IsWindowVisible(h) and u.GetClassNameW(h, buf, 64) and buf.value == "Chrome_WidgetWin_1" and u.GetWindowTextW(h, buf, 64) and buf.value == "ReCut": found.append(h)
+        return True
+    enum = ctypes.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)(ours)
+    while True:
+        found.clear(); u.EnumWindows(enum, 0)
+        for h in found:
+            if u.SendMessageW(h, 0x7F, 1, 0) != big: u.SendMessageW(h, 0x80, 1, big); u.SendMessageW(h, 0x80, 0, small)   # WM_GETICON / WM_SETICON
+        time.sleep(2)
+
 def watch_window(proc):
     """Процес вікна Edge завершився — вікно закрили. Якщо він вийшов за секунди, це не наше вікно: Edge передав його вже запущеному."""
     t0 = time.time(); proc.wait()
@@ -1772,6 +1797,7 @@ def main():
     threading.Thread(target=prepare_ffmpeg, daemon=True).start()   # перший запуск: ffmpeg завантажується, поки відкривається вікно
     print(datetime.now(), "start", url)
     threading.Thread(target=check_update, daemon=True).start()
+    if os.name == "nt": threading.Thread(target=window_icon, daemon=True).start()
     if "--restart" in sys.argv:                                   # після оновлення: старе вікно перезавантажиться саме
         threading.Thread(target=watchdog, daemon=True).start(); threading.Thread(target=reopen_window, args=(url,), daemon=True).start()
     elif "--no-window" not in sys.argv:
