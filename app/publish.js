@@ -53,8 +53,8 @@ async function loadBrands() {                                     // назви,
 }
 async function loadPubStatus() {
   await loadBrands();
-  const [ai, buf] = await Promise.all([api('/api/ai').catch(() => ({})), api('/api/buffer').catch(e => ({connected: true, error: e.message}))]);
-  pub.ai = ai.model; pub.buffer = buf;
+  const buf = await api('/api/buffer').catch(e => ({connected: true, error: e.message}));
+  pub.buffer = buf;
   pub.queue = buf.channels ? (await api('/api/buffer/queue').catch(() => ({posts: []}))).posts : null;
   renderPub();                                                    // черга уточнює, що на редагуванні, а що вже ні
 }
@@ -134,7 +134,6 @@ function renderPubHead() {
   $('#pubAll').checked = fits.length > 0 && fits.every(f => pub.chosen.has(f.path)); $('#pubAll').indeterminate = k > 0 && !$('#pubAll').checked;
   $('#pubCount').textContent = k ? `вибрано ${k} з ${edit.length}` : `вибрати всі · ${plural(edit.length, 'шорт', 'шорти', 'шортів')}`;
   $('#pubSelNote').textContent = k ? `Вибраним (${k})` : 'Вибраним';
-  $('#pubAI').disabled = !k || pub.busy;
   $('#pubQueueSel').disabled = !k || !pubReady() || pub.sending.size > 0;
   const o = pubOpt();
   $('#pubOpt summary').textContent = `${PUB_FREQ.find(([v]) => v === o.perDay)[1]} · ${hh(o.from)}–${hh(o.to)}`;
@@ -247,8 +246,7 @@ function pubCard(f, i, d, room) {                                 // рядок 
     </div>
     <div class="pside">
       <div class="pline"><div class="ptargets">${pubTargetsHtml(f, room)}</div>${pubWhenHtml(f, d)}</div>
-      <div class="pacts"><button class="ghost ptxt" data-a="ai" ${out ? 'disabled' : ''}>Написати опис</button>
-        <button class="picon" data-a="reveal" title="Показати у папці" aria-label="Показати у папці">${ICON.folder}</button>
+      <div class="pacts"><button class="picon" data-a="reveal" title="Показати у папці" aria-label="Показати у папці">${ICON.folder}</button>
         <span class="grow"></span>${pubQueueBtn(f, room)}</div>
     </div></article>`;
 }
@@ -281,7 +279,6 @@ $('#pubGrid').onclick = e => {
   if (a === 'whenpick') return whenFor === path ? closeWhenPop() : openWhenPop(path, btn);
   if (a === 'play') { $('#mv').src = fileUrl(path); $('#mv').dataset.path = path; $('#modal').classList.add('on'); return $('#mv').play(); }
   if (a === 'reveal') return api('/api/reveal', {path});
-  if (a === 'ai') return btn.disabled || captionMany([path]);
   if (a === 'auto') return pubSetPost(path, {when: null});
   if (a === 'queue') return pubEnqueue([path]);
   if (a === 'target') { const cur = pubTargets(f), s = btn.dataset.svc; return pubSetPost(path, {targets: cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]}); }
@@ -323,39 +320,6 @@ async function pubUnqueue(pid, path) {
   await loadPub(pub.pid);
 }
 
-// ── локальний ШІ: перший раз програма сама завантажує його в data ──
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function ensureAI() {
-  const info = await api('/api/ai').catch(() => ({}));
-  if (info.model) { pub.ai = info.model; return true; }
-  if (!info.can_setup) return false;
-  if (!info.setup?.running && !confirm(`Для описів потрібен локальний ШІ (${info.size_gb} ГБ). Завантажити?`)) return false;
-  await api('/api/ai/setup', {});
-  for (;;) {
-    await sleep(1500);
-    const [st, ai] = await Promise.all([api('/api/status').catch(() => ({})), api('/api/ai').catch(() => ({}))]);
-    if (ai.model) { pub.ai = ai.model; return true; }
-    if (ai.setup?.err) { pubMsg('ШІ: ' + ai.setup.err, 1); return false; }
-    const b = st.tasks?.ai || {};
-    pubMsg(`${b.text || 'Готую локальний ШІ…'}${b.frac != null ? ` · ${Math.round(b.frac * 100)}%` : ''}${b.eta ? ` · ще ~${fmtDur(b.eta)}` : ''}`);
-  }
-}
-async function captionMany(paths) {                              // по одному, щоб було видно поступ
-  if (pub.busy) return; pub.busy = true; renderPubHead();
-  const hasAI = pub.ai || await ensureAI(); let done = 0, failed = 0;
-  for (const path of paths) {
-    $(`.pc[data-path="${CSS.escape(path)}"]`)?.classList.add('work');
-    pubMsg(`${hasAI ? 'ШІ пише описи' : 'Заготовки назв'}… ${done + 1} з ${paths.length}`);
-    try {
-      const c = await api('/api/caption', {id: pub.pid, path}), f = pubFile(path), post = {title: c.title, description: c.description, hashtags: c.hashtags};
-      f.post = {...f.post, ...post}; await pubSave(path, post);
-    } catch (e) { failed++; pubMsg('ШІ: ' + e.message, 1); }
-    done++;
-  }
-  pub.busy = false; renderPubGrid(); renderPubHead();
-  if (!failed) pubMsg(hasAI ? `Описів готово: ${done}` : 'ШІ недоступний: лише заготовки назв');
-}
-$('#pubAI').onclick = () => { const room = pubRoom(); captionMany([...pub.chosen].filter(p => room[p]?.ok)); };
 
 // ── права панель: черга Buffer по днях і те, що вже вийшло ──
 function pubOwnPosts() {                                          // id поста Buffer → шорт з будь-якого проєкту

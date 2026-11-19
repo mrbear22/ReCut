@@ -8,6 +8,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import brands, localai, publish
 
@@ -243,8 +244,9 @@ def features(src, region):
     a0, a1 = region or (0, REGION); a1 = min(float(a1), dur); a0 = max(0.0, min(float(a0), a1 - 1))
     key = (src, stamp(src), a0, a1)
     if key not in _FEAT:
-        nb = max(1, int((a1 - a0) / B)); inp = lambda kind: ("-ss", f"{a0:.3f}", "-t", f"{a1 - a0:.3f}", "-i", source(src, kind)); t0 = time.time()
-        mot, cuts = analyze_video(inp("low"), sw, sh, a1 - a0, t0); db = analyze_audio(inp("audio"), nb, audio); learn("scan", a1 - a0, t0)
+        nb = max(1, int((a1 - a0) / B)); t0 = time.time()
+        inp = local_input(src, "low", a0, a1, lambda f: report("scan", "Завантажую з Twitch", min(.99, f), t0))   # файл — одразу; Twitch — шматки паралельно
+        mot, cuts = analyze_video(inp, sw, sh, a1 - a0, time.time()); db = analyze_audio(inp, nb, audio); learn("scan", a1 - a0, t0)
         bi = np.minimum((np.arange(len(mot)) / FPS_A / B).astype(int), nb - 1)
         mot_b = np.bincount(bi, mot, nb) / np.maximum(np.bincount(bi, minlength=nb), 1)
         base = np.convolve(np.r_[np.full(8, db[0]), db], np.ones(8) / 8, "valid")[:nb]   # середнє за попередні 4 с
@@ -332,12 +334,22 @@ def ffbin(name):
             shutil.rmtree(FFDIR, ignore_errors=True); part.rename(FFDIR); z.unlink(missing_ok=True)   # тека з'являється лише цілою
     return str(exe)
 
+def parallel(jobs, say, n=4):
+    """Завантаження паралельно (n з'єднань): jobs — [функція(поступ)], поступ кожної — частка 0…1; say(загальна частка) щопівсекунди.
+    Скасували — не чекаємо недокачаного."""
+    got = [0.0] * len(jobs); ex = ThreadPoolExecutor(n); futs = [ex.submit(j, lambda f, k=k: got.__setitem__(k, f)) for k, j in enumerate(jobs)]
+    try:
+        while not all(f.done() for f in futs): say(sum(got) / max(1, len(jobs))); time.sleep(.5)
+        return [f.result() for f in futs]
+    finally: ex.shutdown(wait=False, cancel_futures=True)
+
 def install_wheels(files, dest, stage, text, only=None):
-    """Колеса з PyPI -> dest, з поступом; only — розпакувати лише файли з цим префіксом."""
-    dest.mkdir(exist_ok=True); total, done, t0 = sum(f["size"] for f in files), 0, time.time()
+    """Колеса з PyPI -> dest, по чотири паралельно; only — розпакувати лише файли з цим префіксом."""
+    dest.mkdir(exist_ok=True); total, t0 = max(1, sum(f["size"] for f in files)), time.time()
+    jobs = [lambda p, f=f: fetch(f["url"], TMP / f["filename"], lambda got, _: p(got / total * len(files))) for f in files]   # частка — за байтами, не за файлами
+    parallel(jobs, lambda frac: report(stage, text, min(.99, frac), t0))
     for f in files:
         whl = TMP / f["filename"]
-        fetch(f["url"], whl, lambda got, _: report(stage, text, (done + got) / total, t0)); done += f["size"]
         with zipfile.ZipFile(whl) as z: z.extractall(dest, [n for n in z.namelist() if n.startswith(only)] if only else None)
         whl.unlink()
 
@@ -467,7 +479,7 @@ def cover(pid):
 
 # місце на диску: що можна прибрати без шкоди — завантажиться чи порахується знову, коли знадобиться
 STORE = [("view", "Кеш перегляду", lambda: [DATA / "hls", MIXES, WAVES]), ("speech", "Розпізнана мова", lambda: [TRANS]),
-         ("models", "Моделі розпізнавання мови", lambda: [MODELS, DATA / "hf"]), ("ai", "Локальний ШІ для описів", lambda: [DATA / "ollama"])]
+         ("models", "Моделі розпізнавання мови", lambda: [MODELS, DATA / "hf"]), ("ai", "Локальний ШІ для пошуку моментів", lambda: [DATA / "ollama"])]
 
 def dir_size(d): return sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) if d.is_dir() else 0
 
@@ -536,24 +548,46 @@ def hls_parts(url):
         elif l.strip() and not l.startswith("#"): out.append((t, d, urllib.parse.urljoin(url, l.strip()))); t += d
     return init, out
 
+def hls_file(url):
+    """Шматок запису в кеші на диску: качаємо один раз, хоч би скільки його просили (прев'ю, аналіз, рендер, два вікна)."""
+    HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
+    with HLS_GUARD: lock = HLS_BUSY.setdefault(f.name, threading.Lock())
+    with lock:
+        if f.is_file(): os.utime(f); return f                      # щойно потрібний — не викидати
+        tmp = f.with_name(f"{uuid.uuid4().hex}.part"); tmp.write_bytes(fetch(url, raw=True)); tmp.replace(f)
+    files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix in (".ts", ".mp4") and time.time() - x.stat().st_mtime > 900), key=os.path.getmtime)
+    total = sum(x.stat().st_size for x in HLS_CACHE.glob("*.*"))
+    for x in files:                                                # понад межу — найстаріші, крім тих, що потрібні просто зараз
+        if total <= HLS_KEEP: break
+        total -= x.stat().st_size; x.unlink(missing_ok=True)
+    return f
+
+def hls_index(src, kind, upto=0):
+    """Розбір плейлиста якості — один раз на запис (для трансляції, що триває, — знову, коли треба далі, ніж відомо)."""
+    v = vod(src); idx = v.setdefault("idx", {})
+    if kind not in idx or (upto and idx[kind][1] and sum(idx[kind][1][-1][:2]) < upto): idx[kind] = hls_parts(v[kind])
+    return idx[kind]
+
+def local_input(src, kind, a0, a1, say=lambda frac: None):
+    """ffmpeg-вхід для [a0, a1]. Файл — як є. Запис Twitch: потрібні шматки качаються паралельно (8 з'єднань) у спільний кеш,
+    а ffmpeg читає їх з диска — замість того, щоб тягнути по одному з мережі."""
+    if not is_url(src): return ["-ss", f"{a0:.3f}", "-t", f"{a1 - a0:.3f}", "-i", src]
+    init, parts = hls_index(src, kind, a1)
+    need = [p for p in parts if p[0] + p[1] > a0 and p[0] < a1] or parts[-1:]
+    urls = ([init] if init else []) + [u for _, _, u in need]
+    files = dict(zip(urls, parallel([lambda p, u=u: (hls_file(u), p(1))[0] for u in urls], say, 8)))
+    pl = HLS_CACHE / f"{uuid.uuid4().hex}.m3u8"                     # свій плейлист з локальних шматків
+    pl.write_text("\n".join(["#EXTM3U", "#EXT-X-VERSION:6", f"#EXT-X-TARGETDURATION:{int(np.ceil(max(d for _, d, _ in need)))}", "#EXT-X-PLAYLIST-TYPE:VOD",
+                             *([f'#EXT-X-MAP:URI="{files[init].name}"'] if init else []),
+                             *(x for _, d, u in need for x in (f"#EXTINF:{d:.3f},", files[u].name)), "#EXT-X-ENDLIST"]), "utf-8")
+    return ["-ss", f"{max(0.0, a0 - need[0][0]):.3f}", "-t", f"{a1 - a0:.3f}", "-i", str(pl)]
+
 def hls_proxy(url):
     """Twitch не дає сторінкам читати плейлисти й шматки напряму: прев'ю бере їх через нас. Плейлист — з нашими адресами, шматки — з кешем на диску.
     Лише адреси відкритих записів: проксі не ходить куди завгодно."""
     if not any(url.startswith(v["base"]) for v in list(VODS.values())): raise PermissionError("Не адреса відкритого запису Twitch")
     if url.split("?")[0].endswith(".m3u8"): return m3u8(url, lambda u: "/hls?u=" + urllib.parse.quote(u, safe="")).encode(), "application/vnd.apple.mpegurl"
-    HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
-    with HLS_GUARD: lock = HLS_BUSY.setdefault(f.name, threading.Lock())
-    with lock:                                                     # той самий шматок просять двічі (повтор плеєра, два вікна) — качаємо один раз
-        try: data = f.read_bytes()
-        except OSError:
-            data = fetch(url, raw=True)
-            try: tmp = f.with_name(f"{uuid.uuid4().hex}.part"); tmp.write_bytes(data); tmp.replace(f)
-            except OSError: pass                                   # кеш не записався — не біда, шматок віддаємо й так
-            files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix != ".part"), key=os.path.getmtime); total = sum(x.stat().st_size for x in files)
-            for x in files:
-                if total <= HLS_KEEP: break
-                total -= x.stat().st_size; x.unlink(missing_ok=True)
-    return data, "video/mp2t" if f.suffix == ".ts" else "video/mp4"
+    f = hls_file(url); return f.read_bytes(), "video/mp2t" if f.suffix == ".ts" else "video/mp4"
 
 def hls_js():
     js = LIBS / "hls.min.js"
@@ -659,7 +693,8 @@ def whisper(src, t0, lang, tick, na, track=None):
     """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано).
     track — одна звукова доріжка (окремий спікер), None — усі зведені."""
     audio = ["-map", f"0:a:{track}"] if track is not None else all_audio(na)
-    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", source(src, "audio"), "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
+    r = run([ffbin("ffmpeg"), "-v", "error", *local_input(src, "low", t0, min(t0 + CHUNK, probe(src)[2]), lambda f: report("stt", "Завантажую звук з Twitch", f)),
+             "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
     if r.returncode: raise RuntimeError("Аудіо для розпізнавання: " + r.stderr.decode("utf-8", "replace")[-300:])
     words, sg = [], []
     for text, a, b, ws in stt_run(r.stdout, lang, tick):
@@ -775,20 +810,13 @@ def detect_cam(src, region=None):
     a0, a1 = region or (0, dur); a0, a1 = max(0.0, float(a0)), min(float(a1), dur)
     casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     frames, faces, t0 = [], [], time.time()
-    with tempfile.TemporaryDirectory() as tmp:
-        def at(t): return ["-ss", f"{t:.2f}", "-i", src]
-        if is_url(src):                                            # запис Twitch: на кадр — рівно один шматок, у якому він лежить
-            init, parts = hls_parts(source(src, "mid")); head = fetch(init, raw=True) if init else b""
-            def at(t):
-                s, _, u = next((p for p in parts if p[0] + p[1] > t), parts[-1]); f = Path(tmp, "frame.mp4"); f.write_bytes(head + fetch(u, raw=True))
-                return ["-ss", f"{t - s:.2f}", "-i", str(f)]
-        for i in range(n):
-            report("cam", "Шукаю вебкамеру", i / n, t0)
-            raw = run([ffbin("ffmpeg"), "-v", "error", *at(a0 + (a1 - a0) * (i + .5) / n), "-frames:v", "1",
-                       "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
-            if len(raw) < aw * ah: continue
-            g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
-            faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
+    for i in range(n):                                             # запис Twitch — рівно один шматок на кадр, через спільний кеш
+        report("cam", "Шукаю вебкамеру", i / n, t0)
+        raw = run([ffbin("ffmpeg"), "-v", "error", *local_input(src, "mid", *(lambda t: (t, t + .5))(a0 + (a1 - a0) * (i + .5) / n)), "-frames:v", "1",
+                   "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
+        if len(raw) < aw * ah: continue
+        g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
+        faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
     if len(frames) < 4: raise RuntimeError("Не вдалося прочитати кадри")
     if len(faces) < max(2, len(frames) * .25): return None
     F = np.array(faces); near = lambda f: np.hypot(*(F[:, :2] - f[:2]).T) < f[2] * .6
@@ -938,44 +966,8 @@ def make_chat(el):
         d.text((x, y), l, font=f, fill=(240, 240, 245))
     return img, cw, ch
 
-def make_alert(el):
-    """Алерт стріму (донат, фолов, підписка): акцентна смуга, заголовок, повідомлення."""
-    s = float(el.get("s", 1)); k = lambda v: max(1, round(v * s)); font = pick_font(el.get("font"))[1]; acc = el.get("color", "#ffcc33")
-    f1, f2, cw, pad = ImageFont.truetype(font, k(46)), ImageFont.truetype(font, k(32)), k(860), k(28)
-    tl, ml = wrap(el.get("title") or "", f1, cw - 2 * pad), wrap(el.get("text") or "", f2, cw - 2 * pad)[:4] if el.get("text") else []
-    lh1, lh2 = round(k(46) * 1.25), round(k(32) * 1.35)
-    ch = k(10) + 2 * pad + lh1 * len(tl) + (k(12) + lh2 * len(ml) if ml else 0)
-    img, d = panel(cw, ch, k(22), acc)
-    d.rounded_rectangle((PAD, PAD + k(10), PAD + cw, PAD + ch), k(22), fill=(24, 24, 28))
-    y = PAD + k(10) + pad
-    for l in tl: d.text((PAD + cw / 2, y), l, font=f1, fill=acc, anchor="ma"); y += lh1
-    y += k(12)
-    for l in ml: d.text((PAD + cw / 2, y), l, font=f2, fill=(235, 235, 240), anchor="ma"); y += lh2
-    return img, cw, ch
-
-def make_shape(el):
-    """Стрілка, обвідка колом чи рамкою — показати на щось у кадрі."""
-    w, h, t, col = round(float(el.get("w", 320))), round(float(el.get("h", 320))), max(2, round(float(el.get("thick", 12)))), el.get("color", "#ff3b30")
-    img = Image.new("RGBA", (w + 2 * PAD, h + 2 * PAD), (0, 0, 0, 0)); d = ImageDraw.Draw(img)
-    box = (PAD + t / 2, PAD + t / 2, PAD + w - t / 2, PAD + h - t / 2); kind = el.get("shape", "circle")
-    if kind == "circle": d.ellipse(box, outline=col, width=t)
-    elif kind == "rect": d.rounded_rectangle(box, radius=t * 1.5, outline=col, width=t)
-    else:                                                        # стрілка вправо, далі повертається на кут
-        cy, hd = PAD + h / 2, min(h, w * 0.45)
-        d.line((PAD + t, cy, PAD + w - hd * 0.8, cy), fill=col, width=t)
-        d.polygon([(PAD + w, cy), (PAD + w - hd, cy - hd / 2), (PAD + w - hd, cy + hd / 2)], fill=col)
-        if el.get("rot"): img = img.rotate(-float(el["rot"]), expand=True, resample=Image.BICUBIC); w, h = img.width - 2 * PAD, img.height - 2 * PAD
-    return img, w, h
-
-def make_emoji(el):
-    """Емодзі-реакція кольоровим шрифтом системи."""
-    path = next((FONTS[n] for n in ("Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji") if n in FONTS), pick_font(None)[1])
-    f = ImageFont.truetype(path, max(16, round(float(el.get("size", 160))))); txt = el.get("text") or "😂"
-    l, t, r, b = f.getbbox(txt); img = Image.new("RGBA", (r - l + 2 * PAD, b - t + 2 * PAD), (0, 0, 0, 0))
-    ImageDraw.Draw(img).text((PAD - l, PAD - t), txt, font=f, embedded_color=True); return img, r - l, b - t
-
 ART = {"card": make_card, "stream": make_card, "text": make_text, "image": make_image,   # елементи, що малюються картинкою поверх відео
-       "chat": make_chat, "alert": make_alert, "shape": make_shape, "emoji": make_emoji, "social": make_social}
+       "chat": make_chat, "social": make_social}
 
 def art(el): return ART[el["type"]](el)
 
@@ -1255,6 +1247,7 @@ def render_dir(pr):
 
 def render(pid, clips, elements, cues, out_dir, task):
     CUR.task = task; dst = None
+    elements = [e for e in elements if e["type"] in ART or e["type"] in ("video", "cam", "subs", "bg", "music", "progress")]   # старі типи, яких більше немає
     try:
         pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder(); canvas = tuple(pr.get("canvas") or CANVAS)
         subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
@@ -1310,7 +1303,7 @@ def render(pid, clips, elements, cues, out_dir, task):
                 vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
                 main = ("ca" if len(keep) > 1 else "am" if na > 1 else "0:a") if na else None
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
-                encode(["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", source(src, "best"), *inputs,
+                encode([*local_input(src, "best", a, b, lambda f: report("render", f"Кліп {i} з {len(todo)} · завантажую з Twitch", min(.99, f), t0)), *inputs,
                         "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs), canvas), *afx]),
                         "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
                         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)], net, say, cwd=tmp)
@@ -1392,7 +1385,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.14.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.15.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1426,22 +1419,13 @@ def apply_update():
     for f in u["files"]:
         for old in (f.get("previous_filename"), f["filename"] if f["status"] == "removed" else None):
             if old and old.startswith("app/"): (HERE / old[4:]).unlink(missing_ok=True)
-    for name, data in new.items(): (HERE / name).write_bytes(data)
+    for name, data in new.items(): (HERE / name).parent.mkdir(parents=True, exist_ok=True); (HERE / name).write_bytes(data)
     return None
 
 def render_files(p, path):
     """Записи готового шорту в історії рендерів проєкту (той самий файл міг рендеритись кілька разів)."""
     return [f for r in p["renders"] for f in r["files"] if f["path"] == path]
 
-def clip_caption(pid, path):
-    p = load_project(pid); f = next(iter(render_files(p, path)), None)
-    if not f: raise ValueError("Шорт не знайдено в проєкті")
-    a, b = f["a"], f["b"]; source = p["name"] or Path(p["video"]).stem
-    why = next((c.get("why", "") for c in p["clips"] if abs(c["a"] - a) < .05 and abs(c["b"] - b) < .05), "")
-    speech = " ".join(q["text"] for q in p["cues"] if q["b"] > a and q["a"] < b)
-    if not speech and (is_url(p["video"]) or Path(p["video"]).is_file()):   # реплік немає — транскрипт (кешується на диску)
-        speech = " ".join(t for t, s, e in transcript(p["video"], a, b, "")[1])
-    return publish.caption(source, why, speech, AI.model(), AI.chat)
 
 def save_post(pid, path, post):
     def put(p):
@@ -1554,6 +1538,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
+            if u.path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := u.path[7:]) and (HERE / "fonts" / name).is_file():   # шрифти бренду
+                return self.reply((HERE / "fonts" / name).read_bytes(), "text/css; charset=utf-8" if name.endswith(".css") else "font/woff2")
             if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
             if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()))
@@ -1658,7 +1644,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(dict(kind="full" if setup else "app"))
             if p == "/api/buffer/key": BUFFER.set_key(d.get("key", "")); return self.reply(dict(connected=bool(BUFFER.key)))
             if p == "/api/ai/setup": AI.begin_setup(); return self.reply(AI.setup_state)
-            if p == "/api/caption": return self.reply(clip_caption(d["id"], d["path"]))
             if p == "/api/post/save": save_post(d["id"], d["path"], d["post"]); return self.reply({})
             if p == "/api/post/unqueue": return self.reply(unqueue(d["id"], d["path"]))
             if p == "/api/publish": return self.reply(publish_batch(d["id"], d["plan"], d.get("privacy", "public"), int(d.get("limit") or 0)))
@@ -1769,7 +1754,7 @@ def prepare_ffmpeg():
 def main():
     CFG.update(rd(CFG_FILE, {}))
     for f in (DATA / "hls").glob("*.*"):                          # шматки прев'ю Twitch, старші за 3 дні, більше не знадобляться
-        if f.suffix == ".part" or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)   # і недокачані
+        if f.suffix in (".part", ".m3u8") or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)   # і недокачані, і наші плейлисти
     url = f"http://127.0.0.1:{CFG['port']}"
     srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно

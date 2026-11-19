@@ -1,26 +1,12 @@
-"""Публікація готових шортів: опис пише локальний ШІ (Ollama), відправка — через Buffer API.
+"""Публікація готових шортів через Buffer API; назву, опис і хештеги пише сам автор.
 Ключ Buffer лежить окремо від налаштувань (data/buffer.json) і в інтерфейс не віддається."""
 import http.client, json, re, urllib.error, urllib.parse, urllib.request, uuid
 from pathlib import Path
 
 BUFFER_API = "https://api.buffer.com"
-# мова інструкції тягне мову відповіді: англійський промпт давав англійські назви до українського мовлення
-CAPTION_PROMPT = """Ти пишеш підписи до вертикального короткого відео (TikTok / YouTube Shorts), вирізаного зі стріму.
-Джерело: «{source}». Що відбувається в кліпі: {why}
-Що кажуть у кліпі (розпізнане мовлення, може бути з помилками або порожнім):
-{speech}
-
-Пиши українською. Іншою мовою — лише якщо все мовлення явно іншою мовою.
-Не вигадуй того, чого немає в мовленні чи описі. Без лапок і хештегів у назві.
-Ніколи не пиши, що щось «невідомо» чи «незрозуміло»: якщо мовлення мало — зачепи емоцію чи інтригу моменту.
-Відповідай лише JSON:
-{{"title": "чіпка назва-гачок, до 70 символів",
-  "description": "1-2 короткі речення, щоб додивились до кінця",
-  "hashtags": ["3-6 доречних тегів без #, малими літерами"]}}"""
 VIDEO_SERVICES = ("tiktok", "youtube", "instagram", "facebook", "threads", "twitter", "linkedin", "bluesky", "mastodon")   # куди Buffer публікує вертикальне відео
 TEXT_MAX = {"twitter": 280, "bluesky": 300, "threads": 500, "mastodon": 500}   # більший допис Buffer відхилить
-ALWAYS_TAGS = ["shorts"]                                           # YouTube надійніше впізнає шорт
-TITLE_MAX, DESC_MAX, TAGS_MAX = 100, 2000, 8
+TITLE_MAX = 100
 YOUTUBE_CATEGORY = "20"                                            # «Ігри»: шорти зі стрімів
 # Buffer бере відео лише за публічним посиланням і завантажує його в момент публікації (може бути за дні),
 # тож файл має жити, поки пост не вийде. Анонімні файлообмінники або блокують Buffer (catbox, x0.at, pomf),
@@ -135,21 +121,6 @@ class Buffer:
         if r.get("message") and "not found" not in r["message"].lower(): raise RuntimeError(r["message"])
 
 
-def clean_caption(raw):
-    """Підрізати відповідь моделі до того, що приймуть TikTok і YouTube."""
-    tags = raw.get("hashtags") or []
-    tags = [re.sub(r"[^\w]", "", str(t).lstrip("#")).lower() for t in (tags if isinstance(tags, list) else str(tags).split())]
-    tags = list(dict.fromkeys([*ALWAYS_TAGS, *(t for t in tags if t)]))[:TAGS_MAX]
-    return dict(title=str(raw.get("title", "")).strip().strip('"«»')[:TITLE_MAX],
-                description=str(raw.get("description", "")).strip()[:DESC_MAX], hashtags=tags)
-
-
-def caption(source, why, speech, model, chat):
-    """Опис кліпу. Без Ollama — заготовка з назви джерела й того, що відбувається в кліпі."""
-    if not model:
-        return dict(clean_caption(dict(title=why or source, description="", hashtags=["shorts"])), ai=False)
-    prompt = CAPTION_PROMPT.format(source=source, why=why or "невідомо", speech=speech[:6000] or "(мовлення немає)")
-    return dict(clean_caption(chat(model, prompt, 300, temperature=.7, num_ctx=4096)), ai=True, model=model)
 
 
 def post_text(post):
