@@ -8,7 +8,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import numpy as np
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait as wait_any
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import brands, localai, publish
 
@@ -339,7 +339,7 @@ def parallel(jobs, say, n=4):
     Скасували — не чекаємо недокачаного."""
     got = [0.0] * len(jobs); ex = ThreadPoolExecutor(n); futs = [ex.submit(j, lambda f, k=k: got.__setitem__(k, f)) for k, j in enumerate(jobs)]
     try:
-        while not all(f.done() for f in futs): say(sum(got) / max(1, len(jobs))); time.sleep(.5)
+        while not all(f.done() for f in futs): say(sum(got) / max(1, len(jobs))); wait_any(futs, timeout=.5)   # готово — одразу далі, без паузи
         return [f.result() for f in futs]
     finally: ex.shutdown(wait=False, cancel_futures=True)
 
@@ -605,7 +605,9 @@ class SttWorker:
         self.model = model
         self.proc = subprocess.Popen([str(py), str(Path(__file__)), "--stt-worker", device, model], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=open(DATA / "stt.log", "a", encoding="utf-8"), **SP)
-        self.device = device; msg = self.read()
+        self.device = device
+        try: msg = waiting(self.read)
+        except Cancelled: self.stop(); raise                       # скасували під час завантаження моделі — процес геть разом із ним
         if "error" in msg: self.stop(); raise RuntimeError(msg["error"])
 
     def stop(self):
@@ -809,11 +811,17 @@ def detect_cam(src, region=None):
     sw, sh, dur, _ = probe(src); aw = 640; ah = ev(aw * sh / sw); n = 12
     a0, a1 = region or (0, dur); a0, a1 = max(0.0, float(a0)), min(float(a1), dur)
     casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    frames, faces, t0 = [], [], time.time()
-    for i in range(n):                                             # запис Twitch — рівно один шматок на кадр, через спільний кеш
+    frames, faces, t0 = [], [], time.time(); times = [a0 + (a1 - a0) * (i + .5) / n for i in range(n)]
+    if is_url(src):                                                # запис Twitch: шматки з усіма кадрами — одним паралельним завантаженням
+        init, parts = hls_index(src, "mid", max(times))
+        urls = list(dict.fromkeys(([init] if init else []) + [next((p for p in parts if p[0] + p[1] > t), parts[-1])[2] for t in times]))
+        parallel([lambda p, u=u: (hls_file(u), p(1))[0] for u in urls], lambda f: report("cam", "Завантажую кадри з Twitch", min(.99, f), t0), 8)
+    grab = lambda t: run([ffbin("ffmpeg"), "-v", "error", *local_input(src, "mid", t, t + .5), "-frames:v", "1",
+                          "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
+    report("cam", "Шукаю вебкамеру", None, t0)
+    with ThreadPoolExecutor(4) as ex: raws = list(ex.map(grab, times))   # кадри — паралельно
+    for i, raw in enumerate(raws):
         report("cam", "Шукаю вебкамеру", i / n, t0)
-        raw = run([ffbin("ffmpeg"), "-v", "error", *local_input(src, "mid", *(lambda t: (t, t + .5))(a0 + (a1 - a0) * (i + .5) / n)), "-frames:v", "1",
-                   "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
         if len(raw) < aw * ah: continue
         g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
         faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
@@ -1385,7 +1393,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.15.1"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.15.2"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1538,7 +1546,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
             if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
-            if u.path in ("/icon-32.png", "/icon-256.png"): return self.reply((HERE / u.path[1:]).read_bytes(), "image/png")   # значок вікна
+            if u.path in ("/icon-32.png", "/icon-256.png", "/favicon.ico"):   # значок вікна: кожен розмір намальований окремо
+                return self.reply((HERE / u.path[1:]).read_bytes(), "image/x-icon" if u.path.endswith(".ico") else "image/png")
             if u.path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := u.path[7:]) and (HERE / "fonts" / name).is_file():   # шрифти бренду
                 return self.reply((HERE / "fonts" / name).read_bytes(), "text/css; charset=utf-8" if name.endswith(".css") else "font/woff2")
             if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))

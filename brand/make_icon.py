@@ -65,11 +65,16 @@ def main(ttf, out_dir, ico):
            f'<path d="{re_}" fill="{PAPER}"/><polygon points="{" ".join(f"{x:.1f},{y:.1f}" for x, y in tape)}" fill="{TAPE}"/><path d="{cut}" fill="{INK}"/></svg>')
     (out / "logo.svg").write_text(svg, "utf-8")
     big = raster(parts, 1024); big.save(out / "logo-1024.png")
-    app = Path(__file__).resolve().parent.parent / "app"           # значок вікна програми: Edge у режимі застосунку бере для вікна й панелі задач лише PNG
-    for s in (32, 256): raster(parts, s).save(app / f"icon-{s}.png")
-    big.save(ico, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    strip = Image.new("RGBA", (256 + 128 + 64 + 48 + 32 + 16 + 70, 260), (40, 40, 46, 255)); x = 10
-    for s in (256, 128, 64, 48, 32, 16): strip.alpha_composite(raster(parts, s), (x, 2)); x += s + 10
+    small = [("poly", tape_poly(512, 540, 940, 520, TILT), TAPE), ("path", text_path(font, "CUT", 430, 512, 690, TILT, (512, 540)), INK)]   # дрібно два рядки не читаються — лише стрічка «CUT»
+    pick = lambda s: raster(small if s <= 48 else parts, s)
+    sizes = (16, 20, 24, 32, 40, 48, 64, 128, 256)
+    imgs = {s: pick(s) for s in sizes}
+    app = Path(__file__).resolve().parent.parent / "app"           # значок вікна: Edge у режимі застосунку бере для вікна й панелі задач лише растр
+    for s in (32, 256): imgs[s].save(app / f"icon-{s}.png")
+    for path in (ico, app / "favicon.ico"):                         # кожен розмір намальований під себе, Windows не розтягує 32 px
+        imgs[256].save(path, sizes=[(s, s) for s in sizes], append_images=[imgs[s] for s in sizes if s != 256])
+    strip = Image.new("RGBA", (256 + 128 + 64 + 48 + 32 + 24 + 16 + 90, 260), (40, 40, 46, 255)); x = 10
+    for s in (256, 128, 64, 48, 32, 24, 16): strip.alpha_composite(imgs[s], (x, 2)); x += s + 10
     strip.save(out / "sizes.png")
     print("svg", len(svg), "bytes")
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="uk"><head><meta charset="utf-8"><title>ReCut</title><link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png"><link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png">
+<html lang="uk"><head><meta charset="utf-8"><title>ReCut</title><link rel="icon" href="/favicon.ico" sizes="16x16 24x24 32x32 48x48 64x64 128x128 256x256"><link rel="icon" type="image/png" sizes="256x256" href="/icon-256.png">
 <link rel="stylesheet" href="/fonts/fonts.css">
 <style>
 /* Бренд ReCut — «монтажна»: майже чорне тепле полотно, фірмовий жовтий з логотипа лише для головного,
@@ -18,7 +18,7 @@ html,body{margin:0;height:100%}
 body{display:grid;grid-template-rows:auto 1fr;background:var(--bg);color:var(--fg);font:13px/1.5 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;overflow:hidden}
 :focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 :focus:not(:focus-visible){outline:none}
-@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}#busy i{animation:spin 1.4s linear infinite!important}}   /* спінер — єдиний знак, що програма працює: крутиться й без анімацій Windows */
 [hidden]{display:none!important}
 ::selection{background:var(--acc-soft)}
 /* шапка: тиха смуга, як рядок сторінок у Resolve */
@@ -169,7 +169,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .tools{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center}
 .segb{display:inline-flex;gap:2px;padding:2px;background:#121110;border:1px solid var(--line);border-radius:var(--r-sm)}
 .segb button{border:0;background:none;color:var(--mut);border-radius:3px;padding:5px 12px}.segb button:hover{color:var(--fg);background:var(--s2)}.segb button.on{background:var(--s4);color:var(--hi)}
-.chip{display:inline-flex;gap:6px;align-items:center;max-width:280px}.chip span{overflow:hidden;text-overflow:ellipsis}
+.chip{display:inline-flex;gap:6px;align-items:center;max-width:280px}#videoChip.miss{color:var(--red)}.chip span{overflow:hidden;text-overflow:ellipsis}
 .cv{flex:1;min-height:0;width:100%;position:relative;overflow:hidden;background:#0f0e0d;border-radius:var(--r)}.cv #pv{position:absolute}
 #pvZoom{position:absolute;right:8px;bottom:8px;z-index:2;padding:3px 9px;font-size:12px;font-variant-numeric:tabular-nums;background:rgba(20,19,18,.85);color:var(--fg)}
 #pv{display:block;background:#000;touch-action:none}
@@ -421,6 +421,15 @@ input[type=checkbox]:indeterminate{background:var(--acc) linear-gradient(var(--a
 .chsearch{display:flex;align-items:center;gap:6px}.chsearch input{width:190px;height:30px}.chsearch .sec{height:30px;padding:0 10px}
 .chtag{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 6px 0 10px;border:1.5px solid var(--acc);border-radius:var(--r-sm);font-family:var(--mono);font-size:11.5px;color:var(--hi);text-transform:none;letter-spacing:0}
 .chtag button{background:none;border:0;padding:0 4px;color:var(--mut)}.chtag button:hover{background:none;color:var(--hi)}
+/* службові кнопки шапки: «Клавіші» й «?» — як клавіші на клавіатурі, «Підтримати» — квиток під скотч */
+#keysBtn,#help{font:500 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--mut);background:var(--s2);border:1.5px solid var(--line2);border-bottom-width:3px;border-radius:3px;padding:3px 8px;height:auto}
+#support,#keysBtn,#help{flex:none}#help{width:26px;padding:3px 0;text-align:center;font-weight:700}
+#keysBtn:hover,#help:hover{color:var(--hi);background:var(--s3);border-color:var(--line2)}
+#keysBtn:active,#help:active{border-bottom-width:1.5px;transform:translateY(1.5px)}
+#support{font:500 11px var(--mono);letter-spacing:.04em;text-transform:uppercase;border:1.5px dashed var(--line2);border-radius:2px;padding:4px 10px;margin-right:6px}
+#support svg{color:var(--acc)}
+#support:hover{color:var(--hi);border-color:var(--acc);background:none}
+kbd{font-family:var(--mono)}
 </style></head>
 <body>
 <header>
@@ -473,7 +482,7 @@ input[type=checkbox]:indeterminate{background:var(--acc) linear-gradient(var(--a
 
   <section id="stage">
     <div class="tools">
-      <span class="anchor"><button id="videoChip" class="chip ghost" title="Змінити відео"><span>Обрати відео</span></button>
+      <span class="anchor"><button id="videoChip" class="chip ghost"><span>Обрати відео</span></button>
         <div class="pop" id="vPop"><button class="wide" id="vFile">Файл на диску…</button>
           <form class="row" id="vLink"><input id="vUrl" placeholder="Посилання на запис Twitch" aria-label="Посилання на запис Twitch"><button class="pri">Відкрити</button></form></div></span>
       <span class="segb" id="modeTabs"><button data-mode="short" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/></svg>Шорт</button><button data-mode="src"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/></svg>Кадрування</button></span>
@@ -922,12 +931,18 @@ async function openProject(p) {
   if (oldLang && ['uk', 'en'].includes(oldLang) && !cfg.stt_lang) { cfg.stt_lang = oldLang; api('/api/config', {stt_lang: oldLang}).catch(() => {}); }
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
 }
-async function pickVideo() {
+let videoMissing = false;
+function videoChip(text) {                                         // відео — основа проєкту: обирається раз; нове відео — новий проєкт з головної
+  const c = $('#videoChip'); c.querySelector('span').textContent = videoMissing ? 'Файл не знайдено — вказати' : text || (P && P.video ? videoName(P.video) : 'Обрати відео');
+  c.hidden = !!(P && P.video && !videoMissing); c.classList.toggle('miss', videoMissing);   // назва вже в назві проєкту — не дублюємо
+  c.title = videoMissing ? 'Файл перемістили чи видалили. Вкажи, де він тепер, — монтаж збережеться' : '';
+}
+async function pickVideo(relink) {                                 // relink — той самий запис в іншому місці: кліпи, субтитри й область лишаються
   const {path} = await api('/api/pick', {kind: 'video'}); if (!path) return;
-  P.video = path; P.region = null; P.clips = []; P.cues = []; P.cover = ''; if (!P.name) { P.name = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''); $('#pname').value = P.name; }
+  P.video = path; videoMissing = false; if (!relink) { P.region = null; P.clips = []; P.cues = []; P.cover = ''; } if (!P.name) { P.name = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, ''); $('#pname').value = P.name; }
   await save(true); renderAll(); loadVideo();
 }
-$('#videoChip').onclick = e => P && togglePop('#vPop', e);
+$('#videoChip').onclick = e => P && (videoMissing ? pickVideo(true) : togglePop('#vPop', e));
 $('#vFile').onclick = () => { $('#vPop').classList.remove('on'); pickVideo(); };
 $('#vLink').onsubmit = e => { e.preventDefault(); openLink($('#vUrl').value); };
 async function openLink(url) {                                    // запис Twitch: на диск нічого не качаємо — лише потрібні шматки, коли знадобляться
@@ -1242,7 +1257,7 @@ function setCanvas(r) {
 }
 const CANVAS_RATIOS = () => RATIOS.filter(([r]) => r).sort((a, b) => a[0] - b[0]);   // ті самі пропорції, що в кадруванні: 9:16, 1:1, 4:3, 16:9
 function renderCanvasBar() {
-  const bar = $('#canvasRatio'), cur = CW() / CH(); bar.hidden = mode !== 'short';
+  const bar = $('#canvasRatio'), cur = CW() / CH(); bar.style.visibility = mode === 'short' ? '' : 'hidden';   // місце лишається — вкладки не скачуть
   bar.innerHTML = CANVAS_RATIOS().map(([r, l]) => `<button data-canvas="${r}" class="${Math.abs(r - cur) < .01 ? 'on' : ''}" ${P ? '' : 'disabled'}>${l}</button>`).join('');
 }
 $('#canvasRatio').onclick = e => { const b = e.target.closest('[data-canvas]'); if (b && P) setCanvas(+b.dataset.canvas); };
@@ -1284,12 +1299,12 @@ const SNAP_PX = 10, HANDLE_PX = 7;                                // поріг 
 
 // ── відео, аналіз, субтитри — усе в межах області ──
 async function loadVideo() {
-  $('#videoChip span').textContent = videoName(P.video) || 'Обрати відео';
+  videoMissing = false; videoChip();
   mix.pause(); mix.removeAttribute('src'); vid.muted = false;
   hlsStop(); vid.removeAttribute('src'); if (!P.video) return;
-  const pr = await api('/api/probe?p=' + encodeURIComponent(P.video)).catch(e => (msg(e.message, 1), null)); if (!pr) return;
+  const pr = await api('/api/probe?p=' + encodeURIComponent(P.video)).catch(e => { if (!/^https?:/.test(P.video)) { videoMissing = true; videoChip(); } else msg(e.message, 1); return null; }); if (!pr) return;
   dur = pr.dur; S = {w: pr.sw, h: pr.sh}; view = {t0: 0, t1: dur}; fitCanvas();
-  if (pr.hls) { playHls(pr.play); if (pr.title) $('#videoChip span').textContent = pr.title; } else showPlayable(P.video, pr.play);
+  if (pr.hls) { playHls(pr.play); if (pr.title) videoChip(pr.title); } else showPlayable(P.video, pr.play);
   audioTracks = pr.tracks || 1;
   if (pr.tracks > 1) waitMix(P.video, pr.mix);
   if (!P.elements.length || (oldStarter(P.elements) && !P.clips.length)) await defaultElements();   // стара заготовка з плашкою відео — на нову
@@ -2773,7 +2788,7 @@ addEventListener('keydown', e => {
   if (e.key === '?' && !e.target.matches?.('input,textarea,select,[contenteditable]')) { toggleKeys(); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
 
-function renderAll() { renderEls(); renderList(); renderCanvasBar(); fitCanvas(); $('#videoChip span').textContent = P && P.video ? videoName(P.video) : 'Обрати відео'; $('#cueEdit').classList.remove('on'); }
+function renderAll() { renderEls(); renderList(); renderCanvasBar(); fitCanvas(); videoChip(); $('#cueEdit').classList.remove('on'); }
 
 (async () => {
   const page = Math.random().toString(36).slice(2), ping = () => api('/api/ping', {page}).catch(() => {});   // програма живе, поки відкрите хоч одне вікно
