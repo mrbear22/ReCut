@@ -29,13 +29,14 @@ nav button{border:0;background:none;color:var(--mut);border-radius:3px;padding:5
 nav button:hover{color:var(--fg);background:var(--s2)}nav button.on{background:var(--s4);color:var(--hi)}
 #pname{max-width:280px;background:none;border-color:transparent;font-weight:600;font-size:14px;color:var(--hi)}#pname:hover{border-color:var(--line2)}
 .grow{flex:1}
-#busy{display:grid;grid-template-columns:10px auto auto 120px;align-content:center;align-items:center;gap:2px 8px;color:var(--mut);font-size:12px;line-height:1.2;font-variant-numeric:tabular-nums}#busy:empty{display:none}
+#busy{display:grid;grid-template-columns:10px auto auto 120px 22px;align-content:center;align-items:center;gap:2px 8px;color:var(--mut);font-size:12px;line-height:1.2;font-variant-numeric:tabular-nums}#busy:empty{display:none}
 #support{display:inline-flex;align-items:center;gap:6px;color:var(--mut)}#support svg{width:14px;height:14px;color:#e2533f}#support:hover{color:var(--hi)}
 .support{margin:28px 0 8px;color:var(--dim);font-size:12.5px;text-align:center}.support .link{background:none;border:0;padding:0;color:var(--mut);text-decoration:underline;cursor:pointer}.support .link:hover{color:var(--hi)}
 #upd{color:var(--acc);border-color:var(--acc-soft)}#upd:hover{background:var(--acc-soft);color:var(--hi)}
-#busy .bt{display:contents}#busy .bt:nth-child(n+3){display:none}   /* не більше двох рядків */                                        /* рядки однієї сітки: назви, відсотки й смужки стоять стовпчиками */
+#busy .bt{display:contents}#busy .bt:nth-child(n+4){display:none}   /* не більше трьох рядків */                                        /* рядки однієї сітки: назви, відсотки й смужки стоять стовпчиками */
 #busy .bt>b{color:var(--fg);font-weight:600}#busy .bt>span:not(.pb){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
 #busy .pb{height:4px;background:var(--s4);border-radius:2px;overflow:hidden}#busy .pb b{display:block;height:100%;width:0;background:var(--acc);transition:width .6s var(--ease)}
+#busy .bx{width:22px;height:20px;padding:0;display:grid;place-items:center;font-size:11px;color:var(--mut);border-color:transparent;background:none}#busy .bx:hover{color:var(--hi);background:var(--s3);border-color:var(--line2)}#busy .bx:disabled{opacity:.4}
 #busy i{width:10px;height:10px;border:2px solid var(--s4);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 /* базові контроли */
@@ -96,22 +97,25 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 /* редактор */
 #editor{grid-template-rows:1fr auto;min-height:0}
 .ed{display:grid;grid-template-columns:clamp(300px,22vw,560px) 1fr clamp(340px,25vw,620px);gap:8px;padding:8px 8px 6px;min-height:0}
-#layers{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible}
+.lcol{display:flex;flex-direction:column;gap:8px;min-height:0}
+#layers{display:flex;flex-direction:column;min-height:0;padding:0;overflow:visible;flex:1 1 auto}
+.lcol:has(#propsBox:not([hidden])) #layers{flex:0 1 auto;max-height:46%}   /* є що налаштовувати — список поступається місцем */
+#propsBox{flex:1 1 0;min-height:120px;padding:0}
 #layers .top{padding:10px 10px 8px}
 .el.kid{padding-left:24px}.el.kid .ic{background:none;color:var(--dim);width:14px}.el.kid .nm{color:var(--mut)}.el.kid.sel .nm{color:var(--hi)}
 .el.away .nm{color:var(--mut)}.el.away .ic{opacity:.45}.el .nm em{font-style:normal;font-size:11px;color:var(--acc);margin-left:6px}
 .el[draggable=true]{cursor:grab}.el[draggable=true]:active{cursor:grabbing}
 .el .nm em.dh{display:none}.el:hover .nm em.dh{display:inline}.el:hover .nm em.dh~small,.el:hover .nm em.dn{display:none}
 .elgrp{margin:8px 2px 2px;padding:8px 6px 2px;border-top:1px solid var(--line2);font-size:11px;font-weight:600;color:var(--mut);letter-spacing:.04em;text-transform:uppercase}
-#els{display:flex;flex-direction:column;gap:1px;padding:0 6px 8px;max-height:38%;overflow:auto;flex:none}
+#els{display:flex;flex-direction:column;gap:2px;padding:0 6px 8px;overflow:auto;flex:1 1 auto;min-height:0}
 .el{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:5px 6px 5px 8px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--fast)}
-.el:hover{background:var(--s2)}.el.sel{background:var(--s3);box-shadow:inset 2px 0 0 var(--acc)}
+.el:hover{background:var(--s2)}.el.sel{background:var(--s3);box-shadow:inset 0 0 0 1px var(--line2)}
 .el.off .nm{color:var(--dim)}.el.off .ic{filter:grayscale(1) brightness(.6)}
 .ic{width:22px;height:22px;border-radius:3px;display:inline-grid;place-items:center;font-size:12px;font-weight:700;color:#151413;flex:none}
 .el .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.el .nm small{color:var(--mut);margin-left:6px}
 .el .tl{display:flex;gap:1px;visibility:hidden}.el:hover .tl,.el.sel .tl{visibility:visible}
 .el .tl button{padding:1px 6px;background:none;border-color:transparent;color:var(--mut)}.el .tl button:hover{background:var(--s4);color:var(--hi)}
-#props{border-top:1px solid var(--line);padding:12px;overflow:auto;flex:1;min-height:0}
+#props{padding:12px}
 #props .hd{display:flex;align-items:center;gap:8px}#props .hd b{font-size:14px;font-weight:600;color:var(--hi)}
 #keys{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)}#keys.on{display:flex}
 #keys .kbox{width:min(880px,calc(100vw - 32px));max-height:86vh;overflow:auto;padding:18px 22px;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop)}
@@ -157,23 +161,24 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 #clips{display:flex;flex-direction:column;overflow:visible}
 #clips .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}#clips .head h3{margin:0}
 .split{display:flex}.split>button:first-child{flex:1;border-top-right-radius:0;border-bottom-right-radius:0}.split>button+button{border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid #c58f2c;padding:6px 12px}
-#list{flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:1px;margin-top:8px}
-.clip{display:grid;grid-template-columns:auto minmax(28px,auto) 64px 8px 64px 1fr auto auto;gap:5px;align-items:center;padding:5px 6px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--fast)}
-.clip:hover{background:var(--s2)}.clip.sel{background:var(--s3);box-shadow:inset 2px 0 0 var(--acc)}
-.clip .no{display:inline-grid;place-items:center;min-width:26px;height:20px;padding:0 6px;border-radius:10px;font-size:11.5px;font-weight:650;font-variant-numeric:tabular-nums;color:var(--mut);background:var(--s3);box-shadow:inset 0 0 0 1px var(--line2)}
-.clip[style*='--cc'] .no{background:var(--cc);color:var(--ci);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 2px rgba(0,0,0,.35)}
-.clip[style*='--cc']{background:linear-gradient(90deg,color-mix(in srgb,var(--cc) 14%,transparent),transparent 62%)}
-.clip[style*='--cc']:hover{background:linear-gradient(90deg,color-mix(in srgb,var(--cc) 20%,transparent),var(--s2) 62%)}
-.clip.sel[style*='--cc']{background:linear-gradient(90deg,color-mix(in srgb,var(--cc) 24%,var(--s3)),var(--s3) 62%)}
-.clip.off .no{opacity:.45}
-.clip.off b,.clip.off .d,.clip.off input.t{color:var(--dim)}
-.clip input[type=checkbox]{width:auto}
-.clip input.t{padding:3px 5px;font-variant-numeric:tabular-nums}.clip .d{color:var(--mut);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.clip button{padding:3px 7px}
+#list{flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.clip{display:grid;grid-template-columns:14px auto auto 1fr auto;column-gap:8px;row-gap:0;align-items:center;padding:5px 6px 5px 10px;border-radius:var(--r-sm);cursor:pointer;transition:background var(--fast)}
+.clip:hover{background:var(--s2)}.clip.sel{background:var(--s3);box-shadow:inset 0 0 0 1px var(--line2)}
+.clip .no{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 5px;border-radius:5px;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--mut);background:var(--s4)}
+.clip[style*='--cc'] .no{background:var(--cc);color:var(--ci)}
+.clip .tm{display:flex;align-items:center;gap:2px;color:var(--dim)}
+.clip input.t{width:62px;padding:2px 5px;background:transparent;border-color:transparent;font-variant-numeric:tabular-nums}
+.clip:hover input.t,.clip.sel input.t{border-color:var(--line)}.clip input.t:focus{background:var(--s1);border-color:var(--acc)}
+.clip .d{color:var(--mut);font-size:12px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clip .ac{display:flex;gap:1px;visibility:hidden}.clip:hover .ac,.clip.sel .ac{visibility:visible}
+.clip .ac button{padding:2px 6px;background:none;border-color:transparent;color:var(--mut)}.clip .ac button:hover{background:var(--s4);color:var(--hi)}
+.clip .why{grid-column:3/-1;color:var(--dim);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 0 1px 5px}
+.clip input[type=checkbox]{appearance:none;width:14px;height:14px;margin:0;padding:0;border:1.5px solid var(--line2);border-radius:4px;background:transparent;cursor:pointer}
+.clip input[type=checkbox]:checked{background:var(--acc) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.3 2.3 4.7-5' fill='none' stroke='%231b1712' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/10px no-repeat;border-color:var(--acc)}
+.clip.off .no{opacity:.45}.clip.off input.t,.clip.off .d{color:var(--dim)}
 
 .foot{border-top:1px solid var(--line);padding-top:10px;margin-top:8px}
 .foot .split .pri{padding:10px}
-.bar{height:4px;background:var(--s4);border-radius:2px;overflow:hidden;margin-top:8px}#prog{height:100%;width:0;background:var(--acc);transition:width .3s var(--ease)}
 #msg{color:var(--mut);margin-top:6px;min-height:18px;word-break:break-word}#msg.err{color:var(--red)}
 #rPop{right:0;left:0;bottom:calc(100% + 6px)}#sPop{left:0;bottom:calc(100% + 6px);width:300px;cursor:default}
 #aPop{left:0;bottom:calc(100% + 6px);width:240px;cursor:default}#aPop label:first-child{margin-top:0}#aPop .row input{text-align:center}
@@ -339,12 +344,14 @@ footer{padding:0 8px 8px}
 
 <section id="editor" class="view">
  <div class="ed">
-  <section class="panel anchor" id="layers">
+  <div class="lcol">
+   <section class="panel anchor" id="layers">
     <div class="top"><button class="pri wide" id="addEl">+ Додати елемент</button></div>
     <div class="pop" id="cat"></div>
     <div id="els"></div>
-    <div id="props"></div>
-  </section>
+   </section>
+   <section class="panel" id="propsBox" hidden><div id="props"></div></section>
+  </div>
 
   <section id="stage">
     <div class="tools">
@@ -371,7 +378,6 @@ footer{padding:0 8px 8px}
     <div class="foot">
       <div class="split anchor"><button class="pri" id="render">Зарендерити все</button><button class="pri" id="rSet" title="Якість відео" aria-label="Якість відео">⚙</button>
         <div class="pop" id="rPop"></div></div>
-      <div class="bar"><div id="prog"></div></div>
       <div id="msg" role="status" aria-live="polite"></div>
       <button id="open" class="wide" style="margin-top:6px;display:none">Відкрити папку</button>
     </div>
@@ -447,7 +453,7 @@ footer{padding:0 8px 8px}
 <script>
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
 const api = (p, b) => fetch(p, b === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)})
-  .then(async r => { const j = await r.json(); if (j && j.error) throw new Error(j.error); return j; });
+  .then(async r => { const j = await r.json(); if (j && j.error) throw new Error(j.error); if (j && j.aborted) throw Object.assign(new Error('Скасовано'), {cancelled: true}); return j; });
 const fmt = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0'); };
 const parse = s => s.trim().split(':').reduce((a, x) => a * 60 + parseFloat(x), 0);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -596,40 +602,74 @@ function save(now) {
   if (now) return go(); saveT = setTimeout(go, 400);
 }
 function travel(from, to) {
-  if (!from.length) return;
+  if (!from.length) return; multi.clear();
   to.push(curSnap); curSnap = from.pop(); Object.assign(P, JSON.parse(curSnap));
   sel = Math.min(sel, P.clips.length - 1); selCue = -1; selOwn = null; renderAll(); api('/api/project/save', {id: P.id, ...JSON.parse(curSnap)});
 }
 $('#undo').onclick = () => travel(undoSt, redoSt); $('#redo').onclick = () => travel(redoSt, undoSt);
 
-// ── скільки триватиме: оцінка за швидкістю цього ПК (сервер уточнює її після кожного запуску) ──
-const fmtDur = s => s < 60 ? `${Math.max(5, Math.round(s / 5) * 5)} с` : s < 3600 ? `${Math.round(s / 60)} хв` : `${Math.floor(s / 3600)} год ${Math.round(s % 3600 / 60)} хв`;
-const speed = () => cfg.speed || {scan: 5, stt: 10};
+// ── скільки ще чекати: зі справжнього поступу операції; швидкість цього ПК (сервер уточнює її після кожного запуску) — лише поки поступу ще немає ──
+const fmtDur = s => {
+  if (s < 60) return `${Math.max(5, Math.round(s / 5) * 5)} с`;
+  if (s < 600) { const r = Math.round(s / 10) * 10, m = Math.floor(r / 60), x = r % 60; return x ? `${m} хв ${x} с` : `${m} хв`; }
+  return s < 3600 ? `${Math.round(s / 60)} хв` : `${Math.floor(s / 3600)} год ${Math.round(s % 3600 / 60)} хв`;
+};
+const speed = () => ({scan: 5, stt: 10, llm: 20, render: 1, ...cfg.speed});
 const plans = {                                                   // етапи операції з очікуваною тривалістю, с
-  analyze: suggest => { const [a, b] = region(); return [['scan', (b - a) / speed().scan], ...(cfg.stt && suggest ? [['stt', (b - a) / speed().stt]] : [])]; },
+  analyze: (suggest, ai) => { const [a, b] = region(); return [['scan', (b - a) / speed().scan], ...(cfg.stt && suggest ? [['stt', (b - a) / speed().stt]] : []),
+    ...(cfg.stt && suggest && ai ? [['llm', (b - a) / speed().llm]] : [])]; },
   subs: () => { const [a, b] = region(); return [['stt', (b - a) * audioTracks / speed().stt]]; },   // кожна доріжка — окремо
+  render: clips => [['render', clips.reduce((s, c) => s + net(c) * (hookOk(c) || (c.loop != null && loopOk(c, c.loop)) ? 2 : 1), 0) / speed().render]],   // хук чи петля — кліп кодується двічі
 };
 const planTotal = p => p.reduce((s, [, e]) => s + e, 0);
 // кожна довга операція — свій рядок у індикаторі згори: паралельні аналіз і субтитри не перебивають одне одного
-async function busy(btn, label, plan, start, key) {
-  const task = key || Math.random().toString(36).slice(2), total = planTotal(plan), seen = {};
-  const row = document.createElement('div'); row.className = 'bt';
-  row.innerHTML = `<i></i><b>${esc(label)}</b><span></span><span class="pb"><b></b></span>`;
-  const txt = row.querySelector('span'), bar = row.querySelector('.pb b');
-  btn.disabled = true; $('#busy').append(row);
-  const show = s => {                                             // загальна частка й залишок по всіх етапах
-    const now = Date.now(), i = Math.max(0, plan.findIndex(p => p[0] === s.stage)), [, cur] = plan[i] || [, 0];
-    seen[i] ??= now; const elStage = (now - seen[i]) / 1000;
-    const fr = s.frac ?? clamp(elStage / Math.max(1, cur), 0, .95), etaCur = s.eta ?? Math.max(0, cur * (1 - fr));
-    const before = planTotal(plan.slice(0, i)), after = planTotal(plan.slice(i + 1));
-    const frac = clamp((before + fr * cur) / Math.max(1, total), 0, 1), eta = etaCur + after;
-    txt.textContent = `${s.text && s.text !== label ? s.text + ' · ' : ''}${Math.round(frac * 100)}% · ~${fmtDur(eta)}`;
-    bar.style.width = frac * 100 + '%';
+function eta(plan, t0) {                                          // стежить за операцією: show(стан від сервера) → [частка, залишок с або null, етап прострочено]
+  const seen = {}; let slow = 1, stageT = 0, lastFrac = 0, pct = 0;
+  return s => {
+    const now = Date.now(), i = plan.findIndex(p => p[0] === s.stage);
+    if (i >= 0 && seen[i] == null) {                              // новий етап: попередні йшли повільніше чи швидше, ніж зазвичай, — так піде й решта
+      seen[i] = stageT = now; const planned = planTotal(plan.slice(0, i));
+      if (i > 0 && planned > 1) slow = clamp((now - t0) / 1000 / planned, .2, 20);
+    }
+    if (s.frac != null && s.frac < lastFrac - .2) stageT = now;   // етап почав нову частину (скажімо, завантаження → робота)
+    if (s.frac != null) lastFrac = s.frac;
+    const elSt = (now - (stageT || t0)) / 1000, cur = i >= 0 ? plan[i][1] * slow : 0, after = i >= 0 ? planTotal(plan.slice(i + 1)) * slow : 0;
+    let rem;
+    if (s.eta != null) rem = s.eta;                                // сервер бачить, як швидко йде саме зараз
+    else if (s.frac > .03 && elSt > 3) rem = elSt * (1 - s.frac) / s.frac;
+    else if (i >= 0) rem = cur - elSt;                             // поступу ще немає — за швидкістю ПК; може вийти за межу
+    else if (!s.stage) rem = planTotal(plan) * slow - (now - t0) / 1000;
+    else rem = null;                                               // етап, якого немає в плані: чесно не знаємо
+    if (i >= 0) { const fr = s.frac ?? clamp(elSt / Math.max(1, cur), 0, .95); pct = clamp((planTotal(plan.slice(0, i)) * slow + fr * cur) / Math.max(1, planTotal(plan) * slow), pct, 1); }
+    else if (s.frac != null && plan.length < 2) pct = Math.max(pct, s.frac);
+    return [pct, rem == null ? null : rem + after, rem != null && rem <= 0];
   };
-  let live = true; show({});
-  const iv = setInterval(async () => { const s = (await api('/api/status').catch(() => ({}))).tasks?.[task] || {}; if (live) show(s); }, 700);  // запізніла відповідь не перезапише рядок
+}
+// кожна довга операція — свій рядок у індикаторі згори; cancel — з кнопкою «Скасувати»
+async function busy(btn, label, plan, start, key, cancel) {
+  const task = key || uid(), t0 = Date.now(), track = eta(plan, t0);
+  const row = document.createElement('div'); row.className = 'bt';
+  row.innerHTML = `<i></i><b>${esc(label)}</b><span></span><span class="pb"><b></b></span>${cancel ? '<button class="bx" title="Скасувати" aria-label="Скасувати">✕</button>' : '<span></span>'}`;
+  const txt = row.querySelector('span'), bar = row.querySelector('.pb b'), bx = row.querySelector('.bx');
+  let live = true, stopping = false, last = {}, deadline = 0;
+  if (bx) bx.onclick = () => { stopping = true; bx.disabled = true; txt.textContent = 'Скасовую…'; api('/api/cancel', {key: task}).catch(() => {}); };
+  btn.disabled = true; $('#busy').append(row);
+  const show = () => {                                            // залишок відлічується щосекунди, а не стрибає з кожною відповіддю
+    if (!live || stopping) return;
+    const now = Date.now(), [frac, left, late] = track(last), head = last.text && last.text !== label ? last.text + ' · ' : '';
+    let when;
+    if (left == null || late) { deadline = 0; when = `${late ? 'довше, ніж зазвичай · ' : ''}минуло ${fmtDur((now - t0) / 1000)}`; }
+    else {
+      const target = now + left * 1000;
+      if (!deadline || Math.abs(target - deadline) > Math.max(5000, left * 150)) deadline = target;   // нова оцінка помітно інша — беремо її
+      const l = (deadline - now) / 1000; when = l < 3 ? 'ще трохи' : `ще ~${fmtDur(l)}`;
+    }
+    txt.textContent = `${head}${Math.round(frac * 100)}% · ${when}`; bar.style.width = frac * 100 + '%';
+  };
+  show(); const tick = setInterval(show, 1000);
+  const iv = setInterval(async () => { const s = (await api('/api/status').catch(() => ({}))).tasks?.[task]; if (live && s) { last = s; show(); } }, 1000);   // запізніла відповідь не перезапише рядок
   try { return await start(task); } finally {
-    live = false; clearInterval(iv); row.remove(); btn.disabled = false;
+    live = false; clearInterval(iv); clearInterval(tick); row.remove(); btn.disabled = false;
   }
 }
 function showRegionLabel() {                                      // скільки чекати — лише в індикаторі згори
@@ -685,7 +725,7 @@ $('#mreveal').onclick = () => api('/api/reveal', {path: $('#mv').dataset.path});
 
 async function openProject(p) {
   await api('/api/project/open', {id: p.id});
-  P = p; migrateMusic(); sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
+  P = p; multi.clear(); migrateMusic(); sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
   const oldLang = subsEls()[0]?.lang;                                // мова й слів на екрані були в елементі «Субтитри» — тепер біля генерації
   if (oldLang && ['uk', 'en'].includes(oldLang) && !cfg.stt_lang) { cfg.stt_lang = oldLang; api('/api/config', {stt_lang: oldLang}).catch(() => {}); }
   $('#pname').value = P.name; resetHist(); renderAll(); loadVideo();
@@ -750,7 +790,7 @@ function readControl(t, cur) {                                    // значе�
 }
 
 // ── шари й налаштування вибраного ──
-let listClip = null, dragEl = null, dropAt = null;
+let listClip = null, dragEl = null, dropAt = null, multi = new Set();   // multi — вибране лассо: кліпи й репліки
 const fullSeg = (el, c) => { const left = el.type === 'music' ? (el.dur || 1e9) - (el.off || 0) : 1e9; return [[0, left < net(c) - .05 ? Math.max(.2, left) : 0]]; };
 let impProjects = [];
 async function openImport() {
@@ -883,7 +923,7 @@ function setEverywhere(el, on) {                                  // у всіх
 const propTarget = () => selOwn || elById(selEl);                 // що редагує панель: елемент (для всіх кліпів) чи вибраний екземпляр
 function renderProps() {
   const g = elById(selEl), el = propTarget(), box = $('#props');
-  if (!el) { box.innerHTML = ''; return; }
+  $('#propsBox').hidden = !el; if (!el) { box.innerHTML = ''; return; }
   const Ty = TYPES[el.type], kid = selOwn && kidsOf(g).find(k => k.o === selOwn);
   box.innerHTML = `<div class="hd"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span><b>${Ty.name}</b>${kid ? `<small class="mut">${esc(kid.label)}</small>` : ''}</div>` +
     Ty.props.filter(([k, , , , cond]) => (!cond || cond(el)) && (!kid?.q || SUB_STYLE.includes(k))).map(([k, kind, label, opt]) => control(el, k, kind, label, opt)).join('');
@@ -1074,8 +1114,9 @@ function momentsNote(found, [ra, rb]) {                          // чому з�
 async function analyze(suggest) {
   if (!P || !P.video) return msg('Спершу обери відео', 1);
   const proj = P, body = {video: P.video, region: region(), suggest, lang: cfg.stt_lang || ''}; msg('');
+  const ai = cfg.stt && suggest && (await api('/api/ai').catch(() => ({}))).model;   // є локальний ШІ — буде ще етап пошуку моментів за змістом
   try {
-    await forProject(proj, 'analyze', () => busy($('#reanalyze'), tag('Аналіз', proj), plans.analyze(suggest), task => api('/api/analyze', {...body, task})), (pr, r, open) => {
+    await forProject(proj, 'analyze', () => busy($('#reanalyze'), tag('Аналіз', proj), plans.analyze(suggest, ai), task => api('/api/analyze', {...body, task}), null, true), (pr, r, open) => {
       pr.region = r.region; pr.scan = {region: r.region, step: r.step, curve: r.curve}; cfg.speed = r.speed;
       if (suggest && r.clips.length) {
         const [ra, rb] = r.region;                                   // нові моменти замінюють лише ті, що в області; нічого не знайшли — старі лишаються
@@ -1085,7 +1126,7 @@ async function analyze(suggest) {
       if (open) { showScan(pr.scan); sel = -1; renderList(); msg(note, bad); } else if (note) msg(`${projName(pr)}: ${note}`, bad);
       return ['region', 'scan', 'clips'];
     });
-  } catch (e) { msg(`Помилка аналізу (${projName(proj)}): ` + e.message, 1); }
+  } catch (e) { e.cancelled ? msg('Аналіз скасовано') : msg(`Помилка аналізу (${projName(proj)}): ` + e.message, 1); }
 }
 $('#reanalyze').onclick = () => analyze(true);
 async function makeSubs() {
@@ -1095,7 +1136,7 @@ async function makeSubs() {
     const l = m.at(-1); if (l && s[0] <= l[1]) l[1] = Math.max(l[1], s[1]); else m.push([...s]); return m; }, []);
   const inSpans = c => spans.some(([a, b]) => c.a < b && c.b > a), body = {video: P.video, region: region(), spans, words: cfg.sub_words || 3, lang: cfg.stt_lang || ''};
   try {
-    await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task})), (pr, r, open) => {
+    await forProject(proj, 'subs', () => busy($('#mkSubs'), tag('Субтитри', proj), plans.subs(), task => api('/api/subs', {...body, task}), null, true), (pr, r, open) => {
       cfg.speed = r.speed;
       if (r.tracks > 1) {                                             // доріжка = спікер = свій елемент «Субтитри»; бракує — додаємо
         const first = subsEls(pr.elements)[0]; if (first && !first.name) first.name = 'Доріжка 1';
@@ -1107,12 +1148,12 @@ async function makeSubs() {
       if (open) { renderEls(); selCue = -1; msg(`Субтитри: ${note}`, !r.cues.length); } else msg(`${projName(pr)}: субтитри — ${note}`, !r.cues.length);
       return ['cues', 'elements'];
     });
-  } catch (e) { msg(`Субтитри (${projName(proj)}): ` + e.message, 1); }
+  } catch (e) { e.cancelled ? msg('Субтитри скасовано') : msg(`Субтитри (${projName(proj)}): ` + e.message, 1); }
 }
 $('#mkSubs').onclick = makeSubs;
 $('#toRegion').onclick = () => { if (P && dur) { const [a, b] = region(), pad = (b - a) * .03; view = {t0: a - pad, t1: b + pad}; clampView(); } };
 function selectCue(j, jump = true) {
-  selCue = j; if (j >= 0) focus = 'cue'; if (j >= 0) sel = -1; renderList(); const c = P.cues[j];
+  multi.clear(); selCue = j; if (j >= 0) focus = 'cue'; if (j >= 0) sel = -1; renderList(); const c = P.cues[j];
   $('#cueEdit').classList.toggle('on', !!c); if (c) { paintCue(c); if (jump) seek(c.a); }
 }
 function addCue(t, row = 0) {
@@ -1218,14 +1259,15 @@ $('#cueDel').onclick = () => { if (selCue < 0) return; P.cues.splice(selCue, 1);
 
 // ── список кліпів ──
 const inkOn = hex => { const n = parseInt(hex.slice(1), 16); return .2126 * (n >> 16) + .7152 * (n >> 8 & 255) + .0722 * (n & 255) > 140 ? '#17140f' : '#fff'; };   // цифра, що читається на кольорі кліпу
-const info = c => clipLen(c).toFixed(1) + ' с' + (c.score != null ? ' · ' + c.score.toFixed(1) : '') + (c.why ? ' · ' + c.why : '');
+const info = c => clipLen(c).toFixed(1) + ' с';
 function renderList() {
   if (!P) return;
-  $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc(c.why)}"${c.col ? ` style="--cc:${c.col};--ci:${inkOn(c.col)}"` : ''}>
-    <input type="checkbox" data-f="on" ${c.on ? 'checked' : ''} aria-label="Рендерити"><b class="no">${i + 1}</b>
-    <input class="t" data-f="a" value="${fmt(c.a)}" aria-label="Початок"><span>–</span><input class="t" data-f="b" value="${fmt(c.b)}" aria-label="Кінець">
-    <span class="d">${esc(info(c))}</span>
-    <button data-act="play" class="ghost" title="Програти" aria-label="Програти">▶</button><button data-act="del" class="ghost" title="Видалити" aria-label="Видалити">✕</button></div>`).join('')
+  $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel || multi.has(c) ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc([c.why, c.score != null ? `оцінка ${c.score.toFixed(1)}` : ''].filter(Boolean).join(' · '))}"${c.col ? ` style="--cc:${c.col};--ci:${inkOn(c.col)}"` : ''}>
+    <input type="checkbox" data-f="on" ${c.on ? 'checked' : ''} aria-label="Рендерити" title="Рендерити"><b class="no">${i + 1}</b>
+    <span class="tm"><input class="t" data-f="a" value="${fmt(c.a)}" aria-label="Початок"><span>–</span><input class="t" data-f="b" value="${fmt(c.b)}" aria-label="Кінець"></span>
+    <span class="d">${info(c)}</span>
+    <span class="ac"><button data-act="play" title="Програти" aria-label="Програти">▶</button><button data-act="del" title="Видалити" aria-label="Видалити">✕</button></span>
+    ${c.why ? `<small class="why">${esc(c.why)}</small>` : ''}</div>`).join('')
     || '<p class="mut">Кліпів ще немає</p>';
   $('#count').textContent = P.clips.length ? `· ${P.clips.filter(c => c.on).length}/${P.clips.length}` : '';
 }
@@ -1235,7 +1277,7 @@ function updateRow(i) {
 }
 function commit() { const cur = P.clips[sel]; P.clips.sort((x, y) => x.a - y.a); sel = P.clips.indexOf(cur); renderList(); renderProps(); save(); }
 function select(i, focus) {
-  sel = i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
+  multi.clear(); sel = i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
   if (focus && P.clips[i]) { const c = P.clips[i], pad = Math.max(5, (c.b - c.a) * .3); view = {t0: Math.max(0, c.a - pad), t1: Math.min(dur, c.b + pad)}; seek(c.a); }
 }
 let playSeq = null;                                               // програвання шорту шматками: хук, з петлі до кінця, з початку до петлі
@@ -1305,12 +1347,12 @@ document.onkeydown = e => {
     Delete: removeSel, Backspace: removeSel,
   }[k];
   if (act) { e.preventDefault(); act(); }
-  else if (e.code === 'Escape') { selEl = null; selOwn = null; sel = -1; selectCue(-1); renderEls(); renderList(); }
+  else if (e.code === 'Escape') { selEl = null; selOwn = null; sel = -1; selectCue(-1); multi.clear(); renderEls(); renderList(); }
   else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); seek(t + (e.code === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 5 : 1)); }
 };
 // ── що вибрано останнім (елемент, кліп чи репліка) — з тим і працюють Del / Ctrl+C / Ctrl+V / Ctrl+D ──
 let focus = 'clip', clipboard = null;
-const KEEPS_ELEMENT = '#layers,#pv,#ctx,#cropBar,#tour,#modal';   // кліки тут працюють з вибраним елементом; деінде — знімають вибір
+const KEEPS_ELEMENT = '#layers,#propsBox,#pv,#ctx,#cropBar,#tour,#modal';   // кліки тут працюють з вибраним елементом; деінде — знімають вибір
 document.addEventListener('pointerdown', e => {                   // capture: смужка на таймлайні вибере свій елемент уже після цього
   if (!selEl || e.target.closest(KEEPS_ELEMENT)) return;
   selEl = null; selOwn = null; renderEls();
@@ -1319,7 +1361,7 @@ document.addEventListener('pointerdown', e => {                   // клік д
   if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
   selCue = -1; $('#cueEdit').classList.remove('on'); drawTL();
 }, true);
-$('#layers').addEventListener('pointerdown', () => { focus = 'el'; selBar = null; }); pv.addEventListener('pointerdown', () => { focus = 'el'; selBar = null; });
+for (const id of ['#layers', '#propsBox']) $(id).addEventListener('pointerdown', () => { focus = 'el'; selBar = null; }); pv.addEventListener('pointerdown', () => { focus = 'el'; selBar = null; });
 $('#list').addEventListener('pointerdown', () => focus = 'clip');
 let selBar = null;                                                // шматок елемента, вибраний на таймлайні: {c, k}
 const elClip = () => selBar?.c || clipAt(vid.currentTime) || (P.clips.length ? ctxClip() : null);
@@ -1364,6 +1406,7 @@ function hideFrom(el, c, rel) {
 }
 const setRegionEdge = (edge, t = vid.currentTime) => { const [a, b] = region(), g = Math.min(10, dur); setRegion(edge === 'a' ? [Math.min(t, b - g), b] : [a, Math.max(t, a + g)]); };
 function removeSel() {
+  if (multi.size) return deleteMulti();
   if (focus === 'cue' && selCue >= 0) return $('#cueDel').click();
   if (focus === 'el' && selEl) { const el = elById(selEl); if (!removeFromClip(el)) deleteEl(el); return; }
   if (P.clips[sel]) { P.clips.splice(sel, 1); sel = -1; commit(); }
@@ -1737,7 +1780,7 @@ function drawTL() {
   if (!P.clips.length) { tx.font = font(clamp(Math.round(CUE * .5), 12, 17)); tx.fillStyle = PAL.tick; tx.fillText('кліпи · Shift + перетягування — новий кліп, або «Знайти моменти»', 8, (CTOP + cb) / 2 + 5); }
   P.clips.forEach((c, i) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
-    const s = i === sel, ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
+    const s = i === sel || multi.has(c), ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
     rr(x0, CTOP, x1 - x0, cb - CTOP, 0); tx.fillStyle = !c.on ? PAL.offDk : c.col ? mixHex(c.col, PAL.bg, s ? .45 : .6) : s ? PAL.accDk : PAL.blueDk; tx.fill();
     tx.strokeStyle = col; tx.lineWidth = s ? 2 : 1; tx.stroke();
     for (const [u, v] of c.cut || []) {
@@ -1797,11 +1840,11 @@ function drawTL() {
   });
   P.cues.forEach((c, j) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
-    const y = cueY + rowOf(c) * CUE, col = cueOwner(c)?.color || '#ffffff';
-    rr(x0 + 1, y + 1, x1 - x0 - 2, CUE - 2, 0); tx.fillStyle = mixHex(col, PAL.bg, j === selCue ? .55 : .78); tx.fill();
-    tx.strokeStyle = j === selCue ? PAL.acc : mixHex(col, PAL.bg, .35); tx.lineWidth = j === selCue ? 2 : 1; tx.stroke();
+    const y = cueY + rowOf(c) * CUE, col = cueOwner(c)?.color || '#ffffff', on = j === selCue || multi.has(c);
+    rr(x0 + 1, y + 1, x1 - x0 - 2, CUE - 2, 0); tx.fillStyle = mixHex(col, PAL.bg, on ? .55 : .78); tx.fill();
+    tx.strokeStyle = on ? PAL.acc : mixHex(col, PAL.bg, .35); tx.lineWidth = on ? 2 : 1; tx.stroke();
     if (x1 - x0 > 14) {                                           // ручки на краях, як у кліпів: за них тягнуть межі репліки
-      tx.fillStyle = j === selCue ? PAL.acc : mixHex(col, '#ffffff', .15);
+      tx.fillStyle = on ? PAL.acc : mixHex(col, '#ffffff', .15);
       tx.fillRect(x0 + 1, y + 5, 3, CUE - 10); tx.fillRect(x1 - 4, y + 5, 3, CUE - 10);
     }
     const t = vid.currentTime, w = wordsOf(c), ink = mixHex(col, '#ffffff', .4), text = (s, a, b, at) => {
@@ -1816,6 +1859,10 @@ function drawTL() {
   // межі області — на всю висоту, ручки на шкалі
   tx.fillStyle = PAL.acc; tx.fillRect(xa - 1, 0, 2, TH); tx.fillRect(xb - 1, 0, 2, TH);
   for (const [x, nm] of [[xa, 'a'], [xb, 'b']]) { rr(x - 5, 0, 10, TICK + 6, 0); tx.fillStyle = drag && drag.region === nm ? '#fff' : PAL.acc; tx.fill(); }
+  if (drag?.lasso && drag.moved) {                                 // рамка лассо
+    const [ax, ay, bx, by] = drag.lasso; rr(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay), 2);
+    tx.fillStyle = PAL.acc + '1f'; tx.fill(); tx.strokeStyle = PAL.acc; tx.lineWidth = 1; tx.stroke();
+  }
   if (drag && guide != null) { tx.strokeStyle = PAL.guide; tx.setLineDash([4, 3]); tx.beginPath(); tx.moveTo(X(guide), 0); tx.lineTo(X(guide), TH); tx.stroke(); tx.setLineDash([]); }
   const p = X(vid.currentTime); tx.fillStyle = PAL.play; tx.fillRect(p - 1, TICK - 2, 2, TH);   // курсор з ручкою на шкалі
   tx.beginPath(); const kw = 7; tx.moveTo(p - kw, 2); tx.lineTo(p + kw, 2); tx.lineTo(p + kw, TICK - kw + 1); tx.lineTo(p, TICK); tx.lineTo(p - kw, TICK - kw + 1); tx.closePath(); tx.fill();
@@ -1916,7 +1963,7 @@ tl.onpointerdown = e => {
   tl.setPointerCapture(e.pointerId);
   if (e.button === 1) { e.preventDefault(); drag = {pan: e.offsetX, v: {...view}}; tl.style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
-  drag = hit(e.offsetX, e.offsetY); drag.x0 = e.offsetX;
+  drag = hit(e.offsetX, e.offsetY); drag.x0 = e.offsetX; multi.clear();
   if (drag.bar) selBar = drag.seg != null ? {c: drag.c, k: drag.seg} : null;
   focus = drag.bar ? 'el' : drag.cue != null ? 'cue' : drag.i != null ? 'clip' : focus;
   const t = Tt(e.offsetX), inLane = e.offsetY >= TICK + 2 && e.offsetY < geo().cueY;
@@ -1935,6 +1982,7 @@ tl.onpointerdown = e => {
   }
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
+  if (drag.seek && !drag.scrub) { drag = {lasso: [e.offsetX, e.offsetY, e.offsetX, e.offsetY], t: snap(t, 'ph')}; return; }   // порожнє місце: клік — курсор сюди, тягни — лассо
   if (drag.seek) seek(snap(t, 'ph'));
   else if (drag.cue != null) selectCue(drag.cue, false);           // курсор лишається там, де був: B розріже саме там
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
@@ -1950,6 +1998,8 @@ tl.addEventListener('drop', e => { e.preventDefault(); const el = elById(dragEl)
 tl.oncontextmenu = e => {
   e.preventDefault(); if (!P || !dur) return;
   const t = clamp(Tt(e.offsetX), 0, dur), h = hit(e.offsetX, e.offsetY), inCues = e.offsetY >= geo().cueY;
+  if (multi.has(P.clips[h.i]) || multi.has(P.cues[h.cue])) return openMenu(e, multiMenu());   // ПКМ по вибраному лассо — дії з усім разом
+  multi.clear();
   openMenu(e, h.cue != null ? cueMenu(h.cue, t) : h.bar ? [...segItems(h.bar, h.c, t, h.seg), ...elMenu(h.bar, t, 'звідси')] : h.i != null ? clipMenu(h.i, t, 'тут') : laneMenu(t, inCues, inCues ? spAt(e.offsetY) : 0));
 };
 tl.onpointermove = e => {
@@ -1962,6 +2012,11 @@ tl.onpointermove = e => {
   if (drag.hook) {
     if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return; drag.moved = true; delete drag.hook.loop;   // хук замість петлі
     const c = drag.hook, t = clamp(snap(clamp(Tt(e.offsetX), 0, dur), c), c.a, c.b); c.hook = [Math.min(drag.t0, t), Math.max(drag.t0, t)]; return;
+  }
+  if (drag.lasso) {
+    drag.lasso[2] = e.offsetX; drag.lasso[3] = e.offsetY;
+    if (!drag.moved && Math.hypot(e.offsetX - drag.lasso[0], e.offsetY - drag.lasso[1]) < 5) return;
+    drag.moved = true; return lassoPick(drag.lasso);
   }
   if (drag.pan != null) { const d = (e.offsetX - drag.pan) / TW * (drag.v.t1 - drag.v.t0); view.t0 = drag.v.t0 - d; view.t1 = drag.v.t1 - d; return clampView(); }
   const raw = clamp(Tt(e.offsetX), 0, dur), g = Math.min(10, dur);
@@ -2009,6 +2064,7 @@ tl.onpointermove = e => {
 };
 tl.addEventListener('pointermove', e => { snapOff = !!drag && e.ctrlKey && drag.regionNew == null; }, true);
 tl.onpointerup = e => {
+  if (drag && drag.lasso) { const {moved, t} = drag; drag = null; return moved ? lassoDone() : seek(t); }
   if (drag && drag.hook) {
     const c = drag.hook;
     if (!drag.moved) { if (loopOk(c, drag.t0)) { c.loop = drag.t0; delete c.hook; } }   // петля замість хука: або те, або те
@@ -2273,6 +2329,33 @@ function migrateMusic() {                                         // музик�
   }
   P.music = [];
 }
+// ── лассо: кілька кліпів і реплік разом ──
+function lassoPick([ax, ay, bx, by]) {                            // що зачепила рамка: кліпи — у своєму рядку, репліки — у своїх
+  const {cb, cueY} = geo(), t0 = Tt(Math.min(ax, bx)), t1 = Tt(Math.max(ax, bx)), y0 = Math.min(ay, by), y1 = Math.max(ay, by);
+  const hitT = x => x.b > t0 && x.a < t1;
+  multi = new Set([...(y0 < cb && y1 > CTOP ? P.clips.filter(hitT) : []),
+    ...P.cues.filter(q => { const y = cueY + rowOf(q) * CUE; return hitT(q) && y0 < y + CUE && y1 > y; })]);
+  renderList();
+}
+function lassoDone() {                                            // одне — звичайний вибір; кілька — вибране лассо
+  const [one] = multi;
+  if (multi.size === 1) return P.clips.includes(one) ? (focus = 'clip', select(P.clips.indexOf(one))) : selectCue(P.cues.indexOf(one), false);
+  sel = -1; selCue = -1; $('#cueEdit').classList.remove('on'); focus = multi.size ? 'multi' : focus; renderList(); renderProps();
+}
+function deleteMulti() {
+  P.clips = P.clips.filter(c => !multi.has(c)); P.cues = P.cues.filter(q => !multi.has(q));
+  multi.clear(); sel = -1; selCue = -1; $('#cueEdit').classList.remove('on'); renderEls(); commit();
+}
+function moveCues(qs, el) { for (const q of qs) q.sid = el.id; renderEls(); fitTL(); save(); }
+function multiMenu() {
+  const cl = P.clips.filter(c => multi.has(c)), qs = P.cues.filter(q => multi.has(q));
+  return [{hd: `Вибрано: ${[cl.length && plural(cl.length, 'кліп', 'кліпи', 'кліпів'), qs.length && plural(qs.length, 'репліка', 'репліки', 'реплік')].filter(Boolean).join(', ')}`},
+    ...(qs.length ? [{hd: 'Перенести репліки до спікера'}, ...subsEls().map((s, r) => ({label: subName(s, r), on: qs.every(q => cueOwner(q) === s), run: () => moveCues(qs, s)})),
+      {label: 'Новий спікер', run: () => { const from = cueOwner(qs[0]) || ensureSubs(); if (!from.name) from.name = 'Спікер 1'; moveCues(qs, addSubsEl(P.elements, '', from)); }}, '-'] : []),
+    ...(cl.length ? [{label: cl.every(c => c.on) ? 'Не рендерити ці кліпи' : 'Рендерити ці кліпи', run: () => { const v = !cl.every(c => c.on); cl.forEach(c => c.on = v); commit(); }},
+      {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: cl.every(c => (c.col || null) === col), run: () => { cl.forEach(c => c.col = col || undefined); commit(); }}))}, '-'] : []),
+    {label: 'Видалити вибране', key: 'Del', run: deleteMulti}];
+}
 function moveCue(q, el) { q.sid = el.id; selectCue(P.cues.indexOf(q), false); renderEls(); fitTL(); drawTL(); save(); }
 function cueMenu(j, t) {
   const q = P.cues[j], nx = P.cues.slice(j + 1).find(c => rowOf(c) === rowOf(q)); selectCue(j, false);
@@ -2394,7 +2477,7 @@ pv.oncontextmenu = e => {
   openMenu(e, cropMenu(cropHit(p).el));
 };
 $('#els').oncontextmenu = e => { const r = e.target.closest('.el'); if (r) openMenu(e, elMenu(elById(r.dataset.id))); };
-$('#list').oncontextmenu = e => { const r = e.target.closest('.clip'); if (r && !e.target.matches('input')) openMenu(e, clipMenu(+r.dataset.i, vid.currentTime, 'на курсорі')); };
+$('#list').oncontextmenu = e => { const r = e.target.closest('.clip'); if (r && !e.target.matches('input')) openMenu(e, multi.has(P.clips[+r.dataset.i]) ? multiMenu() : clipMenu(+r.dataset.i, vid.currentTime, 'на курсорі')); };
 $('#rbar').oncontextmenu = e => { if (P && dur && e.target.closest('#rband,#ract') && !e.target.matches('input')) openMenu(e, regionItems(clamp(Tt(barX(e)), 0, dur))); };
 
 // ── рендер ──
@@ -2405,20 +2488,22 @@ $('#render').onclick = async () => {
   try {
     await save(true);
     const {path} = await api('/api/pick_dir', {id: P.id}); if (!path) return;   // закрили діалог — рендеру немає (і випадковий клік нічого не запускає)
-    await api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues, music: P.music, out: path}); poll();
+    msg(''); $('#open').style.display = 'none';
+    await rendering(plans.render(list.filter(c => c.on)), task => api('/api/render', {id: P.id, clips: list, elements: P.elements, cues: P.cues, music: P.music, out: path, task}));
   } catch (e) { msg(e.message, 1); }
 };
 let outDir = '';
 $('#open').onclick = () => api('/api/reveal', {path: outDir});
-async function poll() {
-  const j = await api('/api/status'); outDir = j.out;
-  $('#render').disabled = j.running;
-  $('#prog').style.width = (j.n ? ((Math.max(0, j.i - 1) + j.pct) / j.n) * 100 : 0) + '%';
-  if (j.err) msg('Помилка рендеру: ' + j.err, 1);
-  else if (j.running) msg(`Рендер ${j.i} з ${j.n}…`);
-  else if (j.n) { msg(`Готово: ${j.n} шт. у ${j.out}`); $('#prog').style.width = '100%'; }
-  $('#open').style.display = !j.running && j.out && !j.err ? 'block' : 'none';
-  if (j.running) setTimeout(poll, 500);
+async function rendering(plan, start, key) {                      // рядок «Рендер» згори, поки сервер рендерить; потім — підсумок
+  const j = await busy($('#render'), 'Рендер', plan, async task => {
+    await start(task);
+    for (;;) { await new Promise(r => setTimeout(r, 700)); const s = await api('/api/status').catch(() => null); if (s && !s.running) return s; }
+  }, key, true);
+  outDir = j.out;
+  if (j.cancelled) msg(`Рендер скасовано${j.out ? ' · готові кліпи лишились у теці' : ''}`);
+  else if (j.err) msg('Помилка рендеру: ' + j.err, 1);
+  else msg(`Готово: ${j.n} шт. у ${j.out}`);
+  $('#open').style.display = j.out && !j.err ? 'block' : 'none';
 }
 
 // ── міні-туторіал: підсвічує місце й пояснює фішку; сам запускається при першому відкритті редактора ──
@@ -2470,7 +2555,7 @@ const KEYS = [
     ['I', 'початок області аналізу'], ['O', 'кінець області аналізу'], ['Alt+перетягування', 'вирізати шматок кліпу']]],
   ['Створити', [['N', 'новий кліп'], ['M', 'музика в кліп'], ['Shift+перетягування', 'новий кліп; у рядку реплік — репліка'], ['Ctrl+перетягування', 'нова область аналізу'],
     ['Рядок зі списку на кліп', 'додати елемент у кліп']]],
-  ['Вибране', [['Del', 'прибрати з кліпу (той, що в усіх кліпах, — сховати тут)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
+  ['Вибране', [['Перетягування по порожньому місцю таймлайна', 'лассо: кілька кліпів і реплік — ПКМ по них дає дії з усіма разом'], ['Del', 'прибрати з кліпу (той, що в усіх кліпах, — сховати тут)'], ['Ctrl+Del', 'видалити елемент повністю'], ['Ctrl+C / Ctrl+V', 'копіювати / вставити'], ['Ctrl+D', 'дублювати'],
     ['H', 'сховати / показати елемент'], ['G', 'глобальний у цьому кліпі чи репліці / свої налаштування'], ['] / [', 'шар вище / нижче'], ['Shift+] / Shift+[', 'на передній / задній план'], ['Esc', 'зняти вибір']]],
   ['Кліпи й репліки', [['Правий Alt+клік по кліпу', 'петля: шорт почнеться звідси, а початок кліпу піде в кінець'], ['Правий Alt+перетягування', 'хук: цей шматок повториться на самому початку шорту'], ['Ctrl+B / Ctrl+I / Ctrl+U', 'форматування виділених слів репліки'], ['R', 'рендерити кліп чи ні'], ['Z', 'наблизити кліп'], ['J', 'об\'єднати репліку з наступною'], ['Enter', 'редагувати текст репліки']]],
   ['Перетягування', [['Ctrl', 'без прилипання'], ['Shift', 'зберегти пропорції в прев\'ю'], ['Колесо', 'масштаб таймлайна чи прев\'ю'], ['Затиснуте колесо', 'рухати прев\'ю'], ['Права кнопка', 'усі дії з тим, що під курсором']]],
@@ -2526,7 +2611,7 @@ function renderAll() { renderEls(); renderList(); renderCanvasBar(); fitCanvas()
   api('/api/fonts').then(f => $('#fontlist').innerHTML = f.map(n => `<option value="${esc(n)}">`).join(''));
   if (cfg.project) { const p = await api('/api/project?id=' + cfg.project).catch(() => null); if (p) await openProject(p); }
   show('home'); fitTL();
-  if (s.job.running) poll();
+  if (s.job.running) rendering([['render', 60]], async () => {}, s.job.task).catch(() => {});   // вікно відкрили під час рендеру
 })();
 </script>
 <script src="/publish.js"></script>

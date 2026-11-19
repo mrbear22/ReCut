@@ -39,7 +39,7 @@ SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без 
 CFG_FILE = DATA / "settings.json"
 CANVAS = (1080, 1920)                                             # полотно за замовчуванням (9:16); проєкт може мати своє
 CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), port=8765,
-           speed=dict(scan=5.0, stt=10.0))          # секунд відео за секунду роботи; уточнюється після кожного запуску
+           speed=dict(scan=5.0, stt=10.0, llm=20.0, render=1.0))   # секунд відео за секунду роботи; уточнюється після кожного запуску
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
 STT_MODELS, OLLAMA = {"large-v3-turbo": 1.62e9, "large-v3": 3.09e9}, "http://127.0.0.1:11434/api/"   # модель розпізнавання -> розмір
@@ -49,7 +49,7 @@ ENC = {"nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "{q
        "amf":   ["-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "{q}", "-qp_p", "{q}", "-pix_fmt", "yuv420p"],
        "qsv":   ["-c:v", "h264_qsv", "-preset", "slow", "-global_quality", "{q}", "-pix_fmt", "nv12"],
        "cpu":   ["-c:v", "libx264", "-preset", "medium", "-crf", "{q}", "-pix_fmt", "yuv420p"]}
-HW, JOB = [], dict(running=False, i=0, n=0, pct=0.0, err="", out="", id="", project="")
+HW, JOB = [], dict(running=False, n=0, err="", out="", id="", project="", task="", cancelled=False)
 PAGES, STARTED = {}, time.time()                                 # відкриті вікна: id → коли востаннє озивалось
 TASKS, CUR = {}, threading.local()                             # поступ кожної довгої операції окремо: ключ задає інтерфейс у запиті
 LOCK, STT_LOCK, PICKED = threading.Lock(), threading.Lock(), set()
@@ -65,13 +65,45 @@ def report_as(task, stage, text, frac=None, t0=None):
     el = time.time() - t0 if t0 else 0
     TASKS[task] = dict(stage=stage, text=text, frac=frac, eta=el * (1 - frac) / frac if frac and frac > .03 and t0 else None)
 
-def report(stage, text, frac=None, t0=None): report_as(getattr(CUR, "task", None) or "other", stage, text, frac, t0)
+class Cancelled(Exception): """Користувач натиснув «Скасувати»."""
+CANCEL = set()                                                   # ключі операцій, які скасували
+
+def check():
+    """Скасували поточну операцію — перериваємо її (довгі цикли питають це разом із поступом)."""
+    if getattr(CUR, "task", None) in CANCEL: raise Cancelled()
+
+def report(stage, text, frac=None, t0=None): check(); report_as(getattr(CUR, "task", None) or "other", stage, text, frac, t0)
+
+def waiting(fn, *a, **kw):
+    """Довгий виклик, якого не перервати зсередини (запит до ШІ): чекаємо у фоні й тим часом перевіряємо, чи не скасували."""
+    out = {}
+    def go():
+        try: out["r"] = fn(*a, **kw)
+        except BaseException as e: out["e"] = e
+    th = threading.Thread(target=go, daemon=True); th.start()
+    while th.is_alive(): th.join(.25); check()
+    if "e" in out: raise out["e"]
+    return out["r"]
 
 def learn(kind, media_s, t0):
     if media_s > 5: CFG["speed"][kind] = round(media_s / max(.1, time.time() - t0), 2); save_cfg()
 
 def run(args, **kw): return subprocess.run(args, capture_output=True, **SP, **kw)
-def ff(*a): return subprocess.Popen([ffbin("ffmpeg"), "-v", "error", *HW, *a, "-"], stdout=subprocess.PIPE, **SP).stdout
+def ff(*a): return subprocess.Popen([ffbin("ffmpeg"), "-v", "error", *HW, *a, "-"], stdout=subprocess.PIPE, **SP)
+
+def stop(p):
+    if p.poll() is None: p.kill()
+    p.wait()
+
+def encode(args, length, tick, **kw):
+    """ffmpeg з поступом: tick(секунд готово) на кожному кроці; tick може скасувати — тоді ffmpeg зупиняється."""
+    p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW, *args],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **SP, **kw)
+    try:
+        for line in p.stdout:
+            if line.startswith("out_time_us=") and line[12:].strip().isdigit(): tick(min(length, int(line[12:]) / 1e6))
+        if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
+    finally: stop(p)
 
 def probe(src):
     """(ширина, висота, тривалість, чи є звук)"""
@@ -178,18 +210,24 @@ def pick_font(name):
 # ── аналіз моментів ──
 def analyze_video(inp, sw, sh, length, t0):
     aw = 160; ah = ev(aw * sh / sw)
-    pipe = ff(*inp, "-vf", f"fps={FPS_A},scale={aw}:{ah},format=gray", "-f", "rawvideo")
+    p = ff(*inp, "-vf", f"fps={FPS_A},scale={aw}:{ah},format=gray", "-f", "rawvideo")
     prev, mot = None, []
-    while len(buf := pipe.read(aw * ah)) == aw * ah:
-        f = np.frombuffer(buf, np.uint8).reshape(ah, aw).astype(np.int16)
-        mot.append(np.abs(f - (f if prev is None else prev)).mean()); prev = f
-        if len(mot) % 25 == 0: report("scan", "Аналіз руху й звуку", min(.99, 0.9 * len(mot) / FPS_A / length), t0)   # звук — решта ~10 %
+    try:
+        while len(buf := p.stdout.read(aw * ah)) == aw * ah:
+            f = np.frombuffer(buf, np.uint8).reshape(ah, aw).astype(np.int16)
+            mot.append(np.abs(f - (f if prev is None else prev)).mean()); prev = f
+            if len(mot) % 25 == 0: report("scan", "Аналіз руху й звуку", min(.99, 0.9 * len(mot) / FPS_A / length), t0)   # звук — решта ~10 %
+    finally: stop(p)
     mot = np.array(mot) if mot else np.zeros(1)
     return mot, np.where(mot > max(20, 5 * np.median(mot)))[0] / FPS_A
 
 def analyze_audio(inp, nb, na):
     sr = 8000; k = int(sr * B)
-    a = np.frombuffer(ff(*inp, "-vn", *all_audio(na), "-ac", "1", "-ar", str(sr), "-f", "s16le").read(), np.int16).astype(np.float32)
+    p, raw = ff(*inp, "-vn", *all_audio(na), "-ac", "1", "-ar", str(sr), "-f", "s16le"), bytearray()
+    try:
+        while chunk := p.stdout.read(1 << 20): raw += chunk; check()
+    finally: stop(p)
+    a = np.frombuffer(bytes(raw), np.int16).astype(np.float32)
     if a.size < k: return np.zeros(nb)
     db = 10 * np.log10((a[:a.size // k * k].reshape(-1, k) ** 2).mean(1) + 1)
     return np.pad(db, (0, max(0, nb - len(db))), mode="edge")[:nb]
@@ -365,6 +403,7 @@ class SttWorker:
                 if "tick" in msg: tick(msg["tick"])
                 elif "error" in msg: raise RuntimeError(msg["error"])
                 else: return msg["result"]
+        except Cancelled: self.stop(); raise                       # процес ще дописує відповідь — новий почне з чистого
         finally: job.unlink(missing_ok=True)
 
 STT = SttWorker()
@@ -384,9 +423,11 @@ def stt_model():
     loading = not any(f for d in mdir() for f in d.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
     def watch():                                               # прогрес першого завантаження моделі — за розміром теки
         CUR.task = task
-        while loading and not STT.alive():
-            got = sum(f.stat().st_size for d in mdir() for f in d.rglob("*") if f.is_file())
-            report("stt", f"Завантажую модель мовлення, {STT_MODELS[model] / 1e9:.1f} ГБ", min(.99, got / STT_MODELS[model]), t0); time.sleep(1)
+        try:
+            while loading and not STT.alive():
+                got = sum(f.stat().st_size for d in mdir() for f in d.rglob("*") if f.is_file())
+                report("stt", f"Завантажую модель мовлення, {STT_MODELS[model] / 1e9:.1f} ГБ", min(.99, got / STT_MODELS[model]), t0); time.sleep(1)
+        except Cancelled: pass
     if loading: threading.Thread(target=watch, daemon=True).start()
     for dev in ["cuda"] * max(0, 2 - STT.gpu_failures) * gpu + ["cpu"]:   # відеокарта — дві спроби: скидання драйвера буває разовим
         try: STT.start(dev, model); return STT
@@ -446,7 +487,7 @@ def transcript(src, a0, a1, lang, track=None, label="Розпізнаю мову
         if todo: stt_model()
         t0, done = time.time(), 0.0
         for k in todo:
-            tick = lambda s: report("stt", label, min(.99, (done + s) / (len(todo) * CHUNK)), t0)
+            tick = lambda s: report("stt", label, min(.99, (done + s) / (len(todo) * CHUNK)), t0); tick(0)
             t = whisper(src, k * CHUNK, lang, tick, na, track); path(k).write_text(json.dumps(t, ensure_ascii=False), "utf-8"); done += t["len"]
         learn("stt", done, t0)
     for k in ks: t = json.loads(path(k).read_text("utf-8")); words += t["words"]; segs += t["segs"]
@@ -459,6 +500,26 @@ def phrases(words, n):
     for w in words:
         if out and len(out[-1]) < n and w[1] - out[-1][-1][2] < 0.5 and not out[-1][-1][0].endswith((".", "!", "?", "…")): out[-1].append(w)
         else: out.append([w])
+    return out
+
+def copies(video, na):
+    """Доріжки, що повторюють одну з попередніх (OBS часто пише ту саму суміш на кілька доріжок): вдруге їх не розпізнаємо."""
+    report("stt", "Порівнюю звукові доріжки", None)
+    env = [np.frombuffer(base64.b64decode(peaks(video, t)["b64"]), np.uint8).astype(np.float32) for t in range(na)]   # гучність — та сама, що для хвилі
+    dup = set()
+    for j in range(1, na):
+        for i in range(j):
+            n = min(len(env[i]), len(env[j]))
+            if i not in dup and n > 50 and env[i][:n].std() and env[j][:n].std() and np.corrcoef(env[i][:n], env[j][:n])[0, 1] > .97: dup.add(j); break
+    return dup
+
+def drop_echo(tracks):
+    """Та сама фраза на двох доріжках (суміш і окремо мікрофон): слово лишається на доріжці, де слів менше, — це доріжка самого мовця."""
+    norm = lambda s: re.sub(r"\W+", "", s.lower())
+    seen, out = {}, [None] * len(tracks)
+    for k in sorted(range(len(tracks)), key=lambda k: len(tracks[k])):
+        out[k] = [w for w in tracks[k] if not any(abs(t - w[1]) < .35 for t in seen.get(norm(w[0]), ()))]
+        for w in out[k]: seen.setdefault(norm(w[0]), []).append(w[1])
     return out
 
 def make_cues(words, n):
@@ -487,7 +548,7 @@ def ask_llm(model, prompt):
     """Кандидати від ШІ для одного вікна; збій чи сміття у відповіді — порожньо (аналіз не падає)."""
     for attempt in range(LLM_TRIES):
         try:
-            with STT_LOCK: raw = AI.chat(model, prompt, LLM_TIMEOUT, temperature=0, seed=0, num_ctx=16384).get("clips", [])   # не разом з Whisper: ділять відеокарту
+            with STT_LOCK: raw = waiting(AI.chat, model, prompt, LLM_TIMEOUT, temperature=0, seed=0, num_ctx=16384).get("clips", [])   # не разом з Whisper: ділять відеокарту
             return [dict(start=float(c["start"]), end=float(c["end"]), score=float(c.get("score", 0)), why=str(c.get("why", "")))
                     for c in raw if isinstance(c, dict) and "start" in c and "end" in c]
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as e: print(datetime.now(), "llm attempt", attempt + 1, "failed:", ascii(e))
@@ -507,6 +568,7 @@ def ai_moments(f, segs, model):
         report("llm", "Шукаю моменти", i / len(wins), t0)
         cand += ask_llm(model, PROMPT.format(n=n, lo=lo, hi=hi, lines=lines,
                                              peaks=", ".join(f"{p:.0f}" for p in peaks if w0 - hi <= p < w0 + WIN) or "none"))
+    learn("llm", a1 - a0, t0)
     out = []
     for c in sorted(cand, key=lambda c: -c["score"]):
         a = max(a0, c["start"]); b = min(max(c["end"], a + lo), a + hi, a1)
@@ -916,7 +978,7 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs, canvas):
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
-def rearrange(dst, parts, bars, args, audio, W):
+def rearrange(dst, parts, bars, args, audio, W, tick):
     """Переставити шматки готового кліпу: хук (смішний момент) — на самий початок, петля — шорт з мітки до кінця, далі початок до мітки,
     тож коли відео повторюється, стику не видно. parts — [(з, до)] у часі готового файлу.
     bars — прогрес-бари: їх малюємо тут, щоб смуга росла від нового початку."""
@@ -929,9 +991,12 @@ def rearrange(dst, parts, bars, args, audio, W):
     for k, e in enumerate(bars, 1):
         f += bar_filter(e, k, last, f"c{k}", total, W); last = f"c{k}"
     tmp = dst.with_name(dst.stem + ".parts.mp4")
-    r = run([ffbin("ffmpeg"), "-y", "-v", "error", *HW, "-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
-             *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)])
-    if r.returncode: tmp.unlink(missing_ok=True); raise RuntimeError("Хук і петля: " + r.stderr.decode("utf-8", "replace")[-400:])
+    try: encode(["-i", str(dst), "-filter_complex", ";".join(f), "-map", f"[{last}]", *(["-map", "[a]"] if audio else []),
+                 *args, *(["-c:a", "aac", "-b:a", "192k"] if audio else []), "-movflags", "+faststart", str(tmp)], total, tick)
+    except BaseException as e:                                     # збій чи скасування — недороблений файл геть
+        tmp.unlink(missing_ok=True)
+        if isinstance(e, RuntimeError): raise RuntimeError(f"Хук і петля: {e}") from e
+        raise
     os.replace(tmp, dst)
     return total
 
@@ -1003,7 +1068,8 @@ def render_dir(pr):
     last = next((r["out"] for r in pr["renders"] if Path(r["out"]).is_dir()), None)
     return last or str(RENDERS / out_name(pr) if (RENDERS / out_name(pr)).is_dir() else RENDERS)
 
-def render(pid, clips, elements, cues, out_dir):
+def render(pid, clips, elements, cues, out_dir, task):
+    CUR.task = task; dst = None
     try:
         pr = load_project(pid); src = pr["video"]; sw, sh, _, na = probe(src); _, args = pick_encoder(); canvas = tuple(pr.get("canvas") or CANVAS)
         subs_all = [e for e in elements if e["type"] == "subs"]; subs = any(on(e) for e in subs_all)   # кожен спікер — свій елемент «Субтитри»
@@ -1029,8 +1095,14 @@ def render(pid, clips, elements, cues, out_dir):
             fonts = {pick_font(e.get("font"))[1] for e in subs_all if on(e)} | {pick_font((q.get("own") or {}).get("font") or cue_owner(q, subs_all).get("font"))[1]
                                                                                   for q in cues if q.get("own") and subs_all}
             for fp in fonts: shutil.copy(fp, tmp)
-            for i, c in enumerate([c for c in clips if c.get("on", True)], 1):
-                cel = clip_elements(elements, c)
+            todo = [c for c in clips if c.get("on", True)]
+            def work(c):                                           # скільки секунд відео закодувати: з хуком чи петлею кліп кодується двічі
+                keep = kept(float(c["a"]), float(c["b"]), c.get("cut", [])); net = sum(e - s for s, e in keep)
+                return net * (2 if keep and clip_parts(c, keep, net) else 1)
+            units = [work(c) for c in todo]; total_units, t0 = max(.1, sum(units)), time.time()
+            for i, c in enumerate(todo, 1):
+                done_units = sum(units[:i - 1]); say = lambda s, i=i, d=done_units: report("render", f"Кліп {i} з {len(todo)}", min(.99, (d + s) / total_units), t0)
+                say(0); cel = clip_elements(elements, c)
                 pngs, sizes = [], {}                               # (id, роль, файл): картинки елементів, маски й рамки відео
                 for e in (e for e in cel if on(e)):
                     for role, path, size in pics(e):
@@ -1045,7 +1117,7 @@ def render(pid, clips, elements, cues, out_dir):
                 cel = [e for e in cel if e not in bars]
                 ca = float(c["a"]); stem = base = f"{name} {int(ca // 60):02d}-{int(ca % 60):02d}"
                 while stem in used: stem = f"{base} ({len([u for u in used if u.startswith(base)]) + 1})"
-                used.add(stem); JOB.update(i=i, pct=0.0); dst = out / f"{stem}.mp4"
+                used.add(stem); dst = out / f"{stem}.mp4"
                 if subs: Path(tmp, "subs.ass").write_text(subs_ass([q for q in cues if q["b"] > a and q["a"] < b], keep, subs_all, canvas), "utf-8")
                 inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
                 parts = music_parts(cel, net)
@@ -1053,22 +1125,20 @@ def render(pid, clips, elements, cues, out_dir):
                 vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
                 main = ("ca" if len(keep) > 1 else "am" if na > 1 else "0:a") if na else None
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
-                p = subprocess.Popen([ffbin("ffmpeg"), "-y", "-v", "error", "-nostats", "-progress", "pipe:1", *HW,
-                                      "-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
-                                      "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs), canvas), *afx]),
-                                      "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
-                                      "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)],
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=tmp, **SP)
-                for line in p.stdout:
-                    if line.startswith("out_time_us=") and line[12:].strip().isdigit():
-                        JOB["pct"] = min(1.0, int(line[12:]) / 1e6 / net)
-                if p.wait(): raise RuntimeError(p.stderr.read()[-600:])
-                total = rearrange(dst, order, bars, args, bool(alabel or na), canvas[0]) if order else net
+                encode(["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
+                        "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs), canvas), *afx]),
+                        "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
+                        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)], net, say, cwd=tmp)
+                total = rearrange(dst, order, bars, args, bool(alabel or na), canvas[0], lambda s: say(net + s)) if order else net
                 thumb = THUMBS / f"{rec['id']}_{i:02d}.jpg"
                 run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
-                rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=total)); save_rec()
+                rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=total)); save_rec(); dst = None
+            learn("render", sum(units), t0)
+    except Cancelled:
+        JOB["cancelled"] = True
+        if dst: dst.unlink(missing_ok=True)                        # недороблений кліп — геть; готові лишаються
     except Exception as e: JOB["err"] = str(e)
-    finally: JOB["running"] = False
+    finally: JOB["running"] = False; TASKS.pop(task, None); CANCEL.discard(task)
 
 # ── системні дії ──
 def ask_file(kind):
@@ -1137,7 +1207,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.12.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.13.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1332,6 +1402,7 @@ class Handler(BaseHTTPRequestHandler):
         CUR.task = d.get("task")                                  # потік обслуговує й інші запити: ключ задаємо щоразу
         try:
             if p == "/api/ping": PAGES[d.get("page", "?")] = time.time(); return self.reply({})
+            if p == "/api/cancel": CANCEL.add(d["key"]); return self.reply({})
             if p == "/api/open":                                  # лише відомі адреси: сторінка не може відкрити довільне посилання
                 if url := LINKS.get(d.get("link")): webbrowser.open(url)
                 return self.reply({})
@@ -1372,13 +1443,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(dict(dur=f["dur"], sw=f["sw"], sh=f["sh"], step=B, region=f["region"], curve=np.round(f["ex"], 2).tolist(),
                                        clips=clips, speed=CFG["speed"]))
             if p == "/api/subs":                                  # кілька звукових доріжок (OBS) — кожна окремим спікером
-                spans = d.get("spans") or [d["region"]]; report("", ""); na = probe(d["video"])[3]; cues = []   # область і кліпи поза нею
-                for sp, track in enumerate(range(na) if na > 1 else [None]):
+                spans = d.get("spans") or [d["region"]]; report("", ""); na = probe(d["video"])[3]   # область і кліпи поза нею
+                tracks = [t for t in range(na) if t not in copies(d["video"], na)] if na > 1 else [None]; per = []
+                for n, track in enumerate(tracks):
                     words = {}
                     for a0, a1 in spans:
-                        for w in transcript(d["video"], a0, a1, d.get("lang", ""), track, f"Розпізнаю доріжку {sp + 1} з {na}" if na > 1 else "Розпізнаю мову")[0]: words[w[1]] = w
-                    cues += [dict(c, sp=sp) for c in make_cues(sorted(words.values(), key=lambda w: w[1]), max(1, int(d.get("words", 3))))]
-                return self.reply(dict(cues=sorted(cues, key=lambda c: c["a"]), tracks=max(1, na), speed=CFG["speed"]))
+                        for w in transcript(d["video"], a0, a1, d.get("lang", ""), track, f"Розпізнаю доріжку {n + 1} з {len(tracks)}" if len(tracks) > 1 else "Розпізнаю мову")[0]: words[w[1]] = w
+                    per.append(sorted(words.values(), key=lambda w: w[1]))
+                per = [ws for ws in drop_echo(per) if ws] or [[]]          # доріжка, де лишилось лише чуже мовлення, — не спікер
+                cues = [dict(c, sp=sp) for sp, ws in enumerate(per) for c in make_cues(ws, max(1, int(d.get("words", 3))))]
+                return self.reply(dict(cues=sorted(cues, key=lambda c: c["a"]), tracks=len(per), speed=CFG["speed"]))
             if p == "/api/update/apply":
                 setup = apply_update()
                 threading.Thread(target=finish_update, args=(setup,), daemon=True).start()
@@ -1394,17 +1468,19 @@ class Handler(BaseHTTPRequestHandler):
                 if JOB["running"]: return self.reply(JOB, code=409)
                 if not d.get("out"): return self.reply({"error": "Не обрано теку для шортів"}, code=400)
                 update_project(d["id"], lambda pr: pr.update(clips=d["clips"], elements=d["elements"], cues=d["cues"], music=d.get("music", [])))
-                JOB.update(running=True, i=0, n=sum(c.get("on", True) for c in d["clips"]), pct=0.0, err="", out="",
-                           id=uuid.uuid4().hex[:10], project=d["id"])
-                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"], d["out"]), daemon=True).start()
+                JOB.update(running=True, n=sum(c.get("on", True) for c in d["clips"]), err="", out="", cancelled=False,
+                           id=uuid.uuid4().hex[:10], project=d["id"], task=d.get("task") or uuid.uuid4().hex)
+                threading.Thread(target=render, args=(d["id"], d["clips"], d["elements"], d["cues"], d["out"], JOB["task"]), daemon=True).start()
+                CUR.task = None                                    # рядок поступу рендеру веде потік рендеру, а не цей запит
                 return self.reply(JOB)
             if p == "/api/reveal":
                 if d["path"] not in allowed_files(): return self.reply({"error": "заборонено"}, code=403)
                 reveal(d["path"]); return self.reply({})
             self.reply({"error": "404"}, code=404)
+        except Cancelled: self.reply({"aborted": True})                # операцію скасували — це не помилка
         except Exception as e: self.reply({"error": str(e)}, code=500)
         finally:
-            if CUR.task: TASKS.pop(CUR.task, None)              # операція скінчилась — рядок поступу зникає
+            if CUR.task: TASKS.pop(CUR.task, None); CANCEL.discard(CUR.task)   # операція скінчилась — рядок поступу зникає
 
 def open_window(url):
     for base in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
