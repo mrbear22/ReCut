@@ -38,7 +38,7 @@ SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без 
 
 CFG_FILE = DATA / "settings.json"
 CANVAS = (1080, 1920)                                             # полотно за замовчуванням (9:16); проєкт може мати своє
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), port=8765,
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), twitch_channel="", port=8765,
            speed=dict(scan=5.0, stt=10.0, llm=20.0, render=1.0))   # секунд відео за секунду роботи; уточнюється після кожного запуску
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
@@ -106,7 +106,8 @@ def encode(args, length, tick, **kw):
     finally: stop(p)
 
 def probe(src):
-    """(ширина, висота, тривалість, чи є звук)"""
+    """(ширина, висота, тривалість, скільки звукових доріжок)"""
+    if is_url(src): v = vod(src); return v["w"], v["h"], v["dur"], 1
     j = json.loads(subprocess.check_output([ffbin("ffprobe"), "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
                                             "-of", "json", src], **SP))
     v = next(s for s in j["streams"] if s["codec_type"] == "video")
@@ -132,7 +133,9 @@ def prepared(out, args):
     if out not in PREPARING: PREPARING.add(out); threading.Thread(target=make, daemon=True).start()
     return ""
 
-preview_key = lambda src: uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}").hex[:16]
+is_url = lambda s: str(s).startswith(("http://", "https://"))
+stamp = lambda src: f"twitch:{vod(src)['id']}" if is_url(src) else os.path.getmtime(src)   # для кешу: запис Twitch — його номер, файл — час зміни
+preview_key = lambda src: uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{stamp(src)}").hex[:16]
 
 def preview_mix(src, n):
     """Зведений звук для прев'ю (браузер грає лише першу доріжку)."""
@@ -144,7 +147,8 @@ def container(src):
 PROXIES_KEPT = 3                                                    # копії займають місце як оригінал — тримаємо лише останні
 def preview_video(src):
     """Браузер не грає MPEG-TS, FLV, AVI навіть з H.264 усередині (так часто зберігаються записи Twitch):
-    для прев'ю — копія в MP4 без перекодування; рендер бере оригінал."""
+    для прев'ю — копія в MP4 без перекодування; рендер бере оригінал. Запис Twitch — плейлист через наш проксі."""
+    if is_url(src): return "/hls?u=" + urllib.parse.quote(vod(src)["view"], safe="")
     if any(f in container(src) for f in ("mp4", "webm")): return src
     out = MIXES / f"{preview_key(src)}.mp4"
     if not out.is_file():
@@ -237,10 +241,10 @@ def features(src, region):
     """Ознаки області [a0, a1] (None — перші REGION с); час усередині — від a0."""
     sw, sh, dur, audio = probe(src)
     a0, a1 = region or (0, REGION); a1 = min(float(a1), dur); a0 = max(0.0, min(float(a0), a1 - 1))
-    key = (src, os.path.getmtime(src), a0, a1)
+    key = (src, stamp(src), a0, a1)
     if key not in _FEAT:
-        nb = max(1, int((a1 - a0) / B)); inp = ("-ss", f"{a0:.3f}", "-t", f"{a1 - a0:.3f}", "-i", src); t0 = time.time()
-        mot, cuts = analyze_video(inp, sw, sh, a1 - a0, t0); db = analyze_audio(inp, nb, audio); learn("scan", a1 - a0, t0)
+        nb = max(1, int((a1 - a0) / B)); inp = lambda kind: ("-ss", f"{a0:.3f}", "-t", f"{a1 - a0:.3f}", "-i", source(src, kind)); t0 = time.time()
+        mot, cuts = analyze_video(inp("low"), sw, sh, a1 - a0, t0); db = analyze_audio(inp("audio"), nb, audio); learn("scan", a1 - a0, t0)
         bi = np.minimum((np.arange(len(mot)) / FPS_A / B).astype(int), nb - 1)
         mot_b = np.bincount(bi, mot, nb) / np.maximum(np.bincount(bi, minlength=nb), 1)
         base = np.convolve(np.r_[np.full(8, db[0]), db], np.ones(8) / 8, "valid")[:nb]   # середнє за попередні 4 с
@@ -371,6 +375,191 @@ def fetch_cuda():
     install_wheels(files, CUDA, "stt", f"Завантажую бібліотеки NVIDIA, {sum(f['size'] for f in files) / 1e9:.1f} ГБ", only="nvidia/")
     use_cuda_dlls()
 
+# ── записи Twitch: відео не на диску; беремо лише потрібні шматки — у низькій якості для аналізу, в оригінальній для рендеру ──
+HLS_JS = "https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js"   # плеєр плейлистів для прев'ю
+HLS_CACHE, HLS_KEEP, VOD_TTL = DATA / "hls", 2e9, 1200           # шматки для прев'ю (найстаріші — геть понад 2 ГБ); опис запису перечитуємо раз на 20 хв
+VODS, VOD_LOCK = {}, threading.Lock()
+HLS_BUSY, HLS_GUARD = {}, threading.Lock()                       # шматок, що саме качається, — один на всіх, хто його просить
+
+# вхід через Twitch (Device Code): користувач підтверджує код на twitch.tv/activate, пароль програма не бачить
+TWITCH_CLIENT_ID = "id63h2ljfj0lh5xjp6urad01tbz8vz"             # публічний Client ID застосунку ReCut (dev.twitch.tv, тип «Public»): не секрет
+TW_FILE, TW_SCOPES, TW_PENDING = DATA / "twitch.json", "user:read:broadcast", {}   # токени — окремо від налаштувань, в інтерфейс не віддаються
+
+def tw_form(url, **form):
+    req = urllib.request.Request(url, urllib.parse.urlencode(form).encode(), {"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "ReCut"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+    except urllib.error.HTTPError as e:
+        try: return dict(json.loads(e.read() or b"{}"), status=e.code)
+        except ValueError: return dict(status=e.code, message=str(e))
+
+def tw_store(t):
+    """Нові токени (refresh-токен одноразовий — щоразу зберігаємо новий) і хто увійшов."""
+    acc = dict(access=t["access_token"], refresh=t["refresh_token"], until=time.time() + t.get("expires_in", 3600))
+    TW_FILE.write_text(json.dumps(acc), "utf-8")
+    u = tw_api("users")["data"][0]; acc["user"] = dict(id=u["id"], login=u["login"], name=u["display_name"], avatar=u["profile_image_url"])
+    TW_FILE.write_text(json.dumps(acc), "utf-8")
+
+def tw_api(path, retry=True):
+    acc = rd(TW_FILE, None)
+    if not acc: raise RuntimeError("Не виконано вхід у Twitch")
+    if time.time() > acc["until"] - 60: tw_refresh(acc); acc = rd(TW_FILE, None)
+    req = urllib.request.Request("https://api.twitch.tv/helix/" + path, headers={"Authorization": "Bearer " + acc["access"], "Client-Id": TWITCH_CLIENT_ID, "User-Agent": "ReCut"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 401 and retry: tw_refresh(acc); return tw_api(path, False)
+        raise RuntimeError(f"Twitch відповів {e.code}") from e
+
+def tw_refresh(acc):
+    t = tw_form("https://id.twitch.tv/oauth2/token", client_id=TWITCH_CLIENT_ID, grant_type="refresh_token", refresh_token=acc["refresh"])
+    if "access_token" not in t: TW_FILE.unlink(missing_ok=True); raise RuntimeError("Вхід у Twitch застарів — увійди знову")
+    TW_FILE.write_text(json.dumps(dict(acc, access=t["access_token"], refresh=t["refresh_token"], until=time.time() + t.get("expires_in", 3600))), "utf-8")
+
+def tw_login():
+    """Почати вхід: код для twitch.tv/activate; токен чекаємо у фоні, поки користувач підтверджує."""
+    if not TWITCH_CLIENT_ID: raise RuntimeError("Вхід через Twitch у цій версії ще не налаштований")
+    d = tw_form("https://id.twitch.tv/oauth2/device", client_id=TWITCH_CLIENT_ID, scopes=TW_SCOPES)
+    if "device_code" not in d: raise RuntimeError("Twitch: " + str(d.get("message", d)))
+    TW_PENDING.clear(); TW_PENDING.update(code=d["user_code"], uri=d["verification_uri"], until=time.time() + d.get("expires_in", 1800), err="")
+    def wait():
+        while TW_PENDING.get("code") == d["user_code"] and time.time() < TW_PENDING["until"]:
+            time.sleep(max(2, d.get("interval", 5)))
+            t = tw_form("https://id.twitch.tv/oauth2/token", client_id=TWITCH_CLIENT_ID, scopes=TW_SCOPES, device_code=d["device_code"],
+                        grant_type="urn:ietf:params:oauth:grant-type:device_code")
+            if "access_token" in t:
+                try: tw_store(t); TW_PENDING.clear()
+                except Exception as e: TW_PENDING.update(code="", err=str(e))
+                return
+            if t.get("message") not in ("authorization_pending", "slow_down"): TW_PENDING.update(code="", err=str(t.get("message", "?"))); return
+        if TW_PENDING.get("code") == d["user_code"]: TW_PENDING.update(code="", err="Код застарів — спробуй ще раз")
+    threading.Thread(target=wait, daemon=True).start()
+    return dict(code=d["user_code"], uri=d["verification_uri"])
+
+def tw_logout():
+    acc = rd(TW_FILE, None); TW_FILE.unlink(missing_ok=True); TW_PENDING.clear()
+    if acc and TWITCH_CLIENT_ID: tw_form("https://id.twitch.tv/oauth2/revoke", client_id=TWITCH_CLIENT_ID, token=acc["access"])
+
+def twitch_videos(channel=""):
+    """Записи трансляцій: свого акаунта (після входу — з датою) або будь-якого каналу за назвою (без входу, через yt-dlp)."""
+    secs = lambda s: sum(int(n) * {"h": 3600, "m": 60, "s": 1}[u] for n, u in re.findall(r"(\d+)([hms])", s or ""))
+    if not channel:
+        acc = rd(TW_FILE, None)
+        if not acc or "user" not in acc: return []
+        return [dict(url=v["url"], title=v["title"], date=v["created_at"], dur=secs(v["duration"]), views=v["view_count"],
+                     thumb=v["thumbnail_url"].replace("%{width}", "480").replace("%{height}", "270"))
+                for v in tw_api(f"videos?user_id={acc['user']['id']}&type=archive&first=30")["data"]]
+    if not re.fullmatch(r"\w{3,25}", channel): raise ValueError("Назва каналу — як у посиланні twitch.tv/назва")
+    ytdlp_install()
+    r = ytdlp("--flat-playlist", "-J", "--no-warnings", "--playlist-end", "30", f"https://www.twitch.tv/{channel}/videos?filter=archives&sort=time")
+    if r.returncode: raise RuntimeError("Канал не знайдено або він без записів")
+    return [dict(url=e["url"], title=e.get("title") or "", date="", dur=float(e.get("duration") or 0), views=e.get("view_count") or 0, thumb=e.get("thumbnail") or "")
+            for e in json.loads(r.stdout).get("entries") or []]
+
+def cover(pid):
+    """Обкладинка проєкту з власного відео: кадр на третині, один раз."""
+    f = THUMBS / f"cover_{pid}.jpg"
+    if not f.is_file():
+        p = load_project(pid); v = p.get("video", "")
+        if not v or is_url(v) or not Path(v).is_file(): return ""
+        run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", f"{probe(v)[2] * .3:.1f}", "-i", v, "-frames:v", "1", "-vf", "scale=480:-2", str(f)])
+    return str(f) if f.is_file() else ""
+
+# місце на диску: що можна прибрати без шкоди — завантажиться чи порахується знову, коли знадобиться
+STORE = [("view", "Кеш перегляду", lambda: [DATA / "hls", MIXES, WAVES]), ("speech", "Розпізнана мова", lambda: [TRANS]),
+         ("models", "Моделі розпізнавання мови", lambda: [MODELS, DATA / "hf"]), ("ai", "Локальний ШІ для описів", lambda: [DATA / "ollama"])]
+
+def dir_size(d): return sum(f.stat().st_size for f in d.rglob("*") if f.is_file()) if d.is_dir() else 0
+
+def storage(): return [dict(key=k, name=n, size=sum(map(dir_size, dirs()))) for k, n, dirs in STORE]
+
+def clear_store(key):
+    """Прибрати категорію. Зайняті зараз файли (відео, що грає) лишаються — без помилки."""
+    if key == "models": STT.stop()                               # процес розпізнавання тримає модель відкритою
+    if key == "ai": AI.stop()
+    for d in dict((k, dirs) for k, _, dirs in STORE)[key]():
+        for f in sorted(d.rglob("*"), key=lambda x: -len(x.parts)) if d.is_dir() else []:
+            try: f.unlink() if f.is_file() else f.rmdir()
+            except OSError: pass
+    PEAKS.clear(); _FEAT.clear(); FAILED.clear()
+    return storage()
+
+def ytdlp(*args):
+    """yt-dlp окремим процесом: оновлена версія підхоплюється без перезапуску програми."""
+    exe = Path(sys.executable); py = exe.with_name("python.exe") if exe.with_name("python.exe").is_file() else exe
+    return run([str(py), "-c", f"import sys; sys.path.insert(0, {str(LIBS)!r}); import yt_dlp; sys.exit(yt_dlp.main(sys.argv[1:]))", *args])
+
+def ytdlp_install(upgrade=False):
+    """Найновіший yt-dlp з PyPI, коли вперше знадобиться; Twitch щось змінив — оновлюємо."""
+    if upgrade or not any(LIBS.glob("yt_dlp-*.dist-info")):
+        need_libs([f"yt-dlp=={fetch('https://pypi.org/pypi/yt-dlp/json')['info']['version']}"], "yt_dlp", "Завантажую yt-dlp для Twitch, 3 МБ", "twitch")
+
+def vod(url, fresh=False):
+    """Запис Twitch: назва, тривалість і плейлисти якостей. Відео ніде не зберігається — ffmpeg і прев'ю беруть шматки за плейлистом."""
+    with VOD_LOCK:
+        v = VODS.get(url)
+        if v and not fresh and time.time() - v["t"] < VOD_TTL: return v
+        if getattr(CUR, "task", None): report("twitch", "Відкриваю запис Twitch", None)
+        ytdlp_install()
+        r = ytdlp("-J", "--no-warnings", "--no-playlist", url)
+        if r.returncode:                                           # стара версія вже не розуміє Twitch — оновлюємо й пробуємо ще раз
+            ytdlp_install(upgrade=True); r = ytdlp("-J", "--no-warnings", "--no-playlist", url)
+        if r.returncode:
+            err = (r.stderr.decode("utf-8", "replace").strip().splitlines() or ["?"])[-1].replace("ERROR: ", "")
+            raise RuntimeError(f"Запис Twitch не відкривається: {err[:300]}")
+        d = json.loads(r.stdout)
+        fs = [f for f in d.get("formats", []) if str(f.get("protocol", "")).startswith("m3u8")]
+        vids = sorted((f for f in fs if f.get("vcodec") not in (None, "none")), key=lambda f: (f.get("height") or 0, f.get("fps") or 0))
+        if not vids: raise RuntimeError("У записі Twitch немає відео")
+        best = vids[-1]; at = lambda h: next((f for f in vids if (f.get("height") or 0) >= h), best)["url"]
+        aud = next((f["url"] for f in fs if f.get("vcodec") == "none" and f.get("acodec") not in (None, "none")), vids[0]["url"])
+        v = VODS[url] = dict(t=time.time(), id=d.get("id", ""), title=d.get("title") or d.get("id", ""), dur=float(d.get("duration") or 0), w=best["width"], h=best["height"],
+                             best=best["url"], view=at(720), mid=at(480), low=vids[0]["url"], audio=aud, base=best["url"].rsplit("/", 2)[0] + "/", thumb=d.get("thumbnail") or "")
+        return v
+
+def source(src, kind):
+    """Що читати ffmpeg: файл як є; із запису Twitch — плейлист якості під задачу (low — рух, audio — звук і мова, mid — вебкамера, best — рендер)."""
+    return vod(src)[kind] if is_url(src) else src
+
+def m3u8(url, to):
+    """Плейлист з адресами, переписаними через to(повна адреса)."""
+    to_ = lambda u: to(urllib.parse.urljoin(url, u))
+    return "\n".join(re.sub(r'URI="([^"]+)"', lambda m: f'URI="{to_(m[1])}"', l) if l.startswith("#") else to_(l) if l.strip() else l
+                     for l in fetch(url, raw=True).decode("utf-8").splitlines())
+
+def hls_parts(url):
+    """Плейлист → (адреса init-шматка або None, [(початок, тривалість, адреса шматка)])."""
+    init, out, t, d = None, [], 0.0, 0.0
+    for l in fetch(url, raw=True).decode("utf-8").splitlines():
+        if l.startswith("#EXT-X-MAP:"): init = urllib.parse.urljoin(url, re.search(r'URI="([^"]+)"', l)[1])
+        elif l.startswith("#EXTINF:"): d = float(l[8:].split(",")[0])
+        elif l.strip() and not l.startswith("#"): out.append((t, d, urllib.parse.urljoin(url, l.strip()))); t += d
+    return init, out
+
+def hls_proxy(url):
+    """Twitch не дає сторінкам читати плейлисти й шматки напряму: прев'ю бере їх через нас. Плейлист — з нашими адресами, шматки — з кешем на диску.
+    Лише адреси відкритих записів: проксі не ходить куди завгодно."""
+    if not any(url.startswith(v["base"]) for v in list(VODS.values())): raise PermissionError("Не адреса відкритого запису Twitch")
+    if url.split("?")[0].endswith(".m3u8"): return m3u8(url, lambda u: "/hls?u=" + urllib.parse.quote(u, safe="")).encode(), "application/vnd.apple.mpegurl"
+    HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
+    with HLS_GUARD: lock = HLS_BUSY.setdefault(f.name, threading.Lock())
+    with lock:                                                     # той самий шматок просять двічі (повтор плеєра, два вікна) — качаємо один раз
+        try: data = f.read_bytes()
+        except OSError:
+            data = fetch(url, raw=True)
+            try: tmp = f.with_name(f"{uuid.uuid4().hex}.part"); tmp.write_bytes(data); tmp.replace(f)
+            except OSError: pass                                   # кеш не записався — не біда, шматок віддаємо й так
+            files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix != ".part"), key=os.path.getmtime); total = sum(x.stat().st_size for x in files)
+            for x in files:
+                if total <= HLS_KEEP: break
+                total -= x.stat().st_size; x.unlink(missing_ok=True)
+    return data, "video/mp2t" if f.suffix == ".ts" else "video/mp4"
+
+def hls_js():
+    js = LIBS / "hls.min.js"
+    if not js.is_file(): LIBS.mkdir(exist_ok=True); fetch(HLS_JS, js)
+    return js.read_bytes()
+
 # ── розпізнавання мови — в окремому процесі: збій відеокарти (скидання драйвера) вбиває лише його, а не всю програму ──
 class SttWorker:
     def __init__(self): self.proc, self.device, self.model, self.gpu_failures = None, None, None, 0
@@ -470,7 +659,7 @@ def whisper(src, t0, lang, tick, na, track=None):
     """Шматок [t0, t0 + CHUNK) -> слова й речення з абсолютним часом: [текст, початок, кінець]; tick(с розпізнано).
     track — одна звукова доріжка (окремий спікер), None — усі зведені."""
     audio = ["-map", f"0:a:{track}"] if track is not None else all_audio(na)
-    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", src, "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
+    r = run([ffbin("ffmpeg"), "-v", "error", "-ss", str(t0), "-t", str(CHUNK), "-i", source(src, "audio"), "-vn", *audio, "-ac", "1", "-ar", "16000", "-f", "s16le", "-"])
     if r.returncode: raise RuntimeError("Аудіо для розпізнавання: " + r.stderr.decode("utf-8", "replace")[-300:])
     words, sg = [], []
     for text, a, b, ws in stt_run(r.stdout, lang, tick):
@@ -480,7 +669,7 @@ def whisper(src, t0, lang, tick, na, track=None):
 def transcript(src, a0, a1, lang, track=None, label="Розпізнаю мову"):
     """(слова, речення) в [a0, a1]: шматки по CHUNK с кешуються на диску. track — лише одна звукова доріжка."""
     na = probe(src)[3]                                         # зведені доріжки й кожна окремо — різний кеш
-    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{os.path.getmtime(src)}|{sttm()}|{lang}" + (f"|track{track}" if track is not None else f"|mix{na}" * (na > 1))).hex[:16]
+    tag = uuid.uuid5(uuid.NAMESPACE_URL, f"{src}|{stamp(src)}|{sttm()}|{lang}" + (f"|track{track}" if track is not None else f"|mix{na}" * (na > 1))).hex[:16]
     path = lambda k: TRANS / f"{tag}_{k}.json"
     ks = range(int(a0 // CHUNK), int(np.ceil(a1 / CHUNK))); todo = [k for k in ks if not path(k).is_file()]; words, segs = [], []
     with STT_LOCK:
@@ -577,45 +766,40 @@ def ai_moments(f, segs, model):
     return sorted(out, key=lambda c: c["a"])
 
 # ── пошук вебкамери ──
-def detect_cam(src):
-    """Обличчя (Haar) + статична зона навколо нього (кімната не змінюється, гра — так) + стійкі межі рамки."""
+def detect_cam(src, region=None):
+    """Вебкамера: обличчя (Haar) у 12 кадрах області аналізу; межі — найсильніші біля обличчя лінії, що є в кожному кадрі (рамка оверлею).
+    Рамки не видно — кадр «голова й плечі» навколо обличчя."""
     need_libs(CV_LIBS, "cv2", "Завантажую OpenCV, 40 МБ")
     import cv2
-    sw, sh, dur, _ = probe(src); aw = 640; ah = ev(aw * sh / sw); n = 32
+    sw, sh, dur, _ = probe(src); aw = 640; ah = ev(aw * sh / sw); n = 12
+    a0, a1 = region or (0, dur); a0, a1 = max(0.0, float(a0)), min(float(a1), dur)
     casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    frames, faces = [], []
-    for i in range(n):
-        raw = run([ffbin("ffmpeg"), "-v", "error", "-ss", f"{dur * (0.04 + 0.92 * i / (n - 1)):.2f}", "-i", src, "-frames:v", "1",
-                   "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
-        if len(raw) < aw * ah: continue
-        g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
-        faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
+    frames, faces, t0 = [], [], time.time()
+    with tempfile.TemporaryDirectory() as tmp:
+        def at(t): return ["-ss", f"{t:.2f}", "-i", src]
+        if is_url(src):                                            # запис Twitch: на кадр — рівно один шматок, у якому він лежить
+            init, parts = hls_parts(source(src, "mid")); head = fetch(init, raw=True) if init else b""
+            def at(t):
+                s, _, u = next((p for p in parts if p[0] + p[1] > t), parts[-1]); f = Path(tmp, "frame.mp4"); f.write_bytes(head + fetch(u, raw=True))
+                return ["-ss", f"{t - s:.2f}", "-i", str(f)]
+        for i in range(n):
+            report("cam", "Шукаю вебкамеру", i / n, t0)
+            raw = run([ffbin("ffmpeg"), "-v", "error", *at(a0 + (a1 - a0) * (i + .5) / n), "-frames:v", "1",
+                       "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
+            if len(raw) < aw * ah: continue
+            g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
+            faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
     if len(frames) < 4: raise RuntimeError("Не вдалося прочитати кадри")
-    if len(faces) < max(3, len(frames) * 0.15): return None
-    F = np.array(faces)
-    near = [(np.hypot(*(F[:, :2] - f[:2]).T) < f[2] * 0.6).sum() for f in F]   # найчастіше місце обличчя
-    c = F[np.hypot(*(F[:, :2] - F[int(np.argmax(near))][:2]).T) < F[int(np.argmax(near))][2] * 0.6]
-    cx, cy, fw = np.median(c, axis=0)
-    st = np.stack(frames).astype(np.float32)
-    std = cv2.GaussianBlur(st.std(0), (0, 0), 1)                       # мінливість у часі: гра висока, кімната низька
-    pe = [np.mean([np.abs(cv2.Sobel(g, cv2.CV_32F, *d)) > 40 for g in frames], 0) for d in ((1, 0), (0, 1))]  # стійкі межі
-    ring = std[max(0, int(cy - 2 * fw)):int(cy + 2 * fw), max(0, int(cx - 2 * fw)):int(cx + 2 * fw)]
-    inner = np.percentile(ring, 30); thr = min((inner + np.percentile(std, 80)) / 2, max(6, 3 * inner + 4))
-    def edge(prof, lines, start, stop, step):
-        """Від обличчя назовні: перша точка, де мінливість стабільно вище порогу (почалась гра)."""
-        for v in range(int(start), int(stop), step):
-            nxt = prof[v:v + 4 * step:step] if step > 0 else prof[max(0, v - 3):v + 1]
-            if len(nxt) and (nxt > thr).all():
-                lo_, hi_ = sorted((v - 6 * step, v + 2 * step))                # уточнюємо по лінії рамки, якщо є
-                seg = lines[max(0, lo_):max(0, hi_) + 1]
-                if len(seg) and seg.max() > 0.5: v = max(0, lo_) + int(np.argmax(seg)) + (1 if step > 0 else 0)
-                return v
-        return stop - step if step > 0 else 0
-    ys, xs = slice(max(0, int(cy - fw)), int(cy + fw)), slice(max(0, int(cx - fw)), int(cx + fw))
-    colp, rowp = std[ys].mean(0), std[:, xs].mean(1)
-    coll, rowl = pe[0][ys].mean(0), pe[1][:, xs].mean(1)
-    L = edge(colp, coll, cx - fw * 0.8, -1, -1); R = edge(colp, coll, cx + fw * 0.8, aw + 1, 1)
-    T = edge(rowp, rowl, cy - fw * 0.8, -1, -1); Bt = edge(rowp, rowl, cy + fw * 0.8, ah + 1, 1)
+    if len(faces) < max(2, len(frames) * .25): return None
+    F = np.array(faces); near = lambda f: np.hypot(*(F[:, :2] - f[:2]).T) < f[2] * .6
+    cx, cy, fw = np.median(F[near(max(F, key=lambda f: near(f).sum()))], axis=0)   # найчастіше місце обличчя
+    vert, horz = (cv2.GaussianBlur(np.min([np.abs(cv2.Sobel(g, cv2.CV_32F, *d)) for g in frames], 0), (0, 0), 1) for d in ((1, 0), (0, 1)))   # межі, що є в кожному кадрі
+    def side(prof, a, b, default):
+        lo, hi = sorted((max(0, int(a)), max(0, int(b)))); seg = prof[lo:hi]
+        return lo + int(np.argmax(seg)) if len(seg) and seg.max() > 30 else default
+    vx = vert[max(0, int(cy - fw)):int(cy + fw)].mean(0); hy = horz[:, max(0, int(cx - fw)):int(cx + fw)].mean(1)
+    L, R = side(vx, cx - 5 * fw, cx - .8 * fw, cx - 2.2 * fw), side(vx, cx + .8 * fw, cx + 5 * fw, cx + 2.2 * fw)
+    T, Bt = side(hy, cy - 4 * fw, cy - .8 * fw, cy - 1.5 * fw), side(hy, cy + .8 * fw, cy + 4 * fw, cy + 2.2 * fw)
     L, T, R, Bt = max(0, L), max(0, T), min(aw, R), min(ah, Bt)
     return [L / aw, T / ah, (R - L) / aw, (Bt - T) / ah]
 
@@ -1033,7 +1217,8 @@ def music_parts(els, net):
 PEAKS = {}
 def peaks(path, track=None, rate=50):
     """Гучність для хвилі на таймлайні: rate значень на секунду, 0–255, base64. track — одна звукова доріжка відео.
-    Довге відео рахується один раз: результат лежить на диску."""
+    Довге відео рахується один раз: результат лежить на диску. Запис Twitch — без хвилі: заради неї довелося б качати весь звук."""
+    if is_url(path): return dict(rate=rate, b64="")
     key = uuid.uuid5(uuid.NAMESPACE_URL, f"{path}|{os.path.getmtime(path)}|{track}|{rate}").hex[:16]; f = WAVES / f"{key}.json"
     if key not in PEAKS:
         if f.is_file(): PEAKS[key] = json.loads(f.read_text("utf-8"))
@@ -1125,7 +1310,7 @@ def render(pid, clips, elements, cues, out_dir, task):
                 vel = next((e for e in elements if e["type"] == "video"), {}); vvol = float(vel.get("vol", 1))
                 main = ("ca" if len(keep) > 1 else "am" if na > 1 else "0:a") if na else None
                 afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
-                encode(["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", src, *inputs,
+                encode(["-ss", f"{a:.3f}", "-t", f"{b - a:.3f}", "-i", source(src, "best"), *inputs,
                         "-filter_complex", ";".join([build_filter(sw, sh, cel, keep, na, inp, sizes, bool(subs), canvas), *afx]),
                         "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *args,
                         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)], net, say, cwd=tmp)
@@ -1207,7 +1392,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ShortsMaker", "1.13.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ShortsMaker", "1.14.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1254,7 +1439,7 @@ def clip_caption(pid, path):
     a, b = f["a"], f["b"]; source = p["name"] or Path(p["video"]).stem
     why = next((c.get("why", "") for c in p["clips"] if abs(c["a"] - a) < .05 and abs(c["b"] - b) < .05), "")
     speech = " ".join(q["text"] for q in p["cues"] if q["b"] > a and q["a"] < b)
-    if not speech and Path(p["video"]).is_file():                 # реплік немає — транскрипт (кешується на диску)
+    if not speech and (is_url(p["video"]) or Path(p["video"]).is_file()):   # реплік немає — транскрипт (кешується на диску)
         speech = " ".join(t for t, s, e in transcript(p["video"], a, b, "")[1])
     return publish.caption(source, why, speech, AI.model(), AI.chat)
 
@@ -1368,6 +1553,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
             if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
+            if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
             if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()))
             if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=VERSION, boot=STARTED))
@@ -1386,12 +1573,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(dict(connected=True, channels=BUFFER.channels()))
             if u.path == "/api/brands": return self.reply({k: dict(name=n, color=c, path=d) for k, (n, c, d) in brands.BRANDS.items()})
             if u.path == "/api/buffer/queue": return self.reply(dict(posts=BUFFER.scheduled()))
+            if u.path == "/api/twitch":
+                acc = rd(TW_FILE, None) or {}
+                return self.reply(dict(login=bool(TWITCH_CLIENT_ID), user=acc.get("user"), pending={k: TW_PENDING.get(k, "") for k in ("code", "uri", "err")}))
+            if u.path == "/api/twitch/videos": return self.reply(twitch_videos(q.get("channel", "")))
+            if u.path == "/api/cover": return self.send_file(cover(q["id"]))
+            if u.path == "/api/storage": return self.reply(storage())
             if u.path == "/api/peaks": return self.reply(peaks(q["p"], int(q["track"]) if q.get("track") else None))
             if u.path == "/api/audio":                            # тривалість музичного файлу
                 r = run([ffbin("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", q["p"]])
                 return self.reply(dict(dur=float(r.stdout.decode().strip() or 0)))
             if u.path == "/api/probe":
-                sw, sh, dur, na = probe(q["p"]); return self.reply(dict(sw=sw, sh=sh, dur=dur, tracks=na, mix=preview_mix(q["p"], na), play=preview_video(q["p"])))
+                sw, sh, dur, na = probe(q["p"]); return self.reply(dict(sw=sw, sh=sh, dur=dur, tracks=na, mix=preview_mix(q["p"], na), play=preview_video(q["p"]),
+                                                                       hls=is_url(q["p"]), title=vod(q["p"])["title"] if is_url(q["p"]) else ""))
             if u.path == "/file": return self.send_file(q.get("p") if q.get("p") in allowed_files() else "")
             self.reply({"error": "404"}, code=404)
         except Exception as e: self.reply({"error": str(e)}, code=500)
@@ -1405,6 +1599,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/cancel": CANCEL.add(d["key"]); return self.reply({})
             if p == "/api/open":                                  # лише відомі адреси: сторінка не може відкрити довільне посилання
                 if url := LINKS.get(d.get("link")): webbrowser.open(url)
+                elif d.get("link") == "twitch_activate" and str(TW_PENDING.get("uri", "")).startswith("https://www.twitch.tv/"): webbrowser.open(TW_PENDING["uri"])
                 return self.reply({})
             if p == "/api/bye":                                   # вікно закрили: останнє — виходимо одразу
                 known = PAGES.pop(d.get("page", "?"), None)       # невідоме вікно — сторінка до перезапуску після оновлення
@@ -1415,19 +1610,23 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/pick":
                 if f := ask_file(d["kind"]): PICKED.add(f)
                 return self.reply(dict(path=f))
+            if p == "/api/vod": v = vod(d["url"], fresh=True); return self.reply(dict(title=v["title"], dur=v["dur"], thumb=v["thumb"]))   # перевірити посилання й підготувати yt-dlp
+            if p == "/api/twitch/login": return self.reply(tw_login())
+            if p == "/api/twitch/logout": tw_logout(); return self.reply({})
+            if p == "/api/storage/clear": return self.reply(clear_store(d["key"]))
             if p == "/api/pick_dir": return self.reply(dict(path=ask_dir(render_dir(load_project(d["id"])))))
             if p == "/api/project/new":
                 pr = new_project(); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
             if p == "/api/project/open": load_project(d["id"]); CFG["project"] = d["id"]; save_cfg(); return self.reply({})
             if p == "/api/project/save":
-                keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music", "canvas")
+                keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music", "canvas", "cover")
                 pr = update_project(d["id"], lambda pr: pr.update({k: d[k] for k in keys if k in d}))
                 if "elements" in d: CFG.update(defaults=d["elements"], canvas=d.get("canvas") or list(CANVAS)); save_cfg()   # новий проєкт почне з цих налаштувань і полотна
                 return self.reply(dict(updated=pr["updated"]))
             if p == "/api/project/delete":
                 for r in load_project(d["id"])["renders"]:
                     for f in r["files"]: Path(f["thumb"]).unlink(missing_ok=True)
-                proj_file(d["id"]).unlink()
+                proj_file(d["id"]).unlink(); (THUMBS / f"cover_{d['id']}.jpg").unlink(missing_ok=True)
                 if CFG["project"] == d["id"]: CFG["project"] = ""; save_cfg()
                 return self.reply({})
             if p == "/api/element":
@@ -1463,7 +1662,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/post/save": save_post(d["id"], d["path"], d["post"]); return self.reply({})
             if p == "/api/post/unqueue": return self.reply(unqueue(d["id"], d["path"]))
             if p == "/api/publish": return self.reply(publish_batch(d["id"], d["plan"], d.get("privacy", "public"), int(d.get("limit") or 0)))
-            if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"])))
+            if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"], d.get("region"))))
             if p == "/api/render":
                 if JOB["running"]: return self.reply(JOB, code=409)
                 if not d.get("out"): return self.reply({"error": "Не обрано теку для шортів"}, code=400)
@@ -1569,6 +1768,8 @@ def prepare_ffmpeg():
 
 def main():
     CFG.update(rd(CFG_FILE, {}))
+    for f in (DATA / "hls").glob("*.*"):                          # шматки прев'ю Twitch, старші за 3 дні, більше не знадобляться
+        if f.suffix == ".part" or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)   # і недокачані
     url = f"http://127.0.0.1:{CFG['port']}"
     srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно
