@@ -968,8 +968,14 @@ let hlsPlayer = null;
 const hlsStop = () => { hlsPlayer?.destroy(); hlsPlayer = null; };
 async function playHls(url) {                                     // плейлист через наш сервер; шматки вантажаться лише біля курсора
   if (!window.Hls) await new Promise((ok, no) => document.head.append(Object.assign(document.createElement('script'), {src: '/hls.js', onload: ok, onerror: () => no(new Error('Плеєр для Twitch не завантажився'))})));
-  hlsStop(); hlsPlayer = new Hls({maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 30});
-  hlsPlayer.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) msg('Запис Twitch: ' + (d.details || 'не грає'), 1); });
+  const net = {maxTimeToFirstByteMs: 20000, maxLoadTimeMs: 90000, timeoutRetry: {maxNumRetry: 4, retryDelayMs: 500, maxRetryDelayMs: 4000}, errorRetry: {maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000}};
+  hlsStop(); hlsPlayer = new Hls({progressive: true, maxBufferLength: 20, maxMaxBufferLength: 40, backBufferLength: 30, fragLoadPolicy: {default: net}});   // progressive — кадр уже з перших байтів шматка
+  hlsPlayer.on(Hls.Events.ERROR, (_, d) => {                       // Twitch буває повільний: мережевий збій — тягнемо далі, а не зупиняємось
+    if (!d.fatal) return;
+    if (d.type === Hls.ErrorTypes.NETWORK_ERROR) return setTimeout(() => hlsPlayer?.startLoad(vid.currentTime), 1000);
+    if (d.type === Hls.ErrorTypes.MEDIA_ERROR) return hlsPlayer.recoverMediaError();
+    msg('Запис Twitch: ' + (d.details || 'не грає'), 1);
+  });
   hlsPlayer.loadSource(url); hlsPlayer.attachMedia(vid);
 }
 

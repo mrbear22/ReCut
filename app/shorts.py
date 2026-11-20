@@ -557,22 +557,53 @@ def hls_parts(url):
 
 HLS_GOT = {}                                                       # шматки, що качаються зараз: (байтів отримано, розмір)
 
+def hls_slot(url):
+    """Файл шматка в кеші й замок на нього: один шматок качається один раз, хоч би скільки його просили."""
+    HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
+    with HLS_GUARD: return f, HLS_BUSY.setdefault(f.name, threading.Lock())
+
+def hls_trim():
+    files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix in (".ts", ".mp4") and time.time() - x.stat().st_mtime > 900), key=os.path.getmtime)
+    total = sum(x.stat().st_size for x in HLS_CACHE.glob("*.*"))
+    for x in files:                                                # понад межу — найстаріші, крім тих, що потрібні просто зараз
+        if total <= HLS_KEEP: break
+        total -= x.stat().st_size; x.unlink(missing_ok=True)
+
 def hls_file(url):
     """Шматок запису в кеші на диску: качаємо один раз, хоч би скільки його просили (прев'ю, аналіз, рендер, два вікна)."""
-    HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
-    with HLS_GUARD: lock = HLS_BUSY.setdefault(f.name, threading.Lock())
+    f, lock = hls_slot(url)
     with lock:
         if f.is_file(): os.utime(f); return f                      # щойно потрібний — не викидати
         tmp = f.with_name(f"{uuid.uuid4().hex}.part")
         try: fetch(url, tmp, lambda got, total: HLS_GOT.__setitem__(f.name, (got, total)))   # скільки вже прийшло — для смужки в прев'ю
         finally: HLS_GOT.pop(f.name, None)
         tmp.replace(f)
-    files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix in (".ts", ".mp4") and time.time() - x.stat().st_mtime > 900), key=os.path.getmtime)
-    total = sum(x.stat().st_size for x in HLS_CACHE.glob("*.*"))
-    for x in files:                                                # понад межу — найстаріші, крім тих, що потрібні просто зараз
-        if total <= HLS_KEEP: break
-        total -= x.stat().st_size; x.unlink(missing_ok=True)
-    return f
+    hls_trim(); return f
+
+def hls_stream(h, url):
+    """Шматок для прев'ю: байти йдуть плеєру одразу, як приходять з Twitch, і паралельно в кеш.
+    Плеєр не чекає на весь шматок (інакше — fragLoadTimeOut); з'єднання завмерло на 15 с — обриваємо, плеєр перепитає сам."""
+    f, lock = hls_slot(url); ctype = "video/mp2t" if f.suffix == ".ts" else "video/mp4"
+    with lock:
+        if f.is_file(): os.utime(f); return h.reply(f.read_bytes(), ctype)
+        r = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "ReCut"}), timeout=15)
+        total, got, client, tmp = int(r.headers.get("Content-Length") or 0), 0, True, f.with_name(f"{uuid.uuid4().hex}.part")
+        h.send_response(200); h.send_header("Content-Type", ctype); h.send_header("Cache-Control", "no-store")
+        if total: h.send_header("Content-Length", total)
+        h.end_headers()
+        try:
+            with r, open(tmp, "wb") as out:
+                while chunk := r.read(1 << 16):
+                    out.write(chunk); got += len(chunk); HLS_GOT[f.name] = (got, total)
+                    if client:
+                        try: h.wfile.write(chunk)
+                        except OSError: client = False            # плеєр перемотав далі — докачуємо в кеш, не викидаємо
+            if total and got < total: raise OSError(f"обрив: {got} з {total} байтів")
+            tmp.replace(f)
+        except Exception as e:
+            print(datetime.now(), "hls", ascii(e)); h.close_connection = True   # заголовки вже пішли — плеєр побачить обрив і перепитає
+        finally: HLS_GOT.pop(f.name, None); tmp.unlink(missing_ok=True)
+    hls_trim()
 
 def hls_index(src, kind, upto=0):
     """Розбір плейлиста якості — один раз на запис (для трансляції, що триває, — знову, коли треба далі, ніж відомо)."""
@@ -593,6 +624,11 @@ def local_input(src, kind, a0, a1, say=lambda frac: None):
                              *([f'#EXT-X-MAP:URI="{files[init].name}"'] if init else []),
                              *(x for _, d, u in need for x in (f"#EXTINF:{d:.3f},", files[u].name)), "#EXT-X-ENDLIST"]), "utf-8")
     return ["-ss", f"{max(0.0, a0 - need[0][0]):.3f}", "-t", f"{a1 - a0:.3f}", "-i", str(pl)]
+
+def hls_media(url):
+    """Шматок відео відкритого запису (не плейлист) — його прев'ю бере потоком."""
+    if not any(url.startswith(v["base"]) for v in list(VODS.values())): raise PermissionError("Не адреса відкритого запису Twitch")
+    return not url.split("?")[0].endswith(".m3u8")
 
 def hls_proxy(url):
     """Twitch не дає сторінкам читати плейлисти й шматки напряму: прев'ю бере їх через нас. Плейлист — з нашими адресами, шматки — з кешем на диску.
@@ -1409,7 +1445,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ReCut", "1.17.3"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.4"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1567,7 +1603,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply((HERE / u.path[1:]).read_bytes(), "image/x-icon" if u.path.endswith(".ico") else "image/png")
             if u.path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := u.path[7:]) and (HERE / "fonts" / name).is_file():   # шрифти бренду
                 return self.reply((HERE / "fonts" / name).read_bytes(), "text/css; charset=utf-8" if name.endswith(".css") else "font/woff2")
-            if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))
+            if u.path == "/hls": return hls_stream(self, q["u"]) if hls_media(q["u"]) else self.reply(*hls_proxy(q["u"]))
             if u.path == "/api/hls/progress": got = list(HLS_GOT.values()); return self.reply(dict(got=sum(g for g, _ in got), total=sum(t for _, t in got)))
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
             if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()))
