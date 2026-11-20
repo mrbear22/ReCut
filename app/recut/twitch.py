@@ -142,11 +142,16 @@ def hls_path(url):
     HLS_CACHE.mkdir(exist_ok=True); return HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
 
 def hls_trim():
-    files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix in (".ts", ".mp4") and time.time() - x.stat().st_mtime > 900), key=os.path.getmtime)
-    total = sum(x.stat().st_size for x in HLS_CACHE.glob("*.*"))
-    for x in files:                                                # понад межу — найстаріші, крім тих, що потрібні просто зараз
+    """Понад межу — найстаріші шматки геть, крім тих, що потрібні просто зараз. Файл, який інший потік саме перейменував чи прибрав
+    (недокачаний .part, що став шматком), пропускаємо: кеш качають кілька потоків одночасно."""
+    def stat(x):
+        try: return x.stat()
+        except FileNotFoundError: return None
+    seen = [(x, st) for x in HLS_CACHE.glob("*.*") if (st := stat(x))]
+    total = sum(st.st_size for _, st in seen)
+    for x, st in sorted(((x, st) for x, st in seen if x.suffix in (".ts", ".mp4") and time.time() - st.st_mtime > 900), key=lambda p: p[1].st_mtime):
         if total <= HLS_KEEP: break
-        total -= x.stat().st_size; x.unlink(missing_ok=True)
+        total -= st.st_size; x.unlink(missing_ok=True)
 
 def hls_file(url, stream=None):
     """Шматок запису в кеші на диску: качаємо один раз, хоч би скільки його просили (прев'ю, аналіз, рендер, два вікна).
@@ -187,7 +192,9 @@ def hls_serve(h, url):
     except Exception as e:
         if not stream.started: raise
         print(datetime.now(), "hls", ascii(e)); h.close_connection = True; return   # заголовки вже пішли — плеєр побачить обрив і перепитає
-    if not stream.started: h.reply(f.read_bytes(), stream.ctype)   # уже був у кеші
+    if stream.started: return
+    try: h.reply(f.read_bytes(), stream.ctype)                     # уже був у кеші
+    except ConnectionError: pass                                   # плеєр уже перемотав далі й закрив з'єднання
 
 def hls_index(src, kind, upto=0):
     """Розбір плейлиста якості — один раз на запис (для трансляції, що триває, — знову, коли треба далі, ніж відомо)."""

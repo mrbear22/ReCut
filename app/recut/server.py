@@ -69,6 +69,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if u.path == "/hls": return hls_serve(self, q["u"])     # прев'ю запису Twitch — потоком у цю ж відповідь
             if f := page_file(u.path): return self.reply(*f)
+        except ConnectionError: return                                # сторінка закрила з'єднання (перемотування, перезавантаження) — відповідати нікому
         except Exception as e: return self.reply({"error": str(e)}, code=500)
         self.call("GET", u.path, q)
 
