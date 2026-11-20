@@ -70,7 +70,7 @@ kbd{background:var(--s3);border:1px solid var(--line2);border-bottom-width:2px;b
 .pop{position:absolute;z-index:20;background:var(--s2);border:1px solid var(--line2);border-radius:var(--r);box-shadow:var(--pop);padding:12px;display:none}
 .pop.on{display:block}
 .anchor{position:relative}
-#vPop{top:calc(100% + 6px);left:0;width:360px;display:none;flex-direction:column;gap:10px}#vPop.on{display:flex}#vLink{gap:6px}#vLink input{flex:1}
+#vPop,#nPop{top:calc(100% + 6px);left:0;width:360px;display:none;flex-direction:column;gap:10px}#vPop.on,#nPop.on{display:flex}#nPop{left:auto;right:0}#vLink,#nLink{gap:6px}#vLink input,#nLink input{flex:1}
 .seg{display:flex;flex-wrap:wrap;gap:2px;padding:2px;background:#121110;border:1px solid var(--line);border-radius:var(--r-sm)}
 .seg button{flex:1;padding:5px 8px;background:none;border-color:transparent;color:var(--mut);border-radius:3px}
 .seg button:hover{color:var(--fg);background:var(--s2)}.seg button.on{background:var(--s4);color:var(--hi);border-color:transparent}
@@ -382,7 +382,7 @@ nav.flow .cutsep::after{content:'✂';position:absolute;left:50%;top:-10px;trans
 .hpaste{display:flex;gap:8px;max-width:640px}
 .hpaste input{flex:1;height:48px;padding:0 16px;background:transparent;border:1.5px dashed var(--line2);border-radius:var(--r-sm);font-family:var(--mono);font-size:13px}
 .hpaste input:focus{border-style:solid;border-color:var(--acc)}.hpaste .pri{height:48px;padding:0 24px;font-size:15px}
-.hstart p{margin:10px 0 0;color:var(--mut)}
+.hero3{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,400px);gap:40px;align-items:center;padding:22px 0 4px}.hero3:has(#hCont:empty){grid-template-columns:1fr}.hero3 h1{margin:0 0 22px;font-size:clamp(38px,4.8vw,66px);line-height:.92;color:var(--hi);text-transform:uppercase}.hero3 h1 em{font-style:normal;color:var(--acc)}.hero3 .hpaste{max-width:720px}.hero3 .hpaste input{height:58px;font-size:14px}.hero3 .hpaste .pri{height:58px;padding:0 32px;font-size:16px}.hero3 p{margin:12px 0 0;color:var(--mut)}.hcont{position:relative;display:block;width:100%;padding:0;text-align:left;background:var(--s1);border:1px solid var(--line);border-radius:var(--r);transform:rotate(1.2deg);transition:transform var(--fast),border-color var(--fast);color:inherit;font:inherit}.hcont:hover{transform:rotate(0);border-color:var(--acc);background:var(--s1)}.hcont::before{content:"";position:absolute;z-index:2;left:22px;top:-8px;width:80px;height:16px;background:var(--tape);transform:rotate(-4deg)}.hcont .hc-cov{display:block;aspect-ratio:16/9;border-radius:var(--r) var(--r) 0 0;overflow:hidden;background:linear-gradient(135deg,#24221f,#1a1918)}.hcont .hc-cov img{width:100%;height:100%;object-fit:cover;display:block}.hcont .hc-txt{display:grid;gap:4px;padding:12px 14px 14px}.hcont .hc-k{font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--acc)}.hcont b{color:var(--hi);font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hcont small{font:500 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
 .link{background:none;border:0;padding:0;color:var(--fg);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font:inherit}.link:hover{background:none;color:var(--hi)}
 .vt{overflow:visible;border-radius:var(--r-sm)}.vt img{border-radius:inherit}
 .vt::after{content:'';position:absolute;inset:-8px;pointer-events:none;opacity:0;background:var(--marks);transition:opacity var(--fast)}.vc:hover .vt::after,.vc.inp .vt::after{opacity:1}
@@ -445,17 +445,20 @@ kbd{font-family:var(--mono)}
 
 <section id="home" class="view">
  <div class="hwrap">
-  <section class="hsec hstart">
-    <div class="cut"><b>Новий монтаж</b><i></i></div>
+  <section class="hero3">
+    <div><h1 class="disp">Новий<br><em>монтаж</em></h1>
       <form class="hpaste" id="hLink"><input id="hUrl" placeholder="✂ встав twitch.tv/videos/…" aria-label="Посилання на запис Twitch"><button class="pri">Різати</button></form>
-      <p>або <button class="link" id="hFile">відкрий файл з диска</button></p>
+      <p>або <button class="link" id="hFile">відкрий файл з диска</button></p></div>
+    <div id="hCont"></div>
   </section>
   <section class="hsec" id="tw">
     <div class="cut"><b><i class="twi" id="twIcon"></i>Твої етери</b><i></i><div id="twCtl" class="row"></div></div>
     <div id="twList" class="vrow"></div>
   </section>
   <section class="hsec">
-    <div class="cut"><b>На монтажному столі</b><i></i></div>
+    <div class="cut"><b>На монтажному столі</b><i></i><span class="anchor"><button class="pri" id="new">+ Новий проєкт</button>
+      <div class="pop" id="nPop"><button class="wide" id="nFile">Файл на диску…</button>
+        <form class="row" id="nLink"><input id="nUrl" placeholder="Посилання на запис Twitch" aria-label="Посилання на запис Twitch"><button class="pri">Відкрити</button></form></div></span></div>
     <div id="plist"></div>
   </section>
   <details class="hsec" id="store"><summary><h2>Місце на диску</h2><span id="storeTotal" class="mut"></span></summary><div id="storeRows"></div></details>
@@ -796,6 +799,10 @@ const fmtLen = s => { s = Math.round(s); const h = Math.floor(s / 3600), m = Mat
 async function loadHome() {
   loadTwitch(); loadStore();
   const ps = homeProjects = await api('/api/projects');
+  const last = ps.find(p => P && p.id === P.id) || ps[0];                // продовжити — відкритий зараз або останній змінений
+  $('#hCont').innerHTML = last ? (() => { const tw = /^https?:/.test(last.video || ''), cov = last.cover || (last.video && !tw ? `/api/cover?id=${last.id}` : '');
+    return `<button class="hcont" data-open="${last.id}"><span class="hc-cov">${cov ? `<img src="${esc(cov)}" alt="" onerror="this.remove()">` : ''}</span>
+      <span class="hc-txt"><span class="hc-k">Продовжити</span><b>${esc(projName(last))}</b><small>${last.clips.length ? plural(last.clips.length, 'кліп', 'кліпи', 'кліпів') : 'кліпів ще немає'}</small></span></button>`; })() : '';
   $('#plist').innerHTML = ps.map(p => {
     const files = p.renders.flatMap(r => r.files), seen = new Set(), shorts = files.filter(f => f.exists && !seen.has(f.path) && seen.add(f.path)), tw = /^https?:/.test(p.video || '');
     const cov = p.cover || (p.video && !tw ? `/api/cover?id=${p.id}` : '');
@@ -855,6 +862,9 @@ $('#hLink').onsubmit = async e => {                               // голов�
 };
 $('#hUrl').oninput = e => e.target.setCustomValidity('');
 $('#hFile').onclick = async () => { const {path} = await api('/api/pick', {kind: 'video'}); if (path) projectFor(path, path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '')); };
+$('#new').onclick = e => { togglePop('#nPop', e); if ($('#nPop').classList.contains('on')) $('#nUrl').focus(); };
+$('#nFile').onclick = () => { $('#nPop').classList.remove('on'); $('#hFile').click(); };
+$('#nLink').onsubmit = e => { e.preventDefault(); const url = $('#nUrl').value.trim(); $('#nPop').classList.remove('on'); $('#nUrl').value = ''; openLink(url, $('#new')); };
 $('#twList').onclick = async e => {                               // запис — у новий проєкт; уже є проєкт з ним — відкрити його
   const b = e.target.closest('[data-vod]'); if (!b) return; const v = twVideos[+b.dataset.vod];
   projectFor(v.url, v.title, v.thumb);
@@ -901,6 +911,7 @@ $('#storeRows').onclick = async e => {
   b.disabled = true; await api('/api/storage/clear', {key: k}).catch(err => msg(err.message, 1)); loadStore();
   if (k === 'view' && P) loadVideo();                             // прев'ю відкритого проєкту — підготувати знову
 };
+$('#hCont').onclick = async e => { const t = e.target.closest('[data-open]'); if (t) { await openProject(await api('/api/project?id=' + t.dataset.open)); show('editor'); } };
 $('#plist').onclick = async e => {
   const t = e.target.closest('[data-open],[data-reveal],[data-del],[data-play],[data-publish]'); if (!t) return;
   if (t.dataset.publish) { show('pub'); return loadPub(t.dataset.publish); }
