@@ -39,7 +39,7 @@ SP = {"creationflags": 0x08000000} if os.name == "nt" else {}          # без 
 
 CFG_FILE = DATA / "settings.json"
 CANVAS = (1080, 1920)                                             # полотно за замовчуванням (9:16); проєкт може мати своє
-CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", defaults=[], canvas=list(CANVAS), twitch_channel="", port=8765, lang="",
+CFG = dict(n_clips=8, min_len=20, max_len=50, encoder="auto", quality=21, stt=False, stt_model="large-v3-turbo", stt_lang="", sub_words=3, project="", twitch_channel="", port=8765, lang="",
            speed=dict(scan=5.0, stt=10.0, llm=20.0, render=1.0))   # секунд відео за секунду роботи; уточнюється після кожного запуску
 HOOK_LEN, HOOK_W, FPS_A, B = 3, 2.0, 5, 0.5
 REGION, CHUNK, WIN = 1800, 300, 600    # область аналізу за замовчуванням; шматок транскрипції в кеші; вікно транскрипту на запит LLM, с
@@ -183,8 +183,15 @@ def update_project(pid, fn):
 def new_project(**kw):
     now = time.time()
     p = dict(id=uuid.uuid4().hex[:10], name="", created=now, video="", region=None, clips=[],
-             elements=json.loads(json.dumps(CFG["defaults"])), canvas=CFG["canvas"], cues=[], renders=[])
+             elements=[], canvas=list(CANVAS), cues=[], renders=[])            # елементи з інших проєктів — лише імпортом
     with LOCK: return write_project({**p, **kw})
+
+def delete_project(pid):
+    """Проєкт геть; відео й готові шорти на диску лишаються."""
+    for r in load_project(pid)["renders"]:
+        for f in r["files"]: Path(f["thumb"]).unlink(missing_ok=True)
+    proj_file(pid).unlink(); (THUMBS / f"cover_{pid}.jpg").unlink(missing_ok=True)
+    if CFG["project"] == pid: CFG["project"] = ""; save_cfg()
 
 def projects():
     return sorted((json.loads(f.read_text("utf-8")) for f in PROJ.glob("*.json")), key=lambda p: -p["updated"])
@@ -306,7 +313,7 @@ def fetch(url, dst=None, progress=lambda got, total: None, raw=False):
                 if dst is None: return r.read() if raw else json.load(r)
                 total, got = int(r.headers.get("Content-Length") or 0), 0
                 with open(dst, "wb") as out:
-                    while chunk := r.read(1 << 20): out.write(chunk); got += len(chunk); progress(got, total)
+                    while chunk := r.read(1 << 16): out.write(chunk); got += len(chunk); progress(got, total)
                 if total and got < total: raise OSError(f"обрив: {got} з {total} байтів")
                 return
         except (OSError, http.client.HTTPException, ValueError) as e:
@@ -548,13 +555,18 @@ def hls_parts(url):
         elif l.strip() and not l.startswith("#"): out.append((t, d, urllib.parse.urljoin(url, l.strip()))); t += d
     return init, out
 
+HLS_GOT = {}                                                       # шматки, що качаються зараз: (байтів отримано, розмір)
+
 def hls_file(url):
     """Шматок запису в кеші на диску: качаємо один раз, хоч би скільки його просили (прев'ю, аналіз, рендер, два вікна)."""
     HLS_CACHE.mkdir(exist_ok=True); f = HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
     with HLS_GUARD: lock = HLS_BUSY.setdefault(f.name, threading.Lock())
     with lock:
         if f.is_file(): os.utime(f); return f                      # щойно потрібний — не викидати
-        tmp = f.with_name(f"{uuid.uuid4().hex}.part"); tmp.write_bytes(fetch(url, raw=True)); tmp.replace(f)
+        tmp = f.with_name(f"{uuid.uuid4().hex}.part")
+        try: fetch(url, tmp, lambda got, total: HLS_GOT.__setitem__(f.name, (got, total)))   # скільки вже прийшло — для смужки в прев'ю
+        finally: HLS_GOT.pop(f.name, None)
+        tmp.replace(f)
     files = sorted((x for x in HLS_CACHE.glob("*.*") if x.suffix in (".ts", ".mp4") and time.time() - x.stat().st_mtime > 900), key=os.path.getmtime)
     total = sum(x.stat().st_size for x in HLS_CACHE.glob("*.*"))
     for x in files:                                                # понад межу — найстаріші, крім тих, що потрібні просто зараз
@@ -1397,7 +1409,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ReCut", "1.17.0"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.1"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1548,13 +1560,15 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path); q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/": return self.reply((HERE / "ui.html").read_bytes(), "text/html; charset=utf-8")
-            if u.path in ("/publish.js", "/i18n.js"): return self.reply((HERE / u.path[1:]).read_bytes(), "text/javascript; charset=utf-8")
+            if u.path == "/publish.js": return self.reply((HERE / "publish.js").read_bytes(), "text/javascript; charset=utf-8")
+            if u.path == "/i18n.js": return self.reply(f"const SAVED_LANG = {json.dumps(CFG.get('lang', ''))};\n".encode() + (HERE / "i18n.js").read_bytes(), "text/javascript; charset=utf-8")   # мова — з налаштувань програми
             if u.path == "/hls.js": return self.reply(hls_js(), "text/javascript; charset=utf-8")
             if u.path in ("/icon-32.png", "/icon-256.png", "/favicon.ico"):   # значок вікна: кожен розмір намальований окремо
                 return self.reply((HERE / u.path[1:]).read_bytes(), "image/x-icon" if u.path.endswith(".ico") else "image/png")
             if u.path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := u.path[7:]) and (HERE / "fonts" / name).is_file():   # шрифти бренду
                 return self.reply((HERE / "fonts" / name).read_bytes(), "text/css; charset=utf-8" if name.endswith(".css") else "font/woff2")
             if u.path == "/hls": return self.reply(*hls_proxy(q["u"]))
+            if u.path == "/api/hls/progress": got = list(HLS_GOT.values()); return self.reply(dict(got=sum(g for g, _ in got), total=sum(t for _, t in got)))
             if u.path == "/api/state": return self.reply(dict(cfg=CFG, job=JOB))
             if u.path == "/api/status": return self.reply(dict(JOB, tasks=TASKS, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()))
             if u.path == "/api/version": return self.reply(dict(version=CODE_VERSION, app=VERSION, boot=STARTED))
@@ -1606,7 +1620,7 @@ class Handler(BaseHTTPRequestHandler):
                 if known and not PAGES: threading.Thread(target=quit_app, daemon=True).start()
                 return self.reply({})
             if p == "/api/config":
-                CFG.update({k: v for k, v in d.items() if k in CFG and k not in ("project", "defaults", "canvas")}); save_cfg(); return self.reply(CFG)
+                CFG.update({k: v for k, v in d.items() if k in CFG and k != "project"}); save_cfg(); return self.reply(CFG)
             if p == "/api/pick":
                 if f := ask_file(d["kind"]): PICKED.add(f)
                 return self.reply(dict(path=f))
@@ -1616,19 +1630,13 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/storage/clear": return self.reply(clear_store(d["key"]))
             if p == "/api/pick_dir": return self.reply(dict(path=ask_dir(render_dir(load_project(d["id"])))))
             if p == "/api/project/new":
-                pr = new_project(); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
+                pr = new_project(**{k: d[k] for k in ("video", "name", "cover") if d.get(k)}); CFG["project"] = pr["id"]; save_cfg(); return self.reply(pr)
             if p == "/api/project/open": load_project(d["id"]); CFG["project"] = d["id"]; save_cfg(); return self.reply({})
             if p == "/api/project/save":
                 keys = ("name", "video", "region", "clips", "elements", "cues", "scan", "music", "canvas", "cover")
                 pr = update_project(d["id"], lambda pr: pr.update({k: d[k] for k in keys if k in d}))
-                if "elements" in d: CFG.update(defaults=d["elements"], canvas=d.get("canvas") or list(CANVAS)); save_cfg()   # новий проєкт почне з цих налаштувань і полотна
                 return self.reply(dict(updated=pr["updated"]))
-            if p == "/api/project/delete":
-                for r in load_project(d["id"])["renders"]:
-                    for f in r["files"]: Path(f["thumb"]).unlink(missing_ok=True)
-                proj_file(d["id"]).unlink(); (THUMBS / f"cover_{d['id']}.jpg").unlink(missing_ok=True)
-                if CFG["project"] == d["id"]: CFG["project"] = ""; save_cfg()
-                return self.reply({})
+            if p == "/api/project/delete": delete_project(d["id"]); return self.reply({})
             if p == "/api/element":
                 img, w, h = art(d); buf = io.BytesIO(); img.save(buf, "PNG")
                 return self.reply(dict(w=w, h=h, pad=PAD, img="data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()))
@@ -1787,7 +1795,7 @@ def prepare_ffmpeg():
     finally: TASKS.pop("ffmpeg", None)
 
 def main():
-    CFG.update(rd(CFG_FILE, {}))
+    CFG.update(rd(CFG_FILE, {})); CFG.pop("defaults", None); CFG.pop("canvas", None)   # старі версії переносили елементи й полотно в новий проєкт
     for f in (DATA / "hls").glob("*.*"):                          # шматки прев'ю Twitch, старші за 3 дні, більше не знадобляться
         if f.suffix in (".part", ".m3u8") or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)   # і недокачані, і наші плейлисти
     url = f"http://127.0.0.1:{CFG['port']}"

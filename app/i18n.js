@@ -677,12 +677,15 @@ const EN = {
   "Час за розкладом": "Scheduled time",
   "{} · {}": "{} · {}",
   "{}: {}": "{}: {}",
-  "Плашка, чат, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти": "Card, chat, webcam, music, subtitles and more. A new element appears in the current clip. To add it to another clip, drag the element from the list onto a clip on the timeline. Settings in this panel apply to all clips. Turn off"
+  "Плашка, чат, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти": "Card, chat, webcam, music, subtitles and more. A new element appears in the current clip. To add it to another clip, drag the element from the list onto a clip on the timeline. Settings in this panel apply to all clips. Turn off",
+  "Новий монтаж": "New edit",
+  "Буферизація": "Buffering"
 };
 
 // ── рушій: українська — основна мова (тексти прямо в коді); англійська — цим словником поверх сторінки ──
 // Ключ — український текст як він є; {} — будь-яка вставка (число, назва, тег). Нові тексти інтерфейсу — додай сюди.
-const LANG = (() => { try { return localStorage.getItem('lang'); } catch { return null; } })() || (/^(uk|ru|be)/i.test(navigator.language) ? 'uk' : 'en');
+// мову зберігає сервер у налаштуваннях і підставляє в SAVED_LANG, коли віддає цей файл; уперше — мова Windows
+const LANG = (typeof SAVED_LANG === 'string' && SAVED_LANG) || (/^(uk|ru|be)/i.test(navigator.language) ? 'uk' : 'en');
 const LOCALE = LANG === 'en' ? 'en-US' : 'uk-UA';
 const CYR = /[А-Яа-яІіЇїЄєҐґ]/;
 const tr = (() => {
@@ -714,9 +717,9 @@ const plural = (n, one, few, many) => {                             // 1 шор�
   const d = n % 10, h = n % 100;
   return `${n} ${d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many}`;
 };
-fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lang: LANG})}).catch(() => {});   // сервер підписує системні діалоги тією ж мовою
+if (typeof SAVED_LANG === 'string' && !SAVED_LANG) fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lang: LANG})}).catch(() => {});   // уперше: запам'ятати мову Windows
 function setLang(l) {                                                // мова інтерфейсу: запам'ятати й перезавантажити сторінку
-  try { localStorage.setItem('lang', l); } catch {}
+  window.reloading = true;                                           // перезавантаження — не закриття вікна: програма не виходить
   fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({lang: l})}).catch(() => {}).finally(() => location.reload());
 }
 if (LANG === 'en') {

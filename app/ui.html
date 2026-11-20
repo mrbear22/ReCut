@@ -379,17 +379,11 @@ nav.flow .cutsep::after{content:'✂';position:absolute;left:50%;top:-10px;trans
 .cut .twi{width:18px;height:18px;border-radius:4px}.cut .twi svg{width:11px;height:11px}
 /* головна */
 .hwrap{gap:34px;padding:10px 32px 18px}
-.hero2{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:30px;align-items:center;padding:26px 0 0}
-.hero2 h1{margin:0;font-size:clamp(34px,4.4vw,62px);line-height:.95;color:var(--hi)}.hero2 h1 em{font-style:normal;color:var(--acc)}
-.hpaste{display:flex;gap:8px;margin-top:24px;max-width:600px}
+.hpaste{display:flex;gap:8px;max-width:640px}
 .hpaste input{flex:1;height:48px;padding:0 16px;background:transparent;border:1.5px dashed var(--line2);border-radius:var(--r-sm);font-family:var(--mono);font-size:13px}
 .hpaste input:focus{border-style:solid;border-color:var(--acc)}.hpaste .pri{height:48px;padding:0 24px;font-size:15px}
-.hero2 p{margin:12px 0 0;color:var(--mut)}
+.hstart p{margin:10px 0 0;color:var(--mut)}
 .link{background:none;border:0;padding:0;color:var(--fg);text-decoration:underline;text-underline-offset:3px;cursor:pointer;font:inherit}.link:hover{background:none;color:var(--hi)}
-.tapes{display:flex;gap:16px;align-items:flex-end;padding:14px 14px 0 0}
-.tape{position:relative;width:92px;aspect-ratio:9/16;border:2px solid var(--hi);border-radius:8px;background:var(--s3) center/cover no-repeat;box-shadow:0 12px 26px rgba(0,0,0,.5)}
-.tape::before{content:'';position:absolute;left:50%;top:-9px;width:58%;height:16px;transform:translateX(-50%) rotate(-3deg);background:var(--tape)}
-.tape:nth-child(1){transform:rotate(-7deg)}.tape:nth-child(2){transform:rotate(4deg) translateY(-18px)}.tape:nth-child(3){transform:rotate(-2deg)}
 .vt{overflow:visible;border-radius:var(--r-sm)}.vt img{border-radius:inherit}
 .vt::after{content:'';position:absolute;inset:-8px;pointer-events:none;opacity:0;background:var(--marks);transition:opacity var(--fast)}.vc:hover .vt::after,.vc.inp .vt::after{opacity:1}
 .vt i{border-radius:2px}.vt em{border-radius:2px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase}
@@ -451,18 +445,17 @@ kbd{font-family:var(--mono)}
 
 <section id="home" class="view">
  <div class="hwrap">
-  <section class="hero2">
-    <div><h1 class="disp">Три години етеру&nbsp;—<br><em>десять</em> шортів</h1>
+  <section class="hsec hstart">
+    <div class="cut"><b>Новий монтаж</b><i></i></div>
       <form class="hpaste" id="hLink"><input id="hUrl" placeholder="✂ встав twitch.tv/videos/…" aria-label="Посилання на запис Twitch"><button class="pri">Різати</button></form>
-      <p>або <button class="link" id="hFile">відкрий файл з диска</button></p></div>
-    <div class="tapes" id="hTapes"></div>
+      <p>або <button class="link" id="hFile">відкрий файл з диска</button></p>
   </section>
   <section class="hsec" id="tw">
     <div class="cut"><b><i class="twi" id="twIcon"></i>Твої етери</b><i></i><div id="twCtl" class="row"></div></div>
     <div id="twList" class="vrow"></div>
   </section>
   <section class="hsec">
-    <div class="cut"><b>На монтажному столі</b><i></i><button class="pri" id="new">+ Новий проєкт</button></div>
+    <div class="cut"><b>На монтажному столі</b><i></i></div>
     <div id="plist"></div>
   </section>
   <details class="hsec" id="store"><summary><h2>Місце на диску</h2><span id="storeTotal" class="mut"></span></summary><div id="storeRows"></div></details>
@@ -695,7 +688,7 @@ const ctxClip = () => P.clips[sel] || clipAt(vid.currentTime) || P.clips[0];
 
 // ── збереження й undo/redo ──
 let undoSt = [], redoSt = [], curSnap = null, saveT;
-const snapNow = () => JSON.stringify({clips: P.clips, elements: P.elements, cues: P.cues, region: P.region, music: P.music, canvas: P.canvas});
+const snapNow = (p = P) => JSON.stringify({clips: p.clips, elements: p.elements, cues: p.cues, region: p.region, music: p.music, canvas: p.canvas});
 const resetHist = () => { undoSt = []; redoSt = []; curSnap = snapNow(); };
 function record() { const s = snapNow(); if (curSnap !== null && s !== curSnap) { undoSt.push(curSnap); if (undoSt.length > 200) undoSt.shift(); redoSt = []; } curSnap = s; }
 function save(now) {
@@ -792,7 +785,6 @@ function show(v) {
   if (v === 'home') loadHome(); else if (v === 'pub') loadPub(); else { resizeTL(); if (!tourSeen() && tourI < 0) setTimeout(() => tour(0), 400); }   // новачкам — тур
 }
 $$('nav button').forEach(b => b.onclick = () => show(b.dataset.view));
-$('#new').onclick = async e => { e.stopPropagation(); await openProject(await api('/api/project/new', {})); show('editor'); setTimeout(() => $('#vPop').classList.add('on'), 50); };   // файл чи запис Twitch — на вибір
 $('#pname').oninput = e => { if (P) { P.name = e.target.value; save(); } };
 
 // ── проєкти ──
@@ -813,10 +805,7 @@ async function loadHome() {
       <div class="pinfo"><b>${esc(projName(p))}</b><small>${new Date(p.updated * 1000).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'})} · ${plural(p.clips.length, 'кліп', 'кліпи', 'кліпів')} · ${plural(shorts.length, 'шорт', 'шорти', 'шортів')}</small></div>
       ${shorts.length ? `<div class="pshorts">${shorts.slice(0, 6).map(f => `<div class="sf" data-play="${esc(f.path)}"><img src="${fileUrl(f.thumb)}" alt="" onerror="this.remove()"><span>${fmt(f.len ?? f.b - f.a).replace(/\.\d$/, '')}</span></div>`).join('')}${shorts.length > 6 ? `<span class="more">+${shorts.length - 6}</span>` : ''}</div>` : ''}
     </div>`;
-  }).join('') + '<button class="pnew" id="new2">+ Новий проєкт</button>';
-  const recent = ps.flatMap(p => p.renders.flatMap(r => r.files)).filter(f => f.exists).slice(0, 3);   // останні шорти — приклеєні скотчем
-  $('#hTapes').innerHTML = [0, 1, 2].map(i => `<div class="tape"${recent[i] ? ` style="background-image:url('${fileUrl(recent[i].thumb)}')"` : ''}></div>`).join('');
-  $('#new2').onclick = () => $('#new').click();
+  }).join('');
 }
 async function loadTwitch(refresh) {                              // свої записи (після входу) або канал за назвою; список тримаємо, щоб не питати Twitch щоразу
   const [st, brands] = await Promise.all([api('/api/twitch').catch(() => ({})), pub.brands || api('/api/brands').catch(() => ({}))]);
@@ -862,14 +851,13 @@ function renderTwitch() {
 $('#hLink').onsubmit = async e => {                               // головна дія: запис Twitch → новий проєкт
   e.preventDefault(); const inp = $('#hUrl'), url = inp.value.trim();
   inp.setCustomValidity(/twitch\.tv\/(?:\w+\/)?videos?\/\d+/.test(url) ? '' : 'Потрібне посилання на запис: twitch.tv/videos/…'); if (!inp.reportValidity()) return;
-  inp.value = ''; await openProject(await api('/api/project/new', {})); show('editor'); openLink(url);
+  inp.value = ''; openLink(url, $('#hLink .pri'));
 };
 $('#hUrl').oninput = e => e.target.setCustomValidity('');
-$('#hFile').onclick = async () => { await openProject(await api('/api/project/new', {})); show('editor'); pickVideo(); };
+$('#hFile').onclick = async () => { const {path} = await api('/api/pick', {kind: 'video'}); if (path) projectFor(path, path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '')); };
 $('#twList').onclick = async e => {                               // запис — у новий проєкт; уже є проєкт з ним — відкрити його
-  const b = e.target.closest('[data-vod]'); if (!b) return; const v = twVideos[+b.dataset.vod], ex = homeProjects.find(p => p.video === v.url);
-  if (ex) { await openProject(await api('/api/project?id=' + ex.id)); return show('editor'); }
-  await openProject(await api('/api/project/new', {})); show('editor'); openLink(v.url);
+  const b = e.target.closest('[data-vod]'); if (!b) return; const v = twVideos[+b.dataset.vod];
+  projectFor(v.url, v.title, v.thumb);
 };
 $('#twCtl').addEventListener('submit', async e => {
   e.preventDefault(); const ch = $('#twChIn').value.trim().replace(/^.*twitch\.tv\//, '').replace(/[/?#].*$/, '');
@@ -928,6 +916,11 @@ $('#mclose').onclick = () => { $('#mv').pause(); $('#modal').classList.remove('o
 $('#modal').onclick = e => { if (e.target.id === 'modal') $('#mclose').click(); };
 $('#mreveal').onclick = () => api('/api/reveal', {path: $('#mv').dataset.path});
 
+async function projectFor(video, name, cover) {                     // проєкт = одне відео з його назвою; відоме відео — той самий проєкт
+  const ex = (await api('/api/projects')).find(p => p.video === video);
+  await openProject(ex ? await api('/api/project?id=' + ex.id) : await api('/api/project/new', {video, name, cover}));
+  show('editor');
+}
 async function openProject(p) {
   await api('/api/project/open', {id: p.id});
   P = p; P.elements = P.elements.filter(e => TYPES[e.type]); multi.clear(); migrateMusic();   // типів, яких більше немає (емодзі, позначки, алерти), — геть sel = selCue = -1; selEl = null; curve = []; dur = 0; arts.clear();
@@ -948,15 +941,16 @@ async function pickVideo(relink) {                                 // relink —
 }
 $('#videoChip').onclick = e => P && (videoMissing ? pickVideo(true) : togglePop('#vPop', e));
 $('#vFile').onclick = () => { $('#vPop').classList.remove('on'); pickVideo(); };
-$('#vLink').onsubmit = e => { e.preventDefault(); openLink($('#vUrl').value); };
-async function openLink(url) {                                    // запис Twitch: на диск нічого не качаємо — лише потрібні шматки, коли знадобляться
+$('#vLink').onsubmit = e => { e.preventDefault(); openLink($('#vUrl').value, $('#videoChip'), true); };
+async function openLink(url, btn, here) {                         // запис Twitch: на диск нічого не качаємо — лише потрібні шматки, коли знадобляться
   const id = (url.match(/twitch\.tv\/(?:\w+\/)?videos?\/(\d+)/) || [])[1];
   if (!id) return msg('Потрібне посилання на запис етеру: twitch.tv/videos/…', 1);
   $('#vPop').classList.remove('on'); url = 'https://www.twitch.tv/videos/' + id;
   try {
-    const v = await busy($('#videoChip'), 'Twitch', [['twitch', 10]], task => api('/api/vod', {url, task}));
-    P.video = url; P.region = null; P.clips = []; P.cues = []; P.cover = v.thumb || ''; if (!P.name) { P.name = v.title; $('#pname').value = P.name; }
-    $('#vUrl').value = ''; await save(true); renderAll(); loadVideo();
+    const v = await busy(btn, 'Twitch', [['twitch', 10]], task => api('/api/vod', {url, task})); $('#vUrl').value = '';
+    if (!here) return projectFor(url, v.title, v.thumb);
+    P.video = url; P.region = null; P.clips = []; P.cues = []; P.cover = v.thumb || ''; if (!P.name) { P.name = v.title; $('#pname').value = P.name; }   // старий проєкт без відео
+    await save(true); renderAll(); loadVideo();
   } catch (e) { msg(e.message, 1); }
 }
 let hlsPlayer = null;
@@ -1554,6 +1548,19 @@ function seek(t) { vid.currentTime = clamp(t, 0, dur); stopAt = null; playSeq = 
 $('#play').onclick = () => vid.paused ? vid.play() : vid.pause();
 vid.onplay = vid.onpause = () => { $('#play').textContent = vid.paused ? '▶' : '❚❚'; if (mixOn()) { mix.currentTime = vid.currentTime; vid.paused ? mix.pause() : mix.play(); } };
 vid.onseeked = () => { if (mixOn()) mix.currentTime = vid.currentTime; };
+let bufT = 0, bufPoll = 0, bufRow = null;                           // відео чекає дані — рядок у спільному індикаторі (коротку паузу не показуємо)
+const bufShow = () => {
+  if (bufRow) return; bufRow = document.createElement('div'); bufRow.className = 'bt';
+  bufRow.innerHTML = '<i></i><b>Буферизація</b><span></span><span class="pb"><b></b></span><span></span>'; $('#busy').append(bufRow);
+  const tick = async () => {                                         // запис Twitch: скільки шматка вже прийшло на сервер
+    const r = /^https?:/.test(P?.video || '') ? await api('/api/hls/progress').catch(() => null) : null, f = r && r.total ? r.got / r.total : null;
+    if (!bufRow) return; bufRow.querySelector('span').textContent = f == null ? '' : Math.round(f * 100) + '%'; bufRow.querySelector('.pb b').style.width = (f ?? 0) * 100 + '%';
+  };
+  tick(); bufPoll = setInterval(tick, 300);
+};
+const bufHide = () => { clearTimeout(bufT); clearInterval(bufPoll); bufPoll = 0; bufRow?.remove(); bufRow = null; };
+['waiting', 'seeking'].forEach(e => vid.addEventListener(e, () => { clearTimeout(bufT); bufT = setTimeout(bufShow, 300); }));
+['playing', 'canplay', 'seeked', 'emptied'].forEach(e => vid.addEventListener(e, bufHide));
 document.onkeydown = e => {
   if (!$('#editor').classList.contains('on') || !P || e.target.matches('input,textarea,select,[contenteditable]')) return;
   if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyZ' || e.code === 'KeyY')) {
