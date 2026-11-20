@@ -679,7 +679,11 @@ const EN = {
   "{}: {}": "{}: {}",
   "Плашка, чат, вебкамера, музика, субтитри тощо. Новий елемент з’являється в поточному кліпі. Щоб додати його в інший кліп, перетягни елемент зі списку на кліп на таймлайні. Налаштування в цій панелі — для всіх кліпів. Зняти": "Card, chat, webcam, music, subtitles and more. A new element appears in the current clip. To add it to another clip, drag the element from the list onto a clip on the timeline. Settings in this panel apply to all clips. Turn off",
   "Новий монтаж": "New edit",
-  "Буферизація": "Buffering"
+  "Буферизація": "Buffering",
+  "У монтажі": "In edit",
+  "У монтажі · {}": "In edit · {}",
+  "кліпів ще немає": "no clips yet",
+  "не зарендерено": "not rendered"
 };
 
 // ── рушій: українська — основна мова (тексти прямо в коді); англійська — цим словником поверх сторінки ──

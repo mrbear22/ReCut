@@ -802,7 +802,7 @@ async function loadHome() {
     return `<div class="pj ${P && P.id === p.id ? 'cur' : ''}" data-open="${p.id}">
       <div class="pcov" data-cov="${esc(p.video || '')}">${/\p{L}/u.test(projName(p)[0]) ? esc(projName(p)[0].toUpperCase()) : '▶'}${cov ? `<img src="${esc(cov)}" alt="" onerror="this.remove()">` : ''}${tw ? '<span class="src">Twitch</span>' : ''}</div>
       <div class="pact">${p.renders[0] ? `<button data-reveal="${esc(p.renders[0].out)}" title="Папка з шортами">Папка</button><button data-publish="${p.id}">Опублікувати</button>` : ''}<button data-del="${p.id}" title="Видалити проєкт" aria-label="Видалити проєкт">✕</button></div>
-      <div class="pinfo"><b>${esc(projName(p))}</b><small>${new Date(p.updated * 1000).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'})} · ${plural(p.clips.length, 'кліп', 'кліпи', 'кліпів')} · ${plural(shorts.length, 'шорт', 'шорти', 'шортів')}</small></div>
+      <div class="pinfo"><b>${esc(projName(p))}</b><small>${new Date(p.updated * 1000).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'})} · ${[p.clips.length ? plural(p.clips.length, 'кліп', 'кліпи', 'кліпів') : 'кліпів ще немає', shorts.length ? plural(shorts.length, 'шорт', 'шорти', 'шортів') : p.clips.length ? 'не зарендерено' : ''].filter(Boolean).join(' · ')}</small></div>
       ${shorts.length ? `<div class="pshorts">${shorts.slice(0, 6).map(f => `<div class="sf" data-play="${esc(f.path)}"><img src="${fileUrl(f.thumb)}" alt="" onerror="this.remove()"><span>${fmt(f.len ?? f.b - f.a).replace(/\.\d$/, '')}</span></div>`).join('')}${shorts.length > 6 ? `<span class="more">+${shorts.length - 6}</span>` : ''}</div>` : ''}
     </div>`;
   }).join('');
@@ -841,7 +841,7 @@ $('#twHead').onclick = async e => {                               // не уві
 function renderTwitch() {
   const byVideo = new Map(homeProjects.map(p => [p.video, p]));
   $('#twList').innerHTML = twVideos.length ? twVideos.map((v, i) => `<button class="vc ${byVideo.has(v.url) ? 'inp' : ''}" data-vod="${i}">
-      <span class="vt">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${fmtLen(v.dur)}</i>${byVideo.has(v.url) ? '<em>У проєкті</em>' : ''}</span>
+      <span class="vt">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<i>${fmtLen(v.dur)}</i>${byVideo.has(v.url) ? `<em>${byVideo.get(v.url).clips.length ? 'У монтажі · ' + plural(byVideo.get(v.url).clips.length, 'кліп', 'кліпи', 'кліпів') : 'У монтажі'}</em>` : ''}</span>
       <b>${esc(v.title)}</b><small>${[v.date && new Date(v.date).toLocaleDateString(LOCALE, {day: 'numeric', month: 'short'}), v.views && (v.views >= 1000 ? `${Math.round(v.views / 1000)} тис. переглядів` : plural(v.views, 'перегляд', 'перегляди', 'переглядів'))].filter(Boolean).join(' · ')}</small></button>`).join('')
     : '<p class="mut">Записів етерів немає</p>';
   for (const v of twVideos) {                                     // проєкт із цим записом без обкладинки — бере її зі списку

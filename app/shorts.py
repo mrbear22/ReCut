@@ -1409,7 +1409,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ReCut", "1.17.1"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.2"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1693,7 +1693,8 @@ def open_window(url):
         edge = Path(base or "-", "Microsoft/Edge/Application/msedge.exe")
         if edge.is_file():                                         # вікно-застосунок без панелей браузера
             return subprocess.Popen([str(edge), f"--app={url}", f"--user-data-dir={DATA / 'window'}", "--no-first-run",
-                                     "--no-default-browser-check", "--window-size=1500,950"], env=SYS_ENV)
+                                     "--no-default-browser-check", "--window-size=1500,950",
+                                     "--disable-extensions", "--disable-sync", "--disable-features=msImplicitSignin"], env=SYS_ENV)   # розширення з акаунта Edge (темні теми тощо) перефарбовують програму
     webbrowser.open(url)
 
 PAGE_SILENT_S = 150                                               # вікно, що зникло без «бувай» (браузер вбили): згорнуте браузер будить рідко, тож чекаємо довше
