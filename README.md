@@ -48,14 +48,18 @@
 
     ./build.sh        →  dist/ReCut-Setup.exe
 
-Новий реліз: підняти `VERSION` в `app/shorts.py`, закомітити, зібрати й викласти:
+Новий реліз: підняти `VERSION` в `app/recut/update.py`, закомітити, зібрати й викласти:
 
     gh release create v1.2.3 dist/ReCut-Setup.exe
 
 Програма порівнює свій тег з новим релізом через GitHub. Змінились лише файли в `app/` — завантажує тільки їх;
 змінились `build.sh`, `installer.iss` чи `launcher/` — тихо ставить новий інсталятор.
 
-- `app/shorts.py` — сервер: проєкти, аналіз, розпізнавання мови, рендер
-- `app/ui.html`, `app/publish.js` — інтерфейс; `app/publish.py` — Buffer і сховище відео; записи Twitch — через yt-dlp, що завантажується сам
+- `app/shorts.py` — точка входу; код програми — пакет `app/recut/`:
+  `server` і `api` — HTTP і маршрути; `projects`, `media` (ffmpeg), `analysis` (моменти), `stt` (розпізнавання мови), `render`, `art` (елементи-картинки),
+  `twitch` (записи Twitch через yt-dlp, кеш шматків), `net` і `libs` (завантаження), `publishing` і `buffer` (Buffer), `system` (вікно, діалоги), `update`
+- `app/ui.html`, `app/styles.css`, `app/js/` — інтерфейс (`core`, `home`, `panels`, `editor`, `selection`, `preview`, `timeline`, `menus`, `render`);
+  `app/i18n.js` — англійська; `app/publish.js` — публікація
+- `RECUT_DATA=<тека> python app/shorts.py --no-window` — сервер з окремою текою даних (розробка, тести)
 - `cloudflare/worker.js` — сховище відео для Buffer (Cloudflare R2)
 - `launcher/` — `ReCut.exe`; `installer.iss` — інсталятор

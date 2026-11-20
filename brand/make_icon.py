@@ -12,7 +12,7 @@ from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from PIL import Image, ImageDraw, ImageFont
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
-from brands import polygons                                       # той самий розбір контурів SVG, що й для логотипів мереж
+from recut.brands import polygons                                       # той самий розбір контурів SVG, що й для логотипів мереж
 
 INK, PAPER, TAPE, TILE = "#15120C", "#F7F2E8", "#FFCC33", "#0D0C0B"
 TILT = -4                                                          # стрічка трохи навскіс, як у шапці

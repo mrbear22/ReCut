@@ -1,6 +1,6 @@
 """Публікація готових шортів через Buffer API; назву, опис і хештеги пише сам автор.
 Ключ Buffer лежить окремо від налаштувань (data/buffer.json) і в інтерфейс не віддається."""
-import http.client, json, re, urllib.error, urllib.parse, urllib.request, uuid
+import http.client, json, re, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 BUFFER_API = "https://api.buffer.com"

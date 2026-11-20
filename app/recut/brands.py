@@ -72,40 +72,59 @@ class _Reader:
         self.skip(); self.i += 1; return int(self.d[self.i - 1])
 
 
+class _Pen:
+    """Перо, що йде шляхом SVG: поточна точка, початок контуру, остання контрольна точка (для S/T), готові ламані."""
+    def __init__(self, d): self.r, self.polys, self.cur, self.x, self.y, self.sx, self.sy, self.last_c = _Reader(d), [], [], 0.0, 0.0, 0.0, 0.0, None
+
+    def point(self, ox, oy): return ox + self.r.num(), oy + self.r.num()
+
+    def mirrored(self):
+        """Контрольна точка S/T: дзеркало попередньої відносно поточної точки (або сама точка)."""
+        return (2 * self.x - self.last_c[0], 2 * self.y - self.last_c[1]) if self.last_c else (self.x, self.y)
+
+    def close(self):
+        if self.cur: self.polys.append(self.cur)
+        self.cur = []
+
+    def Z(self, C, ox, oy): self.close(); self.x, self.y, self.last_c = self.sx, self.sy, None
+
+    def M(self, C, ox, oy):
+        self.close(); self.x, self.y = self.point(ox, oy); self.sx, self.sy = self.x, self.y; self.cur = [(self.x, self.y)]; self.last_c = None
+
+    def L(self, C, ox, oy):
+        if C == "L": self.x, self.y = self.point(ox, oy)
+        elif C == "H": self.x = ox + self.r.num()
+        else: self.y = oy + self.r.num()
+        self.cur.append((self.x, self.y)); self.last_c = None
+
+    def C(self, C, ox, oy):
+        c1 = self.point(ox, oy) if C == "C" else self.mirrored()
+        c2 = self.point(ox, oy); e = self.point(ox, oy)
+        self.cur += _bez((self.x, self.y), c1, c2, e); self.last_c = c2; self.x, self.y = e
+
+    def Q(self, C, ox, oy):
+        q = self.point(ox, oy) if C == "Q" else self.mirrored(); e = self.point(ox, oy); x, y = self.x, self.y
+        self.cur += _bez((x, y), (x + 2 / 3 * (q[0] - x), y + 2 / 3 * (q[1] - y)), (e[0] + 2 / 3 * (q[0] - e[0]), e[1] + 2 / 3 * (q[1] - e[1])), e)
+        self.last_c = q; self.x, self.y = e
+
+    def A(self, C, ox, oy):
+        rx, ry, phi = self.r.num(), self.r.num(), self.r.num(); la, sw = self.r.flag(), self.r.flag(); e = self.point(ox, oy)
+        self.cur += _arc(self.x, self.y, rx, ry, phi, la, sw, *e); self.x, self.y = e; self.last_c = None
+
+_STEP = {"M": _Pen.M, "Z": _Pen.Z, "L": _Pen.L, "H": _Pen.L, "V": _Pen.L, "C": _Pen.C, "S": _Pen.C, "Q": _Pen.Q, "T": _Pen.Q, "A": _Pen.A}
+
 def polygons(d):
-    """Шлях SVG → список замкнених ламаних (криві й дуги розбиті на відрізки)."""
-    r, polys, cur = _Reader(d), [], []
-    x = y = sx = sy = 0.0; cmd = None; last_c = None
+    """Шлях SVG → список замкнених ламаних (криві й дуги розбиті на відрізки). Без нової літери команда повторюється (після M — як L)."""
+    pen, cmd = _Pen(d), None
     while True:
-        c = r.cmd()
+        c = pen.r.cmd()
         if c: cmd = c
-        elif not r.more(): break
-        rel = cmd.islower(); C = cmd.upper(); ox, oy = (x, y) if rel else (0.0, 0.0)
-        if C == "Z":
-            if cur: polys.append(cur)
-            cur, x, y, last_c = [], sx, sy, None; continue
-        if C == "M":
-            if cur: polys.append(cur)
-            x, y = ox + r.num(), oy + r.num(); sx, sy = x, y; cur = [(x, y)]; cmd = "l" if rel else "L"; last_c = None
-        elif C in "LHV":
-            if C == "L": x, y = ox + r.num(), oy + r.num()
-            elif C == "H": x = ox + r.num()
-            else: y = oy + r.num()
-            cur.append((x, y)); last_c = None
-        elif C in "CS":
-            c1 = (ox + r.num(), oy + r.num()) if C == "C" else ((2 * x - last_c[0], 2 * y - last_c[1]) if last_c else (x, y))
-            c2 = (ox + r.num(), oy + r.num()); e = (ox + r.num(), oy + r.num())
-            cur += _bez((x, y), c1, c2, e); last_c = c2; x, y = e
-        elif C in "QT":
-            q = (ox + r.num(), oy + r.num()) if C == "Q" else ((2 * x - last_c[0], 2 * y - last_c[1]) if last_c else (x, y))
-            e = (ox + r.num(), oy + r.num())
-            cur += _bez((x, y), (x + 2 / 3 * (q[0] - x), y + 2 / 3 * (q[1] - y)), (e[0] + 2 / 3 * (q[0] - e[0]), e[1] + 2 / 3 * (q[1] - e[1])), e)
-            last_c = q; x, y = e
-        elif C == "A":
-            rx, ry, phi = r.num(), r.num(), r.num(); la, sw = r.flag(), r.flag(); e = (ox + r.num(), oy + r.num())
-            cur += _arc(x, y, rx, ry, phi, la, sw, *e); x, y = e; last_c = None
-    if cur: polys.append(cur)
-    return polys
+        elif not pen.r.more(): break
+        rel = cmd.islower(); ox, oy = (pen.x, pen.y) if rel else (0.0, 0.0)
+        _STEP[cmd.upper()](pen, cmd.upper(), ox, oy)
+        if cmd.upper() == "M": cmd = "l" if rel else "L"
+    pen.close()
+    return pen.polys
 
 
 def glyph_mask(key, px, ss=4):
