@@ -300,7 +300,8 @@ STT_LIBS = ("faster-whisper==1.2.1 ctranslate2==4.9.0 onnxruntime==1.32.0 av==19
             "anyio==4.16.0 click==8.5.1 colorama==0.4.6 filelock==4.2.10 flatbuffers==25.12.19 fsspec==2026.9.0 h11==0.16.0 httpcore2==2.16.0 "
             "httpx2==2.16.0 idna==3.20 packaging==26.3 protobuf==7.36.2 pyyaml==6.0.3 tqdm==4.70.1 truststore==0.10.5 typing-extensions==4.16.0").split()
 CV_LIBS = ["opencv-python-headless==4.14.0.94"]
-LIB_LOCK = threading.Lock()                                        # паралельні аналіз і субтитри не качають те саме двічі
+LIB_LOCKS, LIB_GUARD = {}, threading.Lock()                       # своє на кожне: те саме двічі не качаємо, різне — одночасно
+lib_lock = lambda key: (LIB_GUARD.acquire(), LIB_LOCKS.setdefault(key, threading.Lock()), LIB_GUARD.release())[1]
 
 NET_TRIES, NET_TIMEOUT = 5, 120                                   # мережа буває повільна чи рветься: кілька спроб, перш ніж здатись
 
@@ -331,7 +332,7 @@ def ffbin(name):
     """Шлях до ffmpeg/ffprobe. У зібраній програмі перший виклик завантажує ffmpeg у теку програми."""
     if not PACKAGED: return name                                   # із сорсів — той, що в PATH
     exe = FFDIR / f"{name}.exe"
-    with LIB_LOCK:
+    with lib_lock("ffmpeg"):
         if not exe.is_file():
             z = TMP / "ffmpeg.zip"; download(FFMPEG_URL, z, "Завантажую ffmpeg, 90 МБ", "ffmpeg")
             part = FFDIR.with_name("ffmpeg.part"); shutil.rmtree(part, ignore_errors=True); part.mkdir()
@@ -350,11 +351,11 @@ def parallel(jobs, say, n=4):
         return [f.result() for f in futs]
     finally: ex.shutdown(wait=False, cancel_futures=True)
 
-def install_wheels(files, dest, stage, text, only=None):
-    """Колеса з PyPI -> dest, по чотири паралельно; only — розпакувати лише файли з цим префіксом."""
+def install_wheels(files, dest, stage, text, only=None, say=None):
+    """Колеса з PyPI -> dest, по чотири паралельно; only — розпакувати лише файли з цим префіксом; say(частка) — замість власного рядка поступу."""
     dest.mkdir(exist_ok=True); total, t0 = max(1, sum(f["size"] for f in files)), time.time()
     jobs = [lambda p, f=f: fetch(f["url"], TMP / f["filename"], lambda got, _: p(got / total * len(files))) for f in files]   # частка — за байтами, не за файлами
-    parallel(jobs, lambda frac: report(stage, text, min(.99, frac), t0))
+    parallel(jobs, say or (lambda frac: report(stage, text, min(.99, frac), t0)))
     for f in files:
         whl = TMP / f["filename"]
         with zipfile.ZipFile(whl) as z: z.extractall(dest, [n for n in z.namelist() if n.startswith(only)] if only else None)
@@ -366,32 +367,31 @@ def libs_missing(specs):
     have = {norm(p.name[:-len(".dist-info")]) for p in LIBS.glob("*.dist-info")} if LIBS.is_dir() else set()
     return [s for s in specs if norm(s.replace("==", "-")) not in have]
 
-def need_libs(specs, module, text, stage="libs"):
+def need_libs(specs, module, text, stage="libs", say=None):
     """Колеса з PyPI (точні версії) -> data/libs, яких ще немає. Модуль, встановлений поза data/libs (запуск із сорсів), — не чіпаємо."""
-    with LIB_LOCK:
+    with lib_lock(module):
         missing = libs_missing(specs)
         if not missing: return
         spec = importlib.util.find_spec(module)
         if spec and LIBS not in Path(spec.origin or "-").parents: return
-        files = []
-        for s in missing:
-            name, ver = s.split("==")
-            urls = fetch(f"https://pypi.org/pypi/{name}/{ver}/json")["urls"]
-            files.append(next(f for f in urls if f["filename"].endswith("none-any.whl") or
-                              (f["filename"].endswith("win_amd64.whl") and re.search(r"-(cp312|cp3\d+-abi3|py3)-", f["filename"]))))
-        install_wheels(files, LIBS, stage, text)                  # dist-info — у тому ж архіві: є він, є й колесо
+        wheel = lambda s: next(f for f in fetch(f"https://pypi.org/pypi/{s.replace('==', '/')}/json")["urls"] if f["filename"].endswith("none-any.whl") or
+                               (f["filename"].endswith("win_amd64.whl") and re.search(r"-(cp312|cp3\d+-abi3|py3)-", f["filename"])))
+        with ThreadPoolExecutor(8) as ex: files = list(ex.map(wheel, missing))   # описи пакетів — разом, а не по черзі
+        install_wheels(files, LIBS, stage, text, say=say)         # dist-info — у тому ж архіві: є він, є й колесо
         importlib.invalidate_caches()
 
-def fetch_cuda():
-    """Колеса nvidia-* з PyPI -> data/cuda, з прогресом у інтерфейсі."""
-    from packaging.version import Version
+def fetch_cuda(say=None):
+    """Колеса nvidia-* з PyPI -> data/cuda. Без сторонніх модулів: качається разом з бібліотеками розпізнавання, а не після них."""
     tag = "win_amd64" if os.name == "nt" else "manylinux"
-    files = []
-    for name, ver in CUDA_PKGS:
-        rel = fetch(f"https://pypi.org/pypi/{name}/json")["releases"]
-        best = max((v for v, fs in rel.items() if v.startswith(ver) and not Version(v).is_prerelease and any(tag in f["filename"] for f in fs)), key=Version)
-        files.append(next(f for f in rel[best] if tag in f["filename"] and f["filename"].endswith(".whl")))
-    install_wheels(files, CUDA, "stt", f"Завантажую бібліотеки NVIDIA, {sum(f['size'] for f in files) / 1e9:.1f} ГБ", only="nvidia/")
+    num = lambda v: tuple(int(x) for x in v.split("."))           # лише випуски: 12.9.1.4, не 9.1.0rc1
+    def wheel(pkg):
+        name, ver = pkg; rel = fetch(f"https://pypi.org/pypi/{name}/json")["releases"]
+        best = max((v for v, fs in rel.items() if v.startswith(ver) and re.fullmatch(r"[\d.]+", v) and any(tag in f["filename"] for f in fs)), key=num)
+        return next(f for f in rel[best] if tag in f["filename"] and f["filename"].endswith(".whl"))
+    with lib_lock("cuda"):
+        if any(b.parent.name == "cublas" for b in cuda_dirs()): return
+        with ThreadPoolExecutor(4) as ex: files = list(ex.map(wheel, CUDA_PKGS))
+        install_wheels(files, CUDA, "stt", f"Завантажую бібліотеки NVIDIA, {sum(f['size'] for f in files) / 1e9:.1f} ГБ", only="nvidia/", say=say)
     use_cuda_dlls()
 
 # ── записи Twitch: відео не на диску; беремо лише потрібні шматки — у низькій якості для аналізу, в оригінальній для рендеру ──
@@ -686,22 +686,33 @@ def stt_model():
     model = sttm()
     if STT.alive() and STT.model == model: return STT
     STT.stop()                                                 # обрали іншу модель — інший процес
-    need_libs(STT_LIBS, "faster_whisper", "Завантажую бібліотеки розпізнавання мови, 200 МБ", "stt")
-    import ctranslate2
-    gpu = ctranslate2.get_cuda_device_count() > 0 and STT.gpu_failures < 2   # двічі впала відеокарта — до перезапуску програми лише процесор
-    if gpu and not any(b.parent.name == "cublas" for b in cuda_dirs()):
-        try: fetch_cuda()
-        except (OSError, RuntimeError) as e: print("CUDA не завантажено, розпізнаю на процесорі:", e); gpu = False   # без інтернету — повільніше, але працює
     mdir = lambda: [d for d in MODELS.glob(f"models--*faster-whisper-{model}") if d.is_dir()]
-    loading = not any(f for d in mdir() for f in d.rglob("model.bin")); t0, task = time.time(), getattr(CUR, "task", None)
-    def watch():                                               # прогрес першого завантаження моделі — за розміром теки
-        CUR.task = task
+    loading = not any(f for d in mdir() for f in d.rglob("model.bin"))
+    nvidia = os.name == "nt" and Path(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvcuda.dll").is_file()   # драйвер NVIDIA — видно й без бібліотек
+    want_cuda = nvidia and STT.gpu_failures < 2 and not any(b.parent.name == "cublas" for b in cuda_dirs())
+    if libs_missing(STT_LIBS) or loading or want_cuda:          # перший раз: бібліотеки, потім модель — і водночас бібліотеки NVIDIA; один рядок поступу
+        part = {"libs": [.2e9, 0.0], "model": [STT_MODELS[model] if loading else 0, 0.0], "cuda": [1.3e9 if want_cuda else 0, 0.0]}
+        mark = lambda k: lambda f: part[k].__setitem__(1, f)
+        def libs_and_model():
+            need_libs(STT_LIBS, "faster_whisper", "", "stt", say=mark("libs")); part["libs"][1] = 1
+            if loading:                                        # модель — тим самим huggingface_hub, що й процес розпізнавання, у ту ж теку
+                from faster_whisper.utils import download_model
+                download_model(model, cache_dir=str(MODELS)); part["model"][1] = 1
+        def cuda():
+            try: fetch_cuda(say=mark("cuda"))
+            except Exception as e: print("CUDA не завантажено, розпізнаю на процесорі:", ascii(e))   # без інтернету чи PyPI змінився — повільніше, але працює
+            part["cuda"][1] = 1
+        ex, t0 = ThreadPoolExecutor(2), time.time(); futs = [ex.submit(libs_and_model)] + ([ex.submit(cuda)] if want_cuda else [])
+        size = sum(w for w, _ in part.values())
         try:
-            while loading and not STT.alive():
-                got = sum(f.stat().st_size for d in mdir() for f in d.rglob("*") if f.is_file())
-                report("stt", f"Завантажую модель мовлення, {STT_MODELS[model] / 1e9:.1f} ГБ", min(.99, got / STT_MODELS[model]), t0); time.sleep(1)
-        except Cancelled: pass
-    if loading: threading.Thread(target=watch, daemon=True).start()
+            while not all(f.done() for f in futs):
+                if loading and part["libs"][1] >= 1: part["model"][1] = min(.99, sum(f.stat().st_size for d in mdir() for f in d.rglob("*") if f.is_file()) / STT_MODELS[model])
+                report("stt", f"Завантажую розпізнавання мови, {size / 1e9:.1f} ГБ", min(.99, sum(w * f for w, f in part.values()) / size), t0)
+                wait_any(futs, timeout=1)
+            for f in futs: f.result()
+        finally: ex.shutdown(wait=False)                       # скасували — недокачане докачається у фоні й знадобиться наступного разу
+    import ctranslate2
+    gpu = ctranslate2.get_cuda_device_count() > 0 and STT.gpu_failures < 2 and any(b.parent.name == "cublas" for b in cuda_dirs())   # двічі впала відеокарта — до перезапуску лише процесор
     for dev in ["cuda"] * max(0, 2 - STT.gpu_failures) * gpu + ["cpu"]:   # відеокарта — дві спроби: скидання драйвера буває разовим
         try: STT.start(dev, model); return STT
         except (RuntimeError, ChildProcessError) as e:
@@ -851,29 +862,16 @@ def ai_moments(f, segs, model):
     return sorted(out, key=lambda c: c["a"])
 
 # ── пошук вебкамери ──
-def detect_cam(src, region=None):
-    """Вебкамера: обличчя (Haar) у 12 кадрах області аналізу; межі — найсильніші біля обличчя лінії, що є в кожному кадрі (рамка оверлею).
+def detect_cam(shots):
+    """Вебкамера: обличчя (Haar) у кадрах з плеєра (JPEG, 640 px); межі — найсильніші біля обличчя лінії, що є в кожному кадрі (рамка оверлею).
     Рамки не видно — кадр «голова й плечі» навколо обличчя."""
     need_libs(CV_LIBS, "cv2", "Завантажую OpenCV, 40 МБ")
     import cv2
-    sw, sh, dur, _ = probe(src); aw = 640; ah = ev(aw * sh / sw); n = 12
-    a0, a1 = region or (0, dur); a0, a1 = max(0.0, float(a0)), min(float(a1), dur)
     casc = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    frames, faces, t0 = [], [], time.time(); times = [a0 + (a1 - a0) * (i + .5) / n for i in range(n)]
-    if is_url(src):                                                # запис Twitch: шматки з усіма кадрами — одним паралельним завантаженням
-        init, parts = hls_index(src, "mid", max(times))
-        urls = list(dict.fromkeys(([init] if init else []) + [next((p for p in parts if p[0] + p[1] > t), parts[-1])[2] for t in times]))
-        parallel([lambda p, u=u: (hls_file(u), p(1))[0] for u in urls], lambda f: report("cam", "Завантажую кадри з Twitch", min(.99, f), t0), 8)
-    grab = lambda t: run([ffbin("ffmpeg"), "-v", "error", *local_input(src, "mid", t, t + .5), "-frames:v", "1",
-                          "-vf", f"scale={aw}:{ah}", "-f", "rawvideo", "-pix_fmt", "gray", "-"]).stdout
-    report("cam", "Шукаю вебкамеру", None, t0)
-    with ThreadPoolExecutor(4) as ex: raws = list(ex.map(grab, times))   # кадри — паралельно
-    for i, raw in enumerate(raws):
-        report("cam", "Шукаю вебкамеру", i / n, t0)
-        if len(raw) < aw * ah: continue
-        g = np.frombuffer(raw[:aw * ah], np.uint8).reshape(ah, aw); frames.append(g)
-        faces += [(x + w / 2, y + h / 2, w) for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
-    if len(frames) < 4: raise RuntimeError("Не вдалося прочитати кадри")
+    frames = [g for g in (cv2.imdecode(np.frombuffer(base64.b64decode(s.split(",", 1)[-1]), np.uint8), cv2.IMREAD_GRAYSCALE) for s in shots) if g is not None]
+    if not frames: raise RuntimeError("Не вдалося прочитати кадри")
+    ah, aw = frames[0].shape; frames = [g for g in frames if g.shape == (ah, aw)]
+    faces = [(x + w / 2, y + h / 2, w) for g in frames for x, y, w, h in casc.detectMultiScale(g, 1.1, 6, minSize=(18, 18))]
     if len(faces) < max(2, len(frames) * .25): return None
     F = np.array(faces); near = lambda f: np.hypot(*(F[:, :2] - f[:2]).T) < f[2] * .6
     cx, cy, fw = np.median(F[near(max(F, key=lambda f: near(f).sum()))], axis=0)   # найчастіше місце обличчя
@@ -1445,7 +1443,7 @@ BUFFER = publish.Buffer(DATA / "buffer.json")
 MEDIA = publish.WorkerMedia()
 # ── оновлення з GitHub: що змінилось між нашим тегом і новим релізом, видно з порівняння комітів ──
 LINKS = {"patreon": "https://www.patreon.com/miishanii"}             # підтримка автора; програма безкоштовна повністю
-REPO, VERSION = "mrbear22/ReCut", "1.17.4"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.5"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 
@@ -1705,7 +1703,7 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/post/save": save_post(d["id"], d["path"], d["post"]); return self.reply({})
             if p == "/api/post/unqueue": return self.reply(unqueue(d["id"], d["path"]))
             if p == "/api/publish": return self.reply(publish_batch(d["id"], d["plan"], d.get("privacy", "public"), int(d.get("limit") or 0)))
-            if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["video"], d.get("region"))))
+            if p == "/api/detect_cam": return self.reply(dict(rect=detect_cam(d["frames"])))
             if p == "/api/render":
                 if JOB["running"]: return self.reply(JOB, code=409)
                 if not d.get("out"): return self.reply({"error": "Не обрано теку для шортів"}, code=400)

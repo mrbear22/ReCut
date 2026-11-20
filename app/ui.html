@@ -1189,9 +1189,25 @@ function afterEdit(el, k) {
   if (['bgOn', 'karaoke', 'shape', 'style', 'bw'].includes(k)) renderProps();
   save();
 }
-async function detectCam(cam, btn = document.createElement('button')) {   // кадри — з області аналізу; рядок поступу згори, зі скасуванням
+async function camFrames(n = 8) {                                 // кадри з плеєра: запис Twitch — що вже завантажено біля курсора, файл — область аналізу
+  if (!vid.videoWidth) throw new Error('відео ще не завантажилось');
+  const was = vid.currentTime, playing = !vid.paused, bufs = [...Array(vid.buffered.length).keys()].map(i => [vid.buffered.start(i), vid.buffered.end(i)]);
+  const [a, b] = /^https?:/.test(P.video || '') ? bufs.find(([s, e]) => was >= s - .5 && was <= e + .5) || [was, was] : region();
+  const c = Object.assign(document.createElement('canvas'), {width: 640, height: Math.round(640 * vid.videoHeight / vid.videoWidth)}), x = c.getContext('2d'), shots = [];
+  if (playing) vid.pause();
   try {
-    const r = await busy(btn, 'Вебкамера', [['cam', 15]], task => api('/api/detect_cam', {video: P.video, region: region(), task}), null, true);
+    for (let i = 0; i < n; i++) {
+      vid.currentTime = a + (b - a) * (i + .5) / n;
+      await Promise.race([new Promise(r => vid.addEventListener('seeked', r, {once: true})), new Promise(r => setTimeout(r, 3000))]);
+      x.drawImage(vid, 0, 0, c.width, c.height); shots.push(c.toDataURL('image/jpeg', .85));
+    }
+  } finally { vid.currentTime = was; if (playing) vid.play(); }
+  return shots;
+}
+async function detectCam(cam, btn = document.createElement('button')) {   // кадри — з плеєра, без завантажень; рядок поступу згори
+  try {
+    const frames = await camFrames();
+    const r = await busy(btn, 'Вебкамера', [['cam', 2]], task => api('/api/detect_cam', {frames, task}), null, true);
     if (r.rect) { cam.src = r.rect; if (cam.w >= CW()) arrange(); msg('Вебкамеру знайдено'); }
     else { setMode('src'); msg('Вебкамеру не знайдено. Виділи її рамкою вручну.', 1); }
     save();
