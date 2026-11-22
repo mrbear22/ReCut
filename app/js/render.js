@@ -127,9 +127,14 @@ function renderAll() { renderEls(); renderList(); renderCanvasBar(); fitCanvas()
   addEventListener('pagehide', () => window.reloading || navigator.sendBeacon('/api/bye', JSON.stringify({page})));   // закрили вікно — програма зупиняється одразу
   addEventListener('keydown', e => { if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.code === 'KeyR')) e.preventDefault(); }, true);   // перезавантаження сторінки = закриття вікна, тож його вимкнено
   Promise.all([api('/api/twitch'), api('/api/brands')]).then(([st, br]) => { pub.brands ||= br; twHead(st); }).catch(() => {});
-  const s = await api('/api/state'); cfg = s.cfg; renderPops(); setMode('short'); scaleUI();
-  api('/api/fonts').then(f => $('#fontlist').innerHTML = f.map(n => `<option value="${esc(n)}">`).join(''));
-  if (cfg.project) { const p = await api('/api/project?id=' + cfg.project).catch(() => null); if (p) await openProject(p); }
-  show('home'); fitTL();
-  if (s.job.running) rendering([['render', 60]], async () => {}, s.job.task).catch(() => {});   // вікно відкрили під час рендеру
+  let s = null;
+  try {
+    for (let i = 0; !s; i++) s = await api('/api/state').catch(e => { if (i >= 20) throw e; return new Promise(r => setTimeout(r, 300)).then(() => null); });   // сервер ще піднімається — ще раз
+    cfg = s.cfg; renderPops(); setMode('short'); scaleUI();
+    api('/api/fonts').then(f => $('#fontlist').innerHTML = f.map(n => `<option value="${esc(n)}">`).join(''));
+    const p = cfg.project && await api('/api/project?id=' + cfg.project).catch(() => null);
+    if (p) await openProject(p).catch(e => { reportError('open last project: ' + (e.stack || e)); });
+  } catch (e) { reportError('startup: ' + (e.stack || e)); }
+  finally { show('home'); fitTL(); }                              // екран — завжди, навіть якщо щось вище не вдалося
+  if (s?.job.running) rendering([['render', 60]], async () => {}, s.job.task).catch(() => {});   // вікно відкрили під час рендеру
 })();

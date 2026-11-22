@@ -1,6 +1,7 @@
 """Маршрути HTTP API інтерфейсу: кожен — коротка функція, вся робота — у своїх модулях.
 Функція отримує параметри запиту (GET — рядок запиту, POST — JSON) і повертає відповідь як дані (JSON) або Reply."""
 import base64, io, threading, webbrowser
+from datetime import datetime
 from . import brands
 from .analysis import AI, analyze
 from .art import art
@@ -50,6 +51,11 @@ def update_apply(d):
 @post("/api/config")
 def config(d):
     CFG.update({k: v for k, v in d.items() if k in CFG and k != "project"}); save_cfg(); return CFG
+
+@post("/api/log")
+def page_error(d):
+    """Помилка сторінки — у журнал програми: так видно, чому вікно відкрилось порожнім."""
+    print(datetime.now(), "page:", str(d.get("text", ""))[:2000]); return {}
 
 @post("/api/cancel")
 def cancel(d): TASK.cancel(d["key"]); return {}

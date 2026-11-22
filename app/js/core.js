@@ -2,6 +2,9 @@
 const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
 const api = (p, b) => fetch(p, b === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(b)})
   .then(async r => { const j = await r.json(); if (j && j.error) throw new Error(j.error); if (j && j.aborted) throw Object.assign(new Error('Скасовано'), {cancelled: true}); return j; });
+const reportError = text => navigator.sendBeacon('/api/log', JSON.stringify({text: String(text).slice(0, 2000)}));   // помилки сторінки — у журнал програми (data/log.txt)
+addEventListener('error', e => reportError(`${e.message} @ ${(e.filename || '').split('/').pop()}:${e.lineno}`));
+addEventListener('unhandledrejection', e => reportError('promise: ' + (e.reason?.stack || e.reason)));
 const fmt = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ':' + (t % 60).toFixed(1).padStart(4, '0'); };
 const parse = s => s.trim().split(':').reduce((a, x) => a * 60 + parseFloat(x), 0);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -115,7 +118,7 @@ const ensureSubs = () => subsEls()[0] || (addSubsEl(P.elements, ''), renderEls()
 const kept = c => { const out = []; let t = c.a; for (const [x, y] of [...(c.cut || [])].sort((p, q) => p[0] - q[0]).concat([[c.b, c.b]])) { if (Math.min(x, c.b) - t > .05) out.push([t, Math.min(x, c.b)]); t = Math.max(t, y); } return out; };
 const net = c => kept(c).reduce((s, [a, b]) => s + b - a, 0);
 const toOut = (c, t) => kept(c).reduce((s, [a, b]) => s + Math.max(0, Math.min(t, b) - a), 0);
-const toSrc = (c, r) => { for (const [a, b] of kept(c)) { if (r <= b - a) return a + r; r -= b - a; } return c.b; };
+const toSrc = (c, r, start) => { for (const [a, b] of kept(c)) { if (start ? r < b - a : r <= b - a) return a + r; r -= b - a; } return c.b; };   // на межі вирізаного: кінець — до нього, початок (start) — після
 const clipAt = t => P.clips.find(c => t >= c.a && t < c.b);
 const ctxClip = () => P.clips[sel] || clipAt(vid.currentTime) || P.clips[0];
 

@@ -165,9 +165,9 @@ async function makeSubs() {
 }
 $('#mkSubs').onclick = makeSubs;
 $('#toRegion').onclick = () => { if (P && dur) { const [a, b] = region(), pad = (b - a) * .03; view = {t0: a - pad, t1: b + pad}; clampView(); } };
-function selectCue(j, jump = true) {
+function selectCue(j, jump = true, open = true) {                 // open — показати редактор репліки (при перетягуванні — ні)
   multi.clear(); selCue = j; if (j >= 0) focus = 'cue'; if (j >= 0) sel = -1; renderList(); const c = P.cues[j];
-  $('#cueEdit').classList.toggle('on', !!c); if (c) { paintCue(c); if (jump) seek(c.a); }
+  $('#cueEdit').classList.toggle('on', !!c && open); if (c && open) paintCue(c); if (c && jump) seek(c.a);
 }
 function addCue(t, row = 0) {
   const sid = (subsEls()[row] || ensureSubs()).id, nx = P.cues.find(c => rowOf(c) === row && c.a > t), c = {a: t, b: Math.min(t + 1.5, nx ? nx.a : dur), text: 'Текст', sid};   // перша репліка — сама додає елемент «Субтитри»
@@ -282,6 +282,8 @@ function renderList() {
     <span class="ac"><button data-act="play" title="Програти" aria-label="Програти">▶</button><button data-act="del" title="Видалити" aria-label="Видалити">✕</button></span>
     ${c.why ? `<small class="why">${esc(c.why)}</small>` : ''}</div>`).join('')
     || '<p class="mut">Кліпів ще немає</p>';
+  const list = $('#list'), tw = Math.max(5, ...P.clips.flatMap(c => [fmt(c.a).length, fmt(c.b).length]));   // однакові ширини в усіх рядках: найдовший час і номер
+  list.style.setProperty('--tw', tw + 'ch'); list.style.setProperty('--nd', String(P.clips.length).length + 'ch');
   $('#count').textContent = P.clips.length ? `· ${P.clips.filter(c => c.on).length}/${P.clips.length}` : '';
 }
 function updateRow(i) {

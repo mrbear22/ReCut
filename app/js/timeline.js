@@ -37,7 +37,7 @@ const rr = (x, y, w, h, r) => { tx.beginPath(); tx.roundRect(x, y, Math.max(0, w
 const inClip = (c, e) => !e.solo || !!c?.segs?.[e.id];
 const segsOf = (c, e) => c?.segs?.[e.id] ?? (e.solo ? [] : [[e.from || 0, e.to || 0]]);
 const ownSegs = (c, e) => ((c.segs ||= {})[e.id] ||= segsOf(c, e).map(x => [...x]));   // перша зміна в кліпі — копія спільних
-const segSpan = (c, x) => [toSrc(c, x[0] || 0), x[1] ? toSrc(c, x[1]) : c.b];
+const segSpan = (c, x) => [toSrc(c, x[0] || 0, true), x[1] ? toSrc(c, x[1]) : c.b];
 function tidySegs(c, e) {                                         // по порядку; ті, що перекрились, — злити (дотичні лишаються окремими)
   const n = net(c), out = [];
   for (const [a, b] of [...(c.segs[e.id] || [])].sort((x, y) => x[0] - y[0])) {
@@ -284,7 +284,7 @@ tl.onpointerdown = e => {
   if (drag.bar) { selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek && !drag.scrub) { drag = {lasso: [e.offsetX, e.offsetY, e.offsetX, e.offsetY], t: snap(t, 'ph')}; return; }   // порожнє місце: клік — курсор сюди, тягни — лассо
   if (drag.seek) seek(snap(t, 'ph'));
-  else if (drag.cue != null) selectCue(drag.cue, false);           // курсор лишається там, де був: B розріже саме там
+  else if (drag.cue != null) selectCue(drag.cue, false, false);    // лише вибрати: редактор — якщо це клік, а не перетягування (див. pointerup)
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
 };
 $('#els').addEventListener('dragstart', e => { const r = e.target.closest('.el'); if (!r) return; dragEl = r.dataset.id; e.dataTransfer.setData('text/plain', dragEl); e.dataTransfer.effectAllowed = 'copy'; });
@@ -340,7 +340,7 @@ tl.onpointermove = e => {
       const sg = segsOf(c, e), lo = -Math.min(...sg.map(y => y[0] || 0)), hi = (e.dur || 1e9) - Math.max(...sg.map(y => y[1] || n));
       drag.off0 ??= off; e.off = clamp(drag.off0 - (toOut(c, raw) - ((x[0] || 0) + drag.move)), lo, Math.max(lo, hi));
     } else {                                                       // «до кінця» лишається таким, поки смужка впирається в кінець
-      const len = end - (x[0] || 0), start = toSrc(c, clamp(toOut(c, raw) - drag.move, 0, n - len));
+      const len = end - (x[0] || 0), start = toSrc(c, clamp(toOut(c, raw) - drag.move, 0, n - len), true);
       const nf = clamp(toOut(c, snapSpan(start, toSrc(c, toOut(c, start) + len) - start, x)), 0, n - len);
       x[0] = nf; x[1] = nf + len < n - .05 ? nf + len : 0;
     }
@@ -388,6 +388,7 @@ tl.onpointerup = e => {
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
   if (drag && drag.bar && drag.seg != null && drag.c.segs?.[drag.bar.id]) tidySegs(drag.c, drag.bar);
   if (drag && drag.cue != null && P.cues[selCue]) overwrite('cue', P.cues[selCue]);
+  if (drag && drag.cue != null && P.cues[selCue] && Math.abs(e.offsetX - drag.x0) < 4) selectCue(selCue, false);   // клік по репліці — редактор; курсор лишається, де був
   if (drag && (drag.region || drag.cue != null || drag.bar)) { save(); renderProps(); }
   drag = null; guide = null; tl.style.cursor = '';
 };
