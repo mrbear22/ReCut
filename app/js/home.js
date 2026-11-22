@@ -185,5 +185,6 @@ async function playHls(url) {                                     // плейл�
     if (d.type === Hls.ErrorTypes.MEDIA_ERROR) return hlsPlayer.recoverMediaError();
     msg('Запис Twitch: ' + (d.details || 'не грає'), 1);
   });
+  hlsPlayer.on(Hls.Events.FRAG_LOADED, refreshWave);              // скачаний шматок — ще шматок хвилі
   hlsPlayer.loadSource(url); hlsPlayer.attachMedia(vid);
 }

@@ -98,22 +98,31 @@ async function addMusicEl(c = P.clips.length ? ctxClip() : null) {   // музи
   P.elements.push(el); if (c) (c.segs ||= {})[el.id] = [[0, a.dur < net(c) - .05 ? a.dur : 0]];
   selEl = el.id; focus = 'el'; renderEls(); save(true); loadPeaks(el.path);
 }
-const peaks = new Map();                                          // трек → гучність, 50 значень на секунду
+const peaks = new Map();                                          // трек → гучність, 50 значень на секунду від t0
+const asPeaks = r => ({rate: r.rate, t0: r.t0 || 0, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))});
 function loadPeaks(path) {
   if (peaks.has(path)) return; peaks.set(path, null);
-  api('/api/peaks?p=' + encodeURIComponent(path)).then(r => peaks.set(path, {rate: r.rate, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))}))
-    .catch(() => peaks.delete(path));
+  api('/api/peaks?p=' + encodeURIComponent(path)).then(r => peaks.set(path, asPeaks(r))).catch(() => peaks.delete(path));
 }
 const waveCols = new Map();                                       // доріжка → висоти стовпчиків для поточного масштабу
+function videoWave(k, keep) {                                     // keep — стара хвиля лишається, поки не прийде нова
+  const key = `${P.video}#${k}`; if (!keep) peaks.set(key, null);
+  api(`/api/peaks?p=${encodeURIComponent(P.video)}${audioTracks > 1 ? '&track=' + k : ''}`)
+    .then(r => { peaks.set(key, asPeaks(r)); waveCols.delete(k); drawTL(); }).catch(() => keep || peaks.delete(key));
+}
+let waveTimer = 0;
+function refreshWave() {                                          // Twitch: хвиля росте разом зі скачаними шматками
+  if (!P || !/^https?:/.test(P.video || '')) return;
+  clearTimeout(waveTimer); waveTimer = setTimeout(() => { for (const key of peaks.keys()) if (key.startsWith(P.video + '#')) videoWave(+key.split('#').pop(), true); }, 2000);
+}
 function rowWave(k, y) {                                          // сіра хвиля звукової доріжки відео — фоном рядка реплік
   const key = `${P.video}#${k}`, pk = peaks.get(key);
-  if (!pk) { if (!peaks.has(key)) { peaks.set(key, null); api(`/api/peaks?p=${encodeURIComponent(P.video)}${audioTracks > 1 ? '&track=' + k : ''}`)
-    .then(r => peaks.set(key, {rate: r.rate, v: Uint8Array.from(atob(r.b64), ch => ch.charCodeAt(0))})).catch(() => peaks.delete(key)); } return; }
+  if (!pk) { if (!peaks.has(key)) videoWave(k); return; }
   const vk = `${key}|${view.t0}|${view.t1}|${TW}`; let cols = waveCols.get(k);
   if (!cols || cols.vk !== vk) {                                  // перераховуємо лише при зміні масштабу чи прокрутці
     cols = new Uint8Array(Math.ceil(TW / 2)); cols.vk = vk;
     for (let j = 0; j < cols.length; j++) {
-      const i0 = Math.max(0, Math.floor(Tt(j * 2) * pk.rate)), i1 = Math.min(pk.v.length, Math.max(i0 + 1, Math.floor(Tt(j * 2 + 2) * pk.rate)));
+      const a = Math.floor((Tt(j * 2) - pk.t0) * pk.rate), i0 = Math.max(0, a), i1 = Math.min(pk.v.length, Math.max(a + 1, Math.floor((Tt(j * 2 + 2) - pk.t0) * pk.rate)));
       let v = 0; for (let i = i0; i < i1; i++) if (pk.v[i] > v) v = pk.v[i]; cols[j] = v;
     }
     waveCols.set(k, cols);

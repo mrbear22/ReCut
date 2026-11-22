@@ -3,7 +3,7 @@ from datetime import datetime
 from .core import HERE, PACKAGED, TMP, report
 from .net import fetch
 
-REPO, VERSION = "mrbear22/ReCut", "1.17.8"                     # репозиторій релізів; VERSION — тег релізу без «v»
+REPO, VERSION = "mrbear22/ReCut", "1.17.9"                     # репозиторій релізів; VERSION — тег релізу без «v»
 RUNTIME_PATHS = ("build.sh", "installer.iss", "launcher/")           # змінилось це — потрібен новий інсталятор, інакше досить нових файлів з app/
 UPDATE = {}
 

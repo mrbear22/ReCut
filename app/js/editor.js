@@ -115,7 +115,7 @@ async function forProject(proj, kind, work, apply) {
     const open = P && P.id === proj.id, target = open ? P : proj;      // проєкт могли закрити й відкрити знову — пишемо в актуальний
     const keys = apply(target, r, open);
     if (open) save(); else api('/api/project/save', {id: target.id, ...Object.fromEntries(keys.map(k => [k, target[k]]))});
-  } finally { running[kind].delete(proj.id); busyButtons(); }
+  } finally { running[kind].delete(proj.id); busyButtons(); refreshWave(); }   // Twitch: аналіз і субтитри скачали шматки — хвиля там уже є
 }
 const tag = (label, proj) => P && P.id !== proj.id || Object.keys(running).some(k => [...running[k]].some(id => id !== proj.id)) ? `${label} · ${projName(proj)}` : label;
 function momentsNote(found, [ra, rb]) {                          // чому знайшлося менше, ніж просили: область не вміщує стільки кліпів

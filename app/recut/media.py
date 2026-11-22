@@ -6,7 +6,7 @@ import numpy as np
 from .core import _enc, CFG, ENC, FFDIR, HW, is_url, MIXES, PACKAGED, run, SP, TASK, TMP, WAVES
 from .libs import LIB_LOCKS
 from .net import download
-from .twitch import vod
+from .twitch import hls_index, hls_path, vod
 
 def ff(*a): return subprocess.Popen([ffbin("ffmpeg"), "-v", "error", *HW, *a, "-"], stdout=subprocess.PIPE, **SP)
 
@@ -103,20 +103,49 @@ def source(src, kind):
     return vod(src)[kind] if is_url(src) else src
 
 PEAKS = {}
+PEAK_STEP = 40                                                     # відліків звуку на одне значення хвилі
+
+def loudness(data, rate, args):
+    """Найгучніший відлік у кожному біні (0–128): звук з байтів data (або з args -i ...) у u8."""
+    raw = np.frombuffer(run([ffbin("ffmpeg"), "-v", "error", *args, "-vn", "-ac", "1", "-ar", str(rate * PEAK_STEP), "-f", "u8", "-"], input=data).stdout, np.uint8)
+    n = len(raw) // PEAK_STEP
+    return (np.abs(raw[:n * PEAK_STEP].astype(np.int16) - 128).reshape(n, PEAK_STEP).max(1) if n else np.zeros(0)).astype(np.uint8)
+
+def wave(v, rate, t0=0.0):
+    top = float(np.percentile(v, 99.5)) if len(v) else 0             # поодинокі піки не стискають решту хвилі
+    return dict(rate=rate, t0=t0, b64=base64.b64encode(np.clip(v.astype(np.float32) * 255 / (top or 1), 0, 255).astype(np.uint8).tobytes()).decode())
+
+def segment_loudness(f, init, rate):
+    """Гучність шматка Twitch з кешу; рахується раз — лишається у WAVES, навіть коли сам шматок з кешу викинуто."""
+    out = WAVES / f"{f.stem}_{rate}.u8"
+    if out.is_file(): return np.frombuffer(out.read_bytes(), np.uint8)
+    v = loudness((init.read_bytes() if init else b"") + f.read_bytes(), rate, ["-i", "pipe:0"])
+    tmp = out.with_suffix(f".{uuid.uuid4().hex}"); tmp.write_bytes(v.tobytes()); tmp.replace(out); return v
+
+def twitch_peaks(src, rate):
+    """Хвиля запису Twitch — лише з уже скачаних шматків (перегляд, аналіз, субтитри): качати весь звук заради неї не варто.
+    Решта — тиша, поки її не переглянули."""
+    v, have = np.zeros(int(vod(src)["dur"] * rate) + 1, np.uint8), np.zeros(int(vod(src)["dur"] * rate) + 1, bool)
+    for kind in ("view", "low"):
+        init, parts = hls_index(src, kind); ini = init and hls_path(init)
+        if ini and not ini.is_file(): continue                      # fMP4 без init-шматка не розібрати
+        for t, d, u in parts:
+            i, f = int(t * rate), hls_path(u)
+            if have[i:i + int(d * rate)].all() or not ((WAVES / f"{f.stem}_{rate}.u8").is_file() or f.is_file()): continue
+            try: s = segment_loudness(f, ini, rate)[:len(v) - i]
+            except FileNotFoundError: continue                       # кеш саме прибрав шматок
+            v[i:i + len(s)] = np.maximum(v[i:i + len(s)], s); have[i:i + len(s)] = True
+    if not have.any(): return dict(rate=rate, t0=0, b64="")
+    a, b = np.flatnonzero(have)[[0, -1]]; return wave(v[a:b + 1], rate, a / rate)
+
 def peaks(path, track=None, rate=50):
-    """Гучність для хвилі на таймлайні: rate значень на секунду, 0–255, base64. track — одна звукова доріжка відео.
-    Довге відео рахується один раз: результат лежить на диску. Запис Twitch — без хвилі: заради неї довелося б качати весь звук."""
-    if is_url(path): return dict(rate=rate, b64="")
+    """Гучність для хвилі на таймлайні: rate значень на секунду від t0, 0–255, base64. track — одна звукова доріжка відео.
+    Довге відео рахується один раз: результат лежить на диску."""
+    if is_url(path): return twitch_peaks(path, rate)
     key = uuid.uuid5(uuid.NAMESPACE_URL, f"{path}|{os.path.getmtime(path)}|{track}|{rate}").hex[:16]; f = WAVES / f"{key}.json"
     if key not in PEAKS:
         if f.is_file(): PEAKS[key] = json.loads(f.read_text("utf-8"))
-        else:
-            amap, step = (["-map", f"0:a:{track}"] if track is not None else []), 40
-            raw = np.frombuffer(run([ffbin("ffmpeg"), "-v", "error", "-i", path, "-vn", *amap, "-ac", "1", "-ar", str(rate * step), "-f", "u8", "-"]).stdout, np.uint8)
-            n = len(raw) // step; v = np.abs(raw[:n * step].astype(np.int16) - 128).reshape(n, step).max(1) if n else np.zeros(0, np.int16)
-            top = float(np.percentile(v, 99.5)) if n else 0                 # поодинокі піки не стискають решту хвилі
-            PEAKS[key] = dict(rate=rate, b64=base64.b64encode(np.clip(v * 255 / (top or 1), 0, 255).astype(np.uint8).tobytes()).decode())
-            f.write_text(json.dumps(PEAKS[key]), "utf-8")
+        else: PEAKS[key] = wave(loudness(None, rate, ["-i", path, *(["-map", f"0:a:{track}"] if track is not None else [])]), rate); f.write_text(json.dumps(PEAKS[key]), "utf-8")
     return PEAKS[key]
 
 def prepare_ffmpeg():
