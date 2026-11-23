@@ -9,7 +9,7 @@ function rectOf(el) {
   if (el.type === 'video' || el.type === 'cam') return {x: el.x, y: el.y, w: el.w, h: layerH(el)};
   if (el.type === 'subs') return {x: el.x, y: el.y, w: el.w, h: el.size * 1.4};
   if (el.type === 'progress') return {x: 0, y: el.y, w: CW(), h: el.h};
-  if (el.type === 'bg') return {x: 0, y: 0, w: 0, h: 0};
+  if (el.type === 'bg' || el.type === 'fx') return {x: 0, y: 0, w: 0, h: 0};
   const a = arts.get(aid(el)); if (!a || !a.img) return {x: el.x ?? 0, y: el.y, w: 0, h: 0};
   const r = el[TYPES[el.type].size[0]] / a.v; return {x: el.x ?? 0, y: el.y, w: a.w * r, h: a.h * r};
 }
@@ -46,7 +46,7 @@ function drawCue(el, k, c, t) {
 const pvEls = () => { const c = pvClip(); return els().map(e => effEl(e, c)); };
 const ownCuesNow = () => { const t = vid.currentTime; return P.cues.filter(q => q.own && t >= q.a && t < q.b && cueOwner(q)?.on); };
 function selShown() {                                             // вибране, якщо воно саме зараз на прев'ю: йому — рамка
-  const g = elById(selEl); if (!g || g.type === 'bg' || g.type === 'music') return null;
+  const g = elById(selEl); if (!g || g.type === 'bg' || g.type === 'music' || g.type === 'fx') return null;
   if (selOwn) { const q = P.cues.find(q => q.own === selOwn); return q ? (ownCuesNow().includes(q) ? cueStyle(q) : null) : effEl(g, pvClip()) === selOwn ? selOwn : null; }
   return effEl(g, pvClip()) === g ? g : null;
 }
@@ -65,8 +65,9 @@ function drawShort() {
   const shown = pvEls();
   for (const el of [...shown.filter(e => e.type !== 'subs'), ...shown.filter(e => e.type === 'subs')]) {   // субтитри завжди згори, як у рендері
     if (el.type === 'bg' || !visible(el)) continue;
+    if (el.type === 'fx') { applyFx(el, k); continue; }
     if (el.type === 'video' || el.type === 'cam') {
-      if (!vid.videoWidth) continue; const [x, y, w, h] = el.src, r = rectOf(el);
+      if (!vid.videoWidth) continue; const [x, y, w, h] = shownSrc(el, shown), r = rectOf(el);
       px.save(); shapePath(el, r.x * k, r.y * k, r.w * k, r.h * k); px.clip();
       px.drawImage(vid, x * vid.videoWidth, y * vid.videoHeight, w * vid.videoWidth, h * vid.videoHeight, r.x * k, r.y * k, r.w * k, r.h * k); px.restore();
       if (el.bw > 0) { const b = el.bw * k; shapePath(el, (r.x - el.bw / 2) * k, (r.y - el.bw / 2) * k, (r.w + el.bw) * k, (r.h + el.bw) * k); px.lineWidth = b; px.strokeStyle = el.border; px.stroke(); }
@@ -86,14 +87,27 @@ function drawShort() {
   }
   drawGuides(v => v * k, v => v * k);
 }
+const fxc = document.createElement('canvas'), fxx = fxc.getContext('2d');
+function applyFx(f, k) {                                          // ефект на все, що вже намальовано під ним (як у рендері)
+  const s = fxSeg(f); if (!s || f.kind === 'zoom') return;
+  if (f.kind === 'flash') { px.fillStyle = `rgba(255,255,255,${clamp(1 - (s.rel - s.a) / .35, 0, 1)})`; px.fillRect(0, 0, pv.width, pv.height); return; }
+  if (fxc.width !== pv.width || fxc.height !== pv.height) { fxc.width = pv.width; fxc.height = pv.height; }
+  fxx.clearRect(0, 0, fxc.width, fxc.height); fxx.drawImage(pv, 0, 0);
+  if (f.kind === 'shake') {
+    const a = f.amp * k, W = pv.width + 4 * a, H = pv.height + 4 * a;
+    px.drawImage(fxc, -2 * a - a * Math.sin(s.rel * 47), -2 * a - a * Math.cos(s.rel * 37), W, H); return;
+  }
+  px.filter = {bw: 'grayscale(1)', blur: `blur(${f.blur * k}px)`, fried: 'contrast(1.8) saturate(2.6)'}[f.kind] || 'none'; px.drawImage(fxc, 0, 0); px.filter = 'none';
+}
 function drawGuides(mx, my) {                                     // напрямні магнетизму; mx/my — з координат режиму в пікселі полотна
   px.strokeStyle = '#ff4dd2'; px.lineWidth = pvScale();
   for (const [ax, v] of pvGuides) { px.beginPath(); ax === 'x' ? (px.moveTo(mx(v), 0), px.lineTo(mx(v), pv.height)) : (px.moveTo(0, my(v)), px.lineTo(pv.width, my(v))); px.stroke(); }
 }
 // ── прев'ю: кадрування (як Crop у Photoshop / OBS: ручки на кутах і сторонах, пропорції, магнетизм) ──
 const fitR = () => { const s = Math.min(pv.width / S.w, pv.height / S.h); return {x: (pv.width - S.w * s) / 2, y: (pv.height - S.h * s) / 2, w: S.w * s, h: S.h * s}; };
-const srcEls = () => els().filter(e => (e.type === 'video' || e.type === 'cam') && e.on);
-const cropEl = () => { const e = elById(selEl); return e && srcEls().includes(e) ? e : null; };
+const srcEls = () => { const list = pvEls(); return list.filter(e => e.on && ((e.type === 'video' || e.type === 'cam') || isZoom(e) && e.src && fxRef(list, e) && (e.id === selEl || visible(e)))); };   // кадри цього кліпу; рамка призуму — коли вибрана чи йде
+const cropEl = () => srcEls().find(e => e.id === selEl) || null;
+const zoomRatio = f => { const r = fxRef(pvEls(), f); return r ? pxRatio(r.src) : 0; };   // рамка призуму — у пропорціях шару, який вона кадрує
 const RATIOS = [[0, 'Вільно'], [1, '1:1'], [4 / 3, '4:3'], [16 / 9, '16:9'], [9 / 16, '9:16']];
 const HANDLE_SIDES = ['lt', 'rt', 'lb', 'rb', 't', 'r', 'b', 'l'];  // 0–3 кути, 4–7 середини сторін
 const HANDLE_CURSOR = ['nwse-resize', 'nesw-resize', 'nesw-resize', 'nwse-resize', 'ns-resize', 'ew-resize', 'ns-resize', 'ew-resize'];
@@ -122,7 +136,7 @@ function drawCropBox(el, f, on) {
     const hs = HANDLE_PX * s; px.strokeStyle = '#000';
     cropHandles(el.src).slice(0, el.ratio ? 4 : 8).forEach(([hx, hy]) => { px.fillRect(f.x + hx * f.w - hs, f.y + hy * f.h - hs, hs * 2, hs * 2); px.strokeRect(f.x + hx * f.w - hs, f.y + hy * f.h - hs, hs * 2, hs * 2); });
   }
-  const label = `${tr(TYPES[el.type].name)} · ${Math.round(w * S.w)}×${Math.round(h * S.h)}`;
+  const label = el.type === 'fx' ? `${tr(fxName(el))} · ${(fxRef(pvEls(), el)?.src[2] / w || 1).toFixed(1)}×` : `${tr(TYPES[el.type].name)} · ${Math.round(w * S.w)}×${Math.round(h * S.h)}`;
   px.font = `600 ${12 * s}px system-ui`; px.fillStyle = 'rgba(15,14,13,.85)'; px.fillRect(X0, Y0, px.measureText(label).width + 12 * s, 20 * s);
   px.fillStyle = TYPES[el.type].col; px.fillText(label, X0 + 6 * s, Y0 + 14 * s);
 }
@@ -195,7 +209,7 @@ function pvPoint(e) { return {x: e.offsetX * pv.width / pv.clientWidth, y: e.off
 const toShort = p => ({x: p.x * CW() / pv.width, y: p.y * CW() / pv.width});
 function snapTargets(el) {
   const tx = [0, CW() / 2, CW()], ty = [0, CH() / 2, CH()];
-  for (const o of [...pvEls(), ...ownCuesNow().map(cueStyle)]) if (o !== el && o.type !== 'bg' && visible(o)) { const r = rectOf(o); tx.push(r.x, r.x + r.w / 2, r.x + r.w); ty.push(r.y, r.y + r.h / 2, r.y + r.h); }
+  for (const o of [...pvEls(), ...ownCuesNow().map(cueStyle)]) if (o !== el && o.type !== 'bg' && o.type !== 'fx' && visible(o)) { const r = rectOf(o); tx.push(r.x, r.x + r.w / 2, r.x + r.w); ty.push(r.y, r.y + r.h / 2, r.y + r.h); }
   return {tx, ty};
 }
 function snapRect(el, x, y, w, h, off) {                          // магнетизм до центру, країв кадру й інших елементів
@@ -213,7 +227,7 @@ function snapScale(el, r, f, off) {                               // при зм
 }
 function elAt(q) {                                                // елемент під курсором; вибраний має пріоритет
   const shown = pvEls(), cues = ownCuesNow(), cueOf = st => cues.find(c => c.own === st);
-  const order = [...cues.map(cueStyle), ...shown.filter(e => e.type === 'subs'), ...shown.filter(e => e.type !== 'subs').reverse()].filter(e => e.type !== 'bg' && visible(e));
+  const order = [...cues.map(cueStyle), ...shown.filter(e => e.type === 'subs'), ...shown.filter(e => e.type !== 'subs').reverse()].filter(e => e.type !== 'bg' && e.type !== 'fx' && visible(e));
   const tol = shortUnits(HANDLE_PX + 6);
   for (const el of [selShown(), ...order].filter(Boolean)) {
     const r = rectOf(el), cue = cueOf(el);
@@ -234,6 +248,7 @@ pv.onpointerdown = e => {
     return;
   }
   const h = cropHit(p); if (!h.el) { if (selEl) { selEl = null; renderEls(); } return; }
+  if (isZoom(h.el)) h.el.ratio = zoomRatio(h.el);
   drag = {src: h.el, handle: h.handle < 0 ? null : h.handle, u: h.u, r: [...h.el.src]};
   if (selEl !== h.el.id) { selEl = h.el.id; renderEls(); }
 };

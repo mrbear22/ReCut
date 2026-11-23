@@ -46,24 +46,25 @@ const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червон�
 function clipMenu(i, t, at) {
   const c = P.clips[i], cut = (c.cut || []).find(([u, v]) => t >= u && t <= v);
   sel = i; selCue = -1; focus = 'clip'; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
-  return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`}, {label: 'Додати музику в кліп', key: 'M', run: () => addMusicEl(c)},
+  const lk = locked(c);
+  return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`}, {label: lk ? 'Розблокувати кліп' : 'Заблокувати кліп', key: 'L', run: () => toggleLock(c)}, {label: 'Додати музику в кліп', key: 'M', run: () => addMusicEl(c)},
     {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: (c.col || null) === col, run: () => { c.col = col || undefined; commit(); }}))},
-    cut && {label: 'Повернути вирізане', run: () => { c.cut = c.cut.filter(u => u !== cut); commit(); }},
+    cut && !lk && {label: 'Повернути вирізане', run: () => { c.cut = c.cut.filter(u => u !== cut); commit(); }},
     {label: 'Програти кліп', key: 'Shift+Space', run: () => playClip(P.clips.indexOf(c))},
-    {label: `Почати кліп ${at}`, key: 'Q', off: t > c.b - 1, run: () => { c.a = t; commit(); }},
-    {label: `Закінчити кліп ${at}`, key: 'W', off: t < c.a + 1, run: () => { c.b = t; commit(); }},
+    {label: `Почати кліп ${at}`, key: 'Q', off: lk || t > c.b - 1, run: () => { c.a = t; commit(); }},
+    {label: `Закінчити кліп ${at}`, key: 'W', off: lk || t < c.a + 1, run: () => { c.b = t; commit(); }},
     loopOk(c, t) && {label: `Петля: шорт почнеться ${at}`, key: 'Правий Alt+клік', run: () => { c.loop = t; delete c.hook; commit(); }},
     c.loop != null && {label: 'Прибрати петлю', run: () => { delete c.loop; commit(); }},
     c.hook && {label: 'Прибрати хук', run: () => { delete c.hook; commit(); }},
-    {label: `Розрізати на два ${at}`, key: 'B', off: t < c.a + .5 || t > c.b - .5, run: () => splitClip(c, t)},
-    c.cut?.length && {label: 'Повернути всі вирізані шматки', run: () => { c.cut = []; commit(); }},
+    {label: `Розрізати на два ${at}`, key: 'B', off: lk || t < c.a + .5 || t > c.b - .5, run: () => splitClip(c, t)},
+    c.cut?.length && !lk && {label: 'Повернути всі вирізані шматки', run: () => { c.cut = []; commit(); }},
     '-',
     {label: c.on ? 'Не рендерити цей кліп' : 'Рендерити цей кліп', key: 'R', run: () => { c.on = !c.on; commit(); }},
     {label: 'Наблизити на таймлайні', key: 'Z', run: () => select(P.clips.indexOf(c), true)},
     '-',
     {label: 'Копіювати', key: 'Ctrl+C', run: copySel},
     {label: 'Дублювати після нього', key: 'Ctrl+D', run: () => dupClip(c)},
-    {label: 'Видалити кліп', key: 'Del', run: removeSel}];
+    {label: 'Видалити кліп', key: 'Del', off: lk, run: removeSel}];
 }
 
 // ── меню репліки ──
@@ -142,7 +143,7 @@ function drawWave(e, c, a, b, y, col) {                            // хвиля
 function overwrite(kind, it) {                                     // те, що поклали зверху, підрізає перекрите в тому ж рядку
   if (!it) return;
   const list = kind === 'cue' ? P.cues : P.clips, MIN = kind === 'clip' ? 1 : .2;
-  const same = o => o !== it && (kind !== 'cue' || rowOf(o) === rowOf(it)) && o.a < it.b - .01 && o.b > it.a + .01;
+  const same = o => o !== it && !locked(o) && (kind !== 'cue' || rowOf(o) === rowOf(it)) && o.a < it.b - .01 && o.b > it.a + .01;
   const cutsIn = (o, a, b) => (o.cut || []).filter(([u, v]) => v > a && u < b).map(([u, v]) => [Math.max(u, a), Math.min(v, b)]);
   for (const o of list.filter(same)) {
     if (o.a >= it.a - .01 && o.b <= it.b + .01) { list.splice(list.indexOf(o), 1); continue; }     // повністю під новим — геть
@@ -175,8 +176,8 @@ function migrateMusic() {                                         // музик�
   P.music = [];
 }
 // ── лассо: кілька кліпів і реплік разом ──
-function lassoPick([ax, ay, bx, by]) {                            // що зачепила рамка: кліпи — у своєму рядку, репліки — у своїх
-  const {cb, cueY} = geo(), t0 = Tt(Math.min(ax, bx)), t1 = Tt(Math.max(ax, bx)), y0 = Math.min(ay, by), y1 = Math.max(ay, by);
+function lassoPick([ta, ay, tb, by]) {                            // що зачепила рамка (межі — час, не пікселі): кліпи — у своєму рядку, репліки — у своїх
+  const {cb, cueY} = geo(), t0 = Math.min(ta, tb), t1 = Math.max(ta, tb), y0 = Math.min(ay, by), y1 = Math.max(ay, by);
   const hitT = x => x.b > t0 && x.a < t1;
   multi = new Set([...(y0 < cb && y1 > CTOP ? P.clips.filter(hitT) : []),
     ...P.cues.filter(q => { const y = cueY + rowOf(q) * CUE; return hitT(q) && y0 < y + CUE && y1 > y; })]);
@@ -188,7 +189,7 @@ function lassoDone() {                                            // одне �
   sel = -1; selCue = -1; $('#cueEdit').classList.remove('on'); focus = multi.size ? 'multi' : focus; renderList(); renderProps();
 }
 function deleteMulti() {
-  P.clips = P.clips.filter(c => !multi.has(c)); P.cues = P.cues.filter(q => !multi.has(q));
+  P.clips = P.clips.filter(c => !multi.has(c) || locked(c)); P.cues = P.cues.filter(q => !multi.has(q));
   multi.clear(); sel = -1; selCue = -1; $('#cueEdit').classList.remove('on'); renderEls(); commit();
 }
 function moveCues(qs, el) { for (const q of qs) q.sid = el.id; renderEls(); fitTL(); save(); }

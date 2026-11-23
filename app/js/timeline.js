@@ -61,6 +61,14 @@ function curvePath() {                                            // «енер�
   }
   path.lineTo(TW, TH); path.closePath(); return path;
 }
+function hatch(x, y, w, h, col) {                                 // косі риски: елемент у цьому кліпі зі своїми налаштуваннями (не глобальний)
+  tx.save(); tx.beginPath(); tx.rect(x, y, w, h); tx.clip(); tx.strokeStyle = col; tx.lineWidth = 1.5; tx.beginPath();
+  for (let i = x - h; i < x + w; i += 7) { tx.moveTo(i, y + h); tx.lineTo(i + h, y); } tx.stroke(); tx.restore();
+}
+function padlock(x, y, col) {                                     // замочок заблокованого кліпу
+  tx.save(); tx.strokeStyle = tx.fillStyle = col; tx.lineWidth = 1.6;
+  tx.beginPath(); tx.arc(x + 4.5, y + 4, 3, Math.PI, 0); tx.stroke(); tx.fillRect(x, y + 4, 9, 7); tx.restore();
+}
 function drawTL() {
   tx.fillStyle = PAL.out; tx.fillRect(0, 0, TW, TH);
   if (!dur || !P) return;
@@ -91,11 +99,12 @@ function drawTL() {
     tx.fillStyle = col; tx.fillRect(x0, CTOP + 6, 3, cb - CTOP - 12); tx.fillRect(x1 - 3, CTOP + 6, 3, cb - CTOP - 12);
     if (hookOk(c)) { const a = X(c.hook[0]), b = X(c.hook[1]); tx.fillStyle = HOOK_COL + '30'; tx.fillRect(a, CTOP + 1, b - a, cb - CTOP - 2); tx.fillStyle = HOOK_COL; tx.fillRect(a, CTOP + 1, b - a, 3); tx.fillStyle = col; }
     if (c.loop != null && loopOk(c, c.loop)) { const lx = X(c.loop); tx.fillStyle = LOOP_COL; tx.fillRect(lx - 1, CTOP + 1, 2, cb - CTOP - 2); tx.fillText('↻', lx + 5, CTOP + 15); }
-    tx.fillStyle = col; tx.fillText(`#${i + 1}  ${clipLen(c).toFixed(1)} с`, x0 + 8, CTOP + 15);
+    tx.fillStyle = col; const head = `#${i + 1}  ${clipLen(c).toFixed(1)} с`; tx.fillText(head, x0 + 8, CTOP + 15);
+    if (locked(c)) padlock(x0 + 14 + tx.measureText(head).width, CTOP + 6, col);
     if (!ctx) return;
     tx.font = font(clamp(Math.round(BAR * .6), 11, 15));            // у витягнутих доріжках підписи більші
     laneEls().forEach((e, j) => {
-      const y = CTOP + CHEAD + j * BAR, Ty = TYPES[e.type], segs = segsOf(c, e), own = !!c.segs?.[e.id];
+      const y = CTOP + CHEAD + j * BAR, Ty = TYPES[e.type], segs = segsOf(c, e), own = !!c.segs?.[e.id], mine = !!ownOf(c, e);
       const on = e.id === selEl, fill = !e.on ? PAL.offDk : on ? Ty.col : mixHex(Ty.col, PAL.bg, .62);   // невибрані — приглушений суцільний колір
       const ink = !e.on ? PAL.off : on ? '#151413' : mixHex(Ty.col, '#ffffff', .5);
       if (!segs.length) {                                         // сховано в цьому кліпі
@@ -106,11 +115,12 @@ function drawTL() {
       }
       segs.forEach(x => {
         const [sa, sb] = segSpan(c, x), a = X(sa), b = X(sb);
-        rr(a + 1, y + 1, b - a - 2, BAR - 2, 0); tx.fillStyle = fill; tx.fill(); if (on) { tx.strokeStyle = '#fff'; tx.lineWidth = 1; tx.stroke(); }
+        rr(a + 1, y + 1, b - a - 2, BAR - 2, 0); tx.fillStyle = fill; tx.fill(); if (mine) hatch(a + 1, y + 1, b - a - 2, BAR - 2, on ? 'rgba(21,20,19,.28)' : mixHex(Ty.col, '#ffffff', .1) + '55');
+        if (on) { rr(a + 1, y + 1, b - a - 2, BAR - 2, 0); tx.strokeStyle = '#fff'; tx.lineWidth = 1; tx.stroke(); }
         if (e.type === 'music') drawWave(e, c, a, b, y, on ? 'rgba(21,20,19,.45)' : mixHex(Ty.col, '#ffffff', .25));
         if (own) { tx.fillStyle = on ? '#151413' : mixHex(Ty.col, '#ffffff', .3); tx.fillRect(a + 1, y + 2, 2, BAR - 4); tx.fillRect(b - 3, y + 2, 2, BAR - 4); }   // свої частини кліпу — з рисками
         if (b - a > 40) { tx.save(); tx.beginPath(); tx.rect(a + 4, y, b - a - 8, BAR); tx.clip(); tx.fillStyle = ink;
-          tx.fillText(e.type === 'music' ? `♪ ${e.name}${(e.vol ?? 1) !== 1 ? ` · ${Math.round(e.vol * 100)}%` : ''}` : Ty.name, a + 6, y + BAR * .73); tx.restore(); }
+          tx.fillText(e.type === 'music' ? `♪ ${e.name}${(e.vol ?? 1) !== 1 ? ` · ${Math.round(e.vol * 100)}%` : ''}` : e.type === 'fx' ? tr(fxName(e)) : Ty.name, a + 6, y + BAR * .73); tx.restore(); }
       });
     });
   });
@@ -160,7 +170,7 @@ function drawTL() {
   tx.fillStyle = PAL.acc; tx.fillRect(xa - 1, 0, 2, TH); tx.fillRect(xb - 1, 0, 2, TH);
   for (const [x, nm] of [[xa, 'a'], [xb, 'b']]) { rr(x - 5, 0, 10, TICK + 6, 0); tx.fillStyle = drag && drag.region === nm ? '#fff' : PAL.acc; tx.fill(); }
   if (drag?.lasso && drag.moved) {                                 // рамка лассо
-    const [ax, ay, bx, by] = drag.lasso; rr(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay), 2);
+    const [ta, ay, tb, by] = drag.lasso, ax = X(ta), bx = X(tb); rr(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay), 2);
     tx.fillStyle = PAL.acc + '1f'; tx.fill(); tx.strokeStyle = PAL.acc; tx.lineWidth = 1; tx.stroke();
   }
   if (drag && guide != null) { tx.strokeStyle = PAL.guide; tx.setLineDash([4, 3]); tx.beginPath(); tx.moveTo(X(guide), 0); tx.lineTo(X(guide), TH); tx.stroke(); tx.setLineDash([]); }
@@ -243,7 +253,7 @@ function hit(x, y) {
     }
   }
   for (const i of [sel, ...P.clips.keys()]) {                // вибраний кліп має пріоритет на спільних краях
-    const k = P.clips[i]; if (!k) continue;
+    const k = P.clips[i]; if (!k || locked(k)) continue;           // заблокований — без країв: лише вибрати
     for (const [j, u] of (k.cut || []).entries()) for (const e of [0, 1]) if (Math.abs(X(u[e]) - x) < 6) return {i, cut: j, edge: e};
     if (Math.abs(X(k.a) - x) < 7) return {i, edge: 'a'};
     if (Math.abs(X(k.b) - x) < 7) return {i, edge: 'b'};
@@ -277,12 +287,12 @@ tl.onpointerdown = e => {
     P.region = [snap(t), snap(t)]; drag = {regionNew: P.region[0]}; return;
   }
   if (e.altKey && inLane) {                                       // Alt+тягни по кліпу — вирізати нудне
-    const i = P.clips.findIndex(k => t >= k.a && t <= k.b); if (i < 0) { drag = null; return; }
+    const i = P.clips.findIndex(k => t >= k.a && t <= k.b); if (i < 0 || locked(P.clips[i])) { drag = null; return; }
     const c = P.clips[i]; (c.cut ||= []).push([t, t]); sel = i; drag = {i, cut: c.cut.length - 1, edge: 1}; return;
   }
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
   if (drag.bar) { selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
-  if (drag.seek && !drag.scrub) { drag = {lasso: [e.offsetX, e.offsetY, e.offsetX, e.offsetY], t: snap(t, 'ph')}; return; }   // порожнє місце: клік — курсор сюди, тягни — лассо
+  if (drag.seek && !drag.scrub) { drag = {lasso: [Tt(e.offsetX), e.offsetY, Tt(e.offsetX), e.offsetY], t: snap(t, 'ph')}; return; }   // порожнє місце: клік — курсор сюди, тягни — лассо (межі рамки — час: масштаб їх не зсуває)
   if (drag.seek) seek(snap(t, 'ph'));
   else if (drag.cue != null) selectCue(drag.cue, false, false);    // лише вибрати: редактор — якщо це клік, а не перетягування (див. pointerup)
   else if (drag.i != null && sel !== drag.i) { sel = drag.i; selCue = -1; $('#cueEdit').classList.remove('on'); renderList(); renderProps(); }
@@ -307,15 +317,15 @@ tl.onpointermove = e => {
   if (!drag) {
     if (!P || !dur) return;
     const h = hit(e.offsetX, e.offsetY);
-    tl.style.cursor = e.shiftKey || e.altKey || e.ctrlKey ? 'crosshair' : h.scrub ? 'pointer' : h.move != null ? 'grab' : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
+    tl.style.cursor = e.shiftKey || e.altKey || e.ctrlKey ? 'crosshair' : h.scrub ? 'pointer' : h.move != null ? (locked(P.clips[h.i]) ? 'default' : 'grab') : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
   }
   if (drag.hook) {
     if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return; drag.moved = true; delete drag.hook.loop;   // хук замість петлі
     const c = drag.hook, t = clamp(snap(clamp(Tt(e.offsetX), 0, dur), c), c.a, c.b); c.hook = [Math.min(drag.t0, t), Math.max(drag.t0, t)]; return;
   }
   if (drag.lasso) {
-    drag.lasso[2] = e.offsetX; drag.lasso[3] = e.offsetY;
-    if (!drag.moved && Math.hypot(e.offsetX - drag.lasso[0], e.offsetY - drag.lasso[1]) < 5) return;
+    drag.lasso[2] = Tt(e.offsetX); drag.lasso[3] = e.offsetY;
+    if (!drag.moved && Math.hypot(e.offsetX - X(drag.lasso[0]), e.offsetY - drag.lasso[1]) < 5) return;
     drag.moved = true; return lassoPick(drag.lasso);
   }
   if (drag.pan != null) { const d = (e.offsetX - drag.pan) / TW * (drag.v.t1 - drag.v.t0); view.t0 = drag.v.t0 - d; view.t1 = drag.v.t1 - d; return clampView(); }
@@ -352,7 +362,7 @@ tl.onpointermove = e => {
     else { const len = c.b - c.a, sh = clamp(snapSpan(raw - drag.move, len, c), 0, dur - len) - c.a; c.a += sh; c.b += sh; if (c.k) c.k = c.k.map(v => v + sh); }
     return;
   }
-  const c = P.clips[drag.i];
+  const c = P.clips[drag.i]; if (locked(c)) return;
   if (drag.cut != null) {
     const u = c.cut[drag.cut]; u[drag.edge] = clamp(snap(raw, u), c.a, c.b); seek(u[drag.edge]);
     if (u[0] > u[1]) { u.reverse(); drag.edge = 1 - drag.edge; }
@@ -383,7 +393,7 @@ tl.onpointerup = e => {
   }
   if (drag && drag.move != null && drag.i != null && !drag.moved) seek(Tt(e.offsetX));   // клік по кліпу — вибрати й перемотати сюди
   if (drag && drag.cut != null) P.clips[drag.i].cut = P.clips[drag.i].cut.filter(([u, v]) => v - u >= .2);    // випадковий клік, не пропуск
-  if (drag && drag.i != null && (drag.edge || drag.move != null) && P.clips[drag.i]) overwrite('clip', P.clips[drag.i]);
+  if (drag && drag.i != null && (drag.edge || drag.move != null) && P.clips[drag.i] && !locked(P.clips[drag.i])) overwrite('clip', P.clips[drag.i]);
   if (drag && drag.i != null) commit();
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
   if (drag && drag.bar && drag.seg != null && drag.c.segs?.[drag.bar.id]) tidySegs(drag.c, drag.bar);
@@ -398,6 +408,7 @@ tl.onwheel = e => {
   if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) { const d = (e.deltaX || e.deltaY) / TW * span; view.t0 += d; view.t1 += d; }
   else { const t = Tt(e.offsetX), ns = clamp(span * Math.exp(e.deltaY * .002), 2, dur); view.t0 = t - (t - view.t0) * ns / span; view.t1 = view.t0 + ns; }
   clampView();
+  if (drag?.lasso) { drag.lasso[2] = Tt(e.offsetX); if (drag.moved) lassoPick(drag.lasso); }   // рамка тягнеться далі від того ж моменту часу
 };
 tl.ondblclick = e => {                                            // привчаємо до Shift: подвійний клік лише підказує
   if (!dur || !P) return; const h = hit(e.offsetX, e.offsetY);

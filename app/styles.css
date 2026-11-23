@@ -182,6 +182,9 @@ button.twu.on{background:var(--s3);color:var(--hi)}
 .el:hover .tl,.el.sel .tl{visibility:visible}
 .el .tl button{padding:1px 6px;background:none;border-color:transparent;color:var(--mut)}
 .el .tl button:hover{background:var(--s4);color:var(--hi)}
+.el .tl .lnk{display:inline-grid;place-items:center}
+.el .tl .lnk svg{width:13px;height:13px}
+.el .tl .lnk.own{visibility:visible;color:var(--acc)}   /* свій у цьому кліпі — видно завжди */
 #props{padding:12px}
 #props .hd{display:flex;align-items:center;gap:8px}
 #props .hd b{font-size:14px;font-weight:600;color:var(--hi)}

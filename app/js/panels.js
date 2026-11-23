@@ -99,16 +99,18 @@ function kidsOf(e) {                                              // не гло
   return P.clips.flatMap((c, i) => c.own?.[e.id] ? [{o: c.own[e.id], c, label: `Кліп #${i + 1}`}] : []);
 }
 let kidRows = [];
+const ICON_LINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+const ICON_UNLINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M15.5 13.5l3.2-3.2a4 4 0 0 0-5.7-5.7l-1.5 1.5M8.5 10.5l-3.2 3.2a4 4 0 0 0 5.7 5.7l1.5-1.5M4 4l3 3M20 20l-3-3"/></svg>';
 function renderEls() {
   const cc = P?.clips.length ? ctxClip() : null; listClip = cc; kidRows = [];
   if (selOwn && !(elById(selEl) && kidsOf(elById(selEl)).some(k => k.o === selOwn))) selOwn = null;   // екземпляр уже повернули до глобального
   const row = e => {
-    const Ty = TYPES[e.type], note = e.title || e.text || e.channel || e.name || e.handle || '', lane = !['subs', 'bg'].includes(e.type);
+    const Ty = TYPES[e.type], note = e.type === 'fx' ? tr(fxName(e)) : e.title || e.text || e.channel || e.name || e.handle || '', lane = !['subs', 'bg'].includes(e.type);
     const has = c => inClip(c, e) && segsOf(c, e).length > 0, here = !cc || has(cc), where = lane && !here ? 'не в цьому кліпі' : '';
     const dh = lane && P.clips.some(c => !has(c)) ? `<em class="dh">${here ? 'тягни на інші кліпи' : 'тягни на кліп'}</em>` : '';   // лише під курсором
     return `<div class="el ${e.id === selEl && !selOwn ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
       <span class="nm">${Ty.name}${where ? `<em class="${dh ? 'dn' : ''}">${where}</em>` : ''}${dh}${note ? `<small>${esc(note)}</small>` : ''}</span>
-      <span class="tl"><button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
+      <span class="tl">${canOwn(e) && cc && here ? `<button data-a="link" class="lnk ${ownOf(cc, e) ? 'own' : ''}" title="${ownOf(cc, e) ? 'Свій у цьому кліпі · G' : 'Глобальний · G'}" aria-label="Глобальний">${ownOf(cc, e) ? ICON_UNLINK : ICON_LINK}</button>` : ''}<button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
       <button data-a="up" title="Вище" aria-label="Вище">↑</button><button data-a="down" title="Нижче" aria-label="Нижче">↓</button>
       <button data-a="del" title="Видалити" aria-label="Видалити">✕</button></span></div>` +
       kidsOf(e).map(k => `<div class="el kid ${k.o === selOwn ? 'sel' : ''} ${e.on ? '' : 'off'}" data-id="${e.id}" data-k="${kidRows.push({...k, e}) - 1}">
@@ -134,6 +136,7 @@ $('#els').onclick = e => {
     return;
   }
   if (a === 'up' || a === 'down') return moveEl(el, a);
+  if (a === 'link') return setGlobalIn(el, listClip, !!ownOf(listClip, el));
   if (a === 'eye') el.on = !el.on;
   else if (a === 'del') { if (!dropEl(el)) return; }
   else { selEl = el.id; selOwn = null; }
@@ -168,10 +171,17 @@ $('#cat').onclick = e => {
   if (p.type === 'music') return addMusicEl();
   const el = mk(p), c = P.clips.length ? ctxClip() : null; remap(el, BASE, [CW(), CH()]);
   if (c && !['subs', 'bg'].includes(p.type)) { el.solo = true; (c.segs ||= {})[el.id] = [[el.from || 0, el.to || 0]]; el.from = el.to = 0; }   // кліпів ще немає — у всіх кліпах
-  if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
+  if (p.type === 'fx') { placeFx(el, c); if (el.kind === 'zoom') setMode('src'); }
+  else if (p.type === 'bg') P.elements.unshift(el); else P.elements.push(el); selEl = el.id;
   if (stack) arrange(); renderEls(); save();
   if (el.solo && P.clips.length > 1) msg(`${TYPES[el.type].name} — у кліпі #${P.clips.indexOf(c) + 1}. Перетягни рядок зі списку на інші кліпи, щоб додати й туди`);
 };
+function placeFx(el, c) {                                        // ефект — одразу над основним відео (вебка й текст лишаються як були), від курсора 1.5 с
+  const v = P.elements.findIndex(e => e.type === 'video'); P.elements.splice(v + 1, 0, el);
+  if (c) { const n = net(c), rel = clipAt(vid.currentTime) === c ? clamp(toOut(c, vid.currentTime), 0, Math.max(0, n - .5)) : 0; c.segs[el.id] = [[rel, rel + 1.5 < n - .05 ? rel + 1.5 : 0]]; }
+  const r = fxRef(P.elements, el); if (!r) return;                 // рамка призуму: середина кадру шару, наближення 1.6×
+  const [x, y, w, h] = r.src, z = 1.6; el.src = [x + w * (1 - 1 / z) / 2, y + h * (1 - 1 / z) / 2, w / z, h / z]; el.ratio = pxRatio(r.src);
+}
 function setEverywhere(el, on) {                                  // у всіх кліпах (і в нових) чи лише в тих, куди додано
   if (on === !el.solo) return;
   if (!on) for (const c of P.clips) {                              // стає звичайним: лишається там, де його зараз видно
@@ -200,6 +210,7 @@ $('#props').addEventListener('click', async e => {
   if (t.dataset.file) { const {path} = await api('/api/pick', {kind: 'image'}); if (!path) return; el[t.dataset.file] = path; await save(true); return renderProps(); }
   if (t.dataset.clear) { el[t.dataset.clear] = ''; afterEdit(el); return renderProps(); }
   if (t.dataset.act === 'detect') detectCam(el, t);
+  if (t.dataset.act === 'frame') setMode('src');
   if (t.dataset.audio) { const a = await pickAudio(); if (a) { Object.assign(el, a); renderEls(); save(); } }
 });
 function afterEdit(el, k) {

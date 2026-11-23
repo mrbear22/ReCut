@@ -33,12 +33,14 @@ function splitAt(t = vid.currentTime) {                            // B: роз�
     if (k < 0) return msg('Курсор не на цьому елементі', 1);
     const y = ownSegs(c, el)[k], end = y[1]; y[1] = rel; c.segs[el.id].push([rel, end]); tidySegs(c, el); return save();
   }
+  if (locked(c)) return msg('Кліп заблоковано · L', 1);
   if (t > c.a + .5 && t < c.b - .5) splitClip(c, t);
 }
 function trimTo(edge, t = vid.currentTime) {                       // Q / W: початок / кінець вибраного — на курсор
   const el = focus === 'el' && elById(selEl), q = focus === 'cue' && P.cues[selCue], c = el ? elClip() : P.clips[sel];
   if (q) { if (edge === 'a') q.a = Math.min(t, q.b - .2); else q.b = Math.max(t, q.a + .2); return save(); }
   if (el && c) return (edge === 'a' ? showFrom : hideFrom)(el, c, toOut(c, clamp(t, c.a, c.b)));
+  if (locked(c)) return msg('Кліп заблоковано · L', 1);
   if (c) { if (edge === 'a') c.a = Math.min(t, c.b - 1); else c.b = Math.max(t, c.a + 1); commit(); }
 }
 function showFrom(el, c, rel) {
@@ -58,6 +60,7 @@ function removeSel() {
   if (multi.size) return deleteMulti();
   if (focus === 'cue' && selCue >= 0) return $('#cueDel').click();
   if (focus === 'el' && selEl) { const el = elById(selEl); if (!removeFromClip(el)) deleteEl(el); return; }
+  if (locked(P.clips[sel])) return msg('Кліп заблоковано · L', 1);
   if (P.clips[sel]) { P.clips.splice(sel, 1); sel = -1; commit(); }
 }
 function copySel() {

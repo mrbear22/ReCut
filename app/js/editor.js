@@ -27,7 +27,7 @@ function setMode(m) {
   renderCanvasBar(); fitCanvas();
 }
 function remap(o, [ow, oh], [nw, nh]) {                            // елемент чи його екземпляр — на полотно іншого розміру: те саме місце відносно країв
-  if (o.type === 'bg' || o.type === 'music' || (ow === nw && oh === nh)) return;
+  if (o.type === 'bg' || o.type === 'music' || o.type === 'fx' || (ow === nw && oh === nh)) return;
   if (o.type === 'progress') { o.y = o.pos === 'top' ? 0 : nh - o.h; return; }
   const r = rectOf(o), layer = ['video', 'cam', 'subs'].includes(o.type), full = layer && r.w >= ow - 1;
   if (full) { o.x = 0; o.w = nw; }
@@ -368,7 +368,7 @@ document.onkeydown = e => {
     KeyB: () => splitAt(), KeyI: () => setRegionEdge('a'), KeyO: () => setRegionEdge('b'), KeyQ: () => trimTo('a'), KeyW: () => trimTo('b'),
     KeyN: () => addAt(t), KeyM: () => addMusicEl(), KeyZ: () => c && select(sel, true),
     KeyH: () => el && (el.on = !el.on, renderEls(), save()), KeyG: () => q ? setCueGlobal(q, !!q.own) : el && elClip() && setGlobalIn(el, elClip(), !!ownOf(elClip(), el)),
-    KeyR: () => focus === 'clip' && c && (c.on = !c.on, commit()),
+    KeyR: () => focus === 'clip' && c && (c.on = !c.on, commit()), KeyL: () => focus === 'clip' && c && toggleLock(c),
     KeyJ: () => { if (!q) return; const nx = P.cues.slice(selCue + 1).find(x => rowOf(x) === rowOf(q)); if (nx) mergeCues(q, nx); },
     Enter: () => q && editCueText(),
     BracketRight: () => el && moveEl(el, sh ? 'top' : 'up'), BracketLeft: () => el && moveEl(el, sh ? 'bottom' : 'down'),

@@ -21,6 +21,8 @@ const COLORS = ['#ffffff', '#111111', '#ffcc33', '#ff3b30', '#e91916', '#a970ff'
 const SHAPE = [['shape', 'seg', 'Форма', [['rect', 'Прямокутник'], ['round', 'Заокруглена'], ['circle', 'Коло']]],
   ['radius', 'range', 'Заокруглення', [0, 200, 1, 'px'], e => e.shape === 'round'], ['bw', 'range', 'Рамка', [0, 30, 1, 'px']], ['border', 'color', 'Колір рамки', null, e => e.bw > 0]];
 const T = (name, ic, col, size, props) => ({name, ic, col, size, props});
+const FX = [['zoom', 'Призум'], ['shake', 'Тряска'], ['bw', 'Ч/Б'], ['blur', 'Розмиття'], ['fried', 'Засмажений'], ['flash', 'Спалах']];
+const fxName = e => (FX.find(([k]) => k === e.kind) || FX[0])[1];
 const NETS = [['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['instagram', 'Instagram'], ['telegram', 'Telegram'], ['twitch', 'Twitch'],
               ['discord', 'Discord'], ['kick', 'Kick'], ['x', 'X'], ['facebook', 'Facebook'], ['threads', 'Threads'], ['linkedin', 'LinkedIn'], ['bluesky', 'Bluesky'], ['mastodon', 'Mastodon']];   // логотипи — app/brands.py
 const TYPES = {
@@ -41,6 +43,8 @@ const TYPES = {
   progress: T('Прогрес-бар', '▬', '#c9a75a', [], [['color', 'color', 'Колір'], ['h', 'range', 'Товщина', [4, 40, 1, 'px']], ['pos', 'seg', 'Де', [['top', 'Згори'], ['bottom', 'Знизу']]]]),
   bg:     T('Фон', '▦', '#7a756e', [], [['style', 'seg', 'Фон', [['blur', 'Розмите відео'], ['color', 'Колір']]], ['blur', 'range', 'Розмиття', [1, 30, 1, ''], e => e.style !== 'color'],
             ['dim', 'range', 'Затемнення', [0, 80, 1, '%', 100], e => e.style !== 'color'], ['color', 'color', 'Колір', null, e => e.style === 'color']]),
+  fx:     T('Ефект', '✦', '#d9824a', [], [['kind', 'seg', 'Ефект', FX], ['ease', 'seg', 'Наближення', [['cut', 'Різко'], ['smooth', 'Плавно']], e => e.kind === 'zoom'],
+            ['frame', 'button', 'Рамка призуму', null, e => e.kind === 'zoom'], ['amp', 'range', 'Сила тряски', [2, 60, 1, 'px'], e => e.kind === 'shake'], ['blur', 'range', 'Розмиття', [2, 40, 1, ''], e => e.kind === 'blur']]),
   music:  T('Музика', '♪', '#8a70c4', [], [['path', 'audio', 'Трек'], ['vol', 'range', 'Гучність', [0, 200, 5, '%', 100]],
             ['fin', 'seg', 'Наростання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]], ['fout', 'seg', 'Згасання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]]]),
   subs:   T('Субтитри', 'CC', '#6aa87a', ['size', 'w'], [['name', 'text', 'Спікер'], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [30, 160, 1, 'px']],
@@ -63,6 +67,7 @@ const CATALOG = [
     ['Фон', 'розмиття або колір', {type: 'bg', style: 'blur', blur: 5, dim: .12, color: '#111111'}]]],
   ['Відео', [
     ['Вебкамера на всю ширину', 'камера згори, гра знизу', {type: 'cam', src: [0.72, 0.62, 0.26, 0.34], w: 1080, x: 0, y: 0, shape: 'rect', bw: 0, border: '#ffffff', stack: true}],
+    ['Ефект', 'призум, тряска, ч/б — на все під ним', {type: 'fx', kind: 'zoom', ease: 'cut', amp: 14, blur: 12}],
     ['Ще шар відео', 'інший фрагмент кадру', {type: 'video', src: [0.3, 0.3, 0.4, 0.4], w: 700, x: 190, y: 700, shape: 'round', radius: 40, bw: 0, border: '#ffffff'}]]],
   ['Музика', [
     ['Музика', 'трек з файлу, з хвилею на таймлайні', {type: 'music', vol: 1, fin: 0, fout: 1}]]]
@@ -93,6 +98,26 @@ function setGlobalIn(e, c, on) {
   else { const o = structuredClone(e); o._own = uid(); (c.own ||= {})[e.id] = o; selEl = e.id; selOwn = o; }
   renderEls(); save();
 }
+// ── ефект: діє на все під ним у списку; призум — рамка на кадрі джерела: що має показати шар відео під ним ──
+const isZoom = e => e?.type === 'fx' && e.kind === 'zoom';
+const fxRef = (list, f) => list.slice(0, list.indexOf(f)).reverse().find(g => (g.type === 'video' || g.type === 'cam') && g.on) || null;   // шар, який рамка кадрує
+function zoomOf([x, y, w, h], [rx, ry, rw, rh], [fx, fy, fw, fh]) {     // інший шар під ефектом наближається так само
+  const nw = w * fw / rw, nh = h * fh / rh;
+  return [clamp(fx + (x - rx) * fw / rw, 0, Math.max(0, 1 - nw)), clamp(fy + (y - ry) * fh / rh, 0, Math.max(0, 1 - nh)), nw, nh];
+}
+function fxSeg(f, c = clipAt(vid.currentTime)) {                  // частина показу ефекту, що йде зараз: {rel, a, b, p} або null
+  if (!c) return null; const rel = toOut(c, vid.currentTime), n = net(c);
+  const s = segsOf(c, f).find(([a, b]) => rel >= (a || 0) && (!b || rel < b)); if (!s) return null;
+  const a = s[0] || 0, b = s[1] || n; return {rel, a, b, p: clamp((rel - a) / Math.max(.01, b - a), 0, 1)};
+}
+function shownSrc(L, list) {                                      // кадр шару зараз: найближчий призум над ним, що йде, — його рамка (плавно — наїздом)
+  for (const f of list.slice(list.indexOf(L) + 1)) {
+    if (!isZoom(f) || !f.on || !f.src) continue; const r = fxRef(list, f), s = r && fxSeg(f); if (!s) continue;
+    const z = zoomOf(L.src, r.src, f.src), q = f.ease === 'smooth' ? s.p * s.p * (3 - 2 * s.p) : 1;
+    return L.src.map((v, k) => v + (z[k] - v) * q);
+  }
+  return L.src;
+}
 const pvClip = () => P?.clips.length ? clipAt(vid.currentTime) : null;   // кліп, який зараз показує прев'ю
 const aid = e => e._own ? `${e.id}@${e._own}` : e.id;              // картинка елемента: своя в кожного не глобального екземпляра
 const els = () => P ? P.elements : [];
@@ -120,6 +145,8 @@ const net = c => kept(c).reduce((s, [a, b]) => s + b - a, 0);
 const toOut = (c, t) => kept(c).reduce((s, [a, b]) => s + Math.max(0, Math.min(t, b) - a), 0);
 const toSrc = (c, r, start) => { for (const [a, b] of kept(c)) { if (start ? r < b - a : r <= b - a) return a + r; r -= b - a; } return c.b; };   // на межі вирізаного: кінець — до нього, початок (start) — після
 const clipAt = t => P.clips.find(c => t >= c.a && t < c.b);
+const locked = c => !!c?.lock;                                    // заблокований кліп не рухається, не обрізається, не ріжеться й не видаляється
+const toggleLock = c => { c.lock = !c.lock || undefined; commit(); };
 const ctxClip = () => P.clips[sel] || clipAt(vid.currentTime) || P.clips[0];
 
 // ── збереження й undo/redo ──

@@ -99,6 +99,10 @@ def subs_ass(cues, keep, subs_all, canvas):
         st = cue_style(c, el); lines += cue_lines(c, st, styles.name(st), keep)
     return ass_document(W, H, styles.lines, lines)
 
+def spans(e, net):
+    """Частини показу елемента в кліпі: [(з, до)], секунди від початку вже без пропусків; «до» 0 — до кінця кліпу."""
+    return [(float(a or 0), float(b or 0) or net) for a, b in e.get("segs") or [(e.get("from"), e.get("to"))]]
+
 def when(e):
     """Час показу елемента в кліпі: з/до, секунди від початку вже без пропусків."""
     segs = [(float(a or 0), float(b or 0)) for a, b in e.get("segs") or [(e.get("from"), e.get("to"))]]
@@ -151,9 +155,62 @@ def background(bg, W, H):
     return (f"[bg0]scale={W // 4}:{H // 4}:force_original_aspect_ratio=increase,crop={W // 4}:{H // 4},"
             f"gblur=sigma={float(bg.get('blur', 5)):g},eq=brightness={-float(bg.get('dim', 0.12)):g},scale={W}:{H}[bg]")
 
-def video_layer(e, n, i, inp, sw, sh, last):
-    """Шар відео чи вебки поверх [last]: кадрування, маска форми, рамка. Повертає (фільтри, нова мітка)."""
+# ── ефект: діє на все під ним у списку елементів ──
+def zoom_of(c, r, f):
+    """Призум: рамка f на кадрі джерела — те, що має показати шар r; інший шар під ефектом (кадр c) наближається так само."""
+    (x, y, w, h), (rx, ry, rw, rh), (fx, fy, fw, fh) = c, r, f; nw, nh = w * fw / rw, h * fh / rh
+    return [min(max(fx + (x - rx) * fw / rw, 0), max(0, 1 - nw)), min(max(fy + (y - ry) * fh / rh, 0), max(0, 1 - nh)), nw, nh]
+
+def zooms(e, els, net):
+    """Призуми над шаром e: [(кадр під час ефекту, плавно, частини показу)] — найближчий до шару першим."""
+    out, i = [], els.index(e)
+    for j, f in enumerate(els[i + 1:], i + 1):
+        if f["type"] != "fx" or f.get("kind") != "zoom" or not f.get("src"): continue
+        r = next((g for g in reversed(els[:j]) if g["type"] in ("video", "cam")), None)
+        if r: out.append((zoom_of(e["src"], r["src"], f["src"]), f.get("ease") == "smooth", spans(f, net)))
+    return out
+
+def window(k, c, zs):
+    """Вираз ffmpeg для k-ї величини кадру (x, y, w, h) у час t: звичайний кадр, а в частинах призуму — кадр ефекту (плавно — наїздом)."""
+    expr = f"{c[k]:.6f}"
+    for z, smooth, segs in reversed(zs):
+        for a, b in segs:
+            p = f"clip((t-{a:.3f})/{max(.01, b - a):.3f},0,1)"
+            v = f"({c[k]:.6f}+({z[k]:.6f}-{c[k]:.6f})*{p}*{p}*(3-2*{p}))" if smooth else f"{z[k]:.6f}"
+            expr = f"if(between(t,{a:.3f},{b:.3f}),{v},{expr})"
+    return expr
+
+def zoom_crop(e, zs, sw, sh, dw, dh):
+    """Кадр, що змінюється з часом: crop розміру не міняє, тож — сталий шматок U з усіма кадрами, масштаб покадрово й crop на місце."""
+    boxes = [e["src"]] + [z for z, _, _ in zs]
+    ux, uy = int(min(b[0] for b in boxes) * sw), int(min(b[1] for b in boxes) * sh)
+    uw, uh = min(sw - ux, ev(max(b[0] + b[2] for b in boxes) * sw - ux + 1)), min(sh - uy, ev(max(b[1] + b[3] for b in boxes) * sh - uy + 1))
+    s = f"({dw}/({window(2, e['src'], zs)}*{sw}))"
+    return (f"crop={uw}:{uh}:{ux}:{uy},scale=w='max({dw},trunc({uw}*{s}/2)*2)':h='max({dh},trunc({uh}*{s}/2)*2)':eval=frame,"
+            f"crop={dw}:{dh}:x='({window(0, e['src'], zs)}*{sw}-{ux})*{s}':y='({window(1, e['src'], zs)}*{sh}-{uy})*{s}',setsar=1")
+
+def fx_filter(e, n, last, W, H, net):
+    """Ефект на все, що вже складено під ним ([last]): (фільтри, нова мітка). Призум — не тут, а в кадрі шарів відео."""
+    en, kind, out = when(e), e.get("kind"), f"x{n}"
+    if kind == "bw": return [f"[{last}]hue=s=0{en}[{out}]"], out
+    if kind == "blur": return [f"[{last}]gblur=sigma={float(e.get('blur', 12)):g}{en}[{out}]"], out
+    if kind == "fried": return [f"[{last}]eq=contrast=1.8:saturation=2.6{en},unsharp=5:5:1.2{en}[{out}]"], out
+    if kind == "shake":
+        a = float(e.get("amp", 14)); g = ev(W + 4 * a), ev(H + 4 * a)
+        return [f"[{last}]split[sa{n}][sb{n}]", f"[sb{n}]scale={g[0]}:{g[1]},crop={W}:{H}:x='(iw-ow)/2+{a:g}*sin(t*47)':y='(ih-oh)/2+{a:g}*cos(t*37)'[sc{n}]",
+                f"[sa{n}][sc{n}]overlay=0:0:shortest=1{en}[{out}]"], out
+    if kind == "flash":
+        f, cur = [], last
+        for j, (a, _) in enumerate(spans(e, net)):
+            f += [f"color=c=white:s={W}x{H}:r=30,format=rgba,fade=t=out:st={a:.3f}:d=0.35:alpha=1[fw{n}_{j}]",
+                  f"[{cur}][fw{n}_{j}]overlay=0:0:shortest=1:enable='between(t,{a:.3f},{a + .35:.3f})'[fo{n}_{j}]"]; cur = f"fo{n}_{j}"
+        return f, cur
+    return [], last
+
+def video_layer(e, n, i, inp, sw, sh, last, zs=()):
+    """Шар відео чи вебки поверх [last]: кадрування (з призумами над ним), маска форми, рамка. Повертає (фільтри, нова мітка)."""
     c, dw, dh = layer(e, sw, sh); x, y = int(e["x"]), int(e["y"])
+    if zs: c = zoom_crop(e, zs, sw, sh, dw, dh)
     f = [f"[s{i}]{c},format=rgba[c{n}]", f"[c{n}][{inp[e['id'], 'mask']}:v]alphamerge[e{n}]"] if (e["id"], "mask") in inp else [f"[s{i}]{c}[e{n}]"]
     f.append(f"[{last}][e{n}]overlay={x}:{y}:shortest=1{when(e)}[l{n}]")   # маска-картинка довша за склеєне відео — кліп не подовжується
     if (e["id"], "ring") not in inp: return f, f"l{n}"
@@ -172,7 +229,8 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs, canvas):
     for n, e in enumerate(els, 1):
         if e["type"] in ART: f += overlay_art(e, inp[e["id"], "art"], sizes[e["id"]], last, f"l{n}"); last = f"l{n}"
         elif e["type"] == "progress": f += bar_filter(e, n, last, f"l{n}", net, W, when(e)); last = f"l{n}"   # смуга росте від 0 до повної ширини за кліп
-        else: layer_f, last = video_layer(e, n, vids.index(e), inp, sw, sh, last); f += layer_f
+        elif e["type"] == "fx": fx_f, last = fx_filter(e, n, last, W, H, net); f += fx_f
+        else: layer_f, last = video_layer(e, n, vids.index(e), inp, sw, sh, last, zooms(e, els, net)); f += layer_f
     f.append(f"[{last}]{'ass=subs.ass:fontsdir=.' if subs else 'null'}[v]")    # ffmpeg працює в теці з subs.ass і шрифтом
     return ";".join(f)
 
@@ -250,7 +308,7 @@ def render_dir(pr):
     last = next((r["out"] for r in pr["renders"] if Path(r["out"]).is_dir()), None)
     return last or str(RENDERS / out_name(pr) if (RENDERS / out_name(pr)).is_dir() else RENDERS)
 
-RENDERED = ("video", "cam", "subs", "bg", "music", "progress")     # не картинки, але рендеряться; старих типів, яких більше немає, — ні
+RENDERED = ("video", "cam", "subs", "bg", "music", "progress", "fx")     # не картинки, але рендеряться; старих типів, яких більше немає, — ні
 OWN_LOOK = ("x", "y", "from", "to", "segs", "anim", "on", "id")      # не впливає на вигляд картинки елемента
 
 def clip_work(c):
