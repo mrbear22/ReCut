@@ -69,6 +69,10 @@ function clipMenu(i, t, at) {
 
 // ── меню репліки ──
 const wordsOf = q => q.text.split(/\s+/).filter(Boolean);
+function wordTimes(q) {                                           // початок кожного слова: з розпізнавання (k) або рівно по репліці; завжди в її межах
+  const w = wordsOf(q), k = q.k?.length === w.length ? q.k : w.map((_, i) => q.a + i * (q.b - q.a) / w.length);
+  return k.map(v => clamp(v, q.a, q.b));
+}
 const splitIdx = (q, t, w = wordsOf(q)) => clamp(q.k?.length === w.length ? q.k.filter(s => s < t).length : Math.round(w.length * (t - q.a) / (q.b - q.a)), 1, w.length - 1);
 function splitCue(q, t, n) {                                      // за часом t (слова діляться за їхнім часом, а без нього — пропорційно) або за словом n
   const w = wordsOf(q), hasK = q.k?.length === w.length, f = fmtOf(q);

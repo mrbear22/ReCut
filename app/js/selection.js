@@ -69,7 +69,14 @@ function copySel() {
   msg(`Скопійовано: ${kind === 'el' ? TYPES[v.type].name.toLowerCase() : kind === 'cue' ? 'репліку' : 'кліп'}`);
 }
 const shiftCuts = (cut, d) => (cut || []).map(([x, y]) => [x + d, y + d]);
-const duplicate = () => focus === 'cue' && P.cues[selCue] ? dupCue(P.cues[selCue]) : (copySel(), paste());
+const duplicate = () => focus === 'cue' && P.cues[selCue] ? dupCue(P.cues[selCue]) : focus === 'el' && selBar?.c && canOwn(elById(selEl)) ? dupBar() : (copySel(), paste());
+function dupBar() {                                               // Ctrl+D по смужці: копія — окремий елемент лише в цьому кліпі, одразу після неї
+  const {c, k} = selBar, e = elById(selEl), x = segsOf(c, e)[k]; if (!x) return;
+  const n = net(c), end = x[1] || n, len = end - (x[0] || 0), s = Math.min(end, Math.max(0, n - len));
+  const el = {...structuredClone(effEl(e, c)), id: uid(), solo: true}; delete el._own;
+  (c.segs ||= {})[el.id] = [[s, s + len < n - .05 ? s + len : 0]];
+  P.elements.splice(P.elements.indexOf(e) + 1, 0, el); selEl = el.id; selOwn = null; selBar = {c, k: 0}; renderEls(); save();
+}
 function paste(t = vid.currentTime) {                             // елемент — трохи зсунутим; кліп і репліку — на курсор
   if (!clipboard) return; const {kind, v} = clipboard, sh = t - (v.a ?? 0);
   if (kind === 'el') {

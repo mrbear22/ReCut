@@ -73,6 +73,7 @@ def cue_lines(c, st, style, keep):
     fmt = c.get("fmt") if len(c.get("fmt") or []) == len(raw) else [None] * len(raw)
     words = [re.sub(r"[{}\\]", "", t.upper() if st.get("upper") else t) for t in raw]
     k = c.get("k") if len(c.get("k") or []) == len(words) else [c["a"] + i * (c["b"] - c["a"]) / len(words) for i in range(len(words))]
+    k = [min(max(float(v), c["a"]), c["b"]) for v in k]                # край репліки обрізали — слова не вилазять за неї (на сусідню репліку)
     spans = list(zip(k, k[1:] + [c["b"]], range(len(words)))) if st.get("karaoke", True) else [(c["a"], c["b"], -1)]
     out, first = [], True
     for s0_, e_, i in spans:

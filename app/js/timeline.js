@@ -159,7 +159,11 @@ function drawTL() {
     }
     const t = vid.currentTime, w = wordsOf(c), ink = mixHex(col, '#ffffff', .4), text = (s, a, b, at) => {
       if (b - a < 12) return; tx.save(); tx.beginPath(); tx.rect(a, y, b - a, CUE); tx.clip(); tx.fillStyle = ink; tx.fillText(s, at, y + CUE * .67); tx.restore(); };
-    if (t > c.a + .1 && t < c.b - .1 && w.length > 1) {          // курсор на репліці: які слова лишаться ліворуч, а які підуть праворуч
+    if (wordMode() && w.length > 1) {                              // Ctrl: кожне слово — свій боксик, стики тягнуться
+      const wt = wordTimes(c);
+      w.forEach((s, i) => { const a = X(wt[i]), b = X(wt[i + 1] ?? c.b); text(s, a + 2, b - 2, a + 4);
+        if (i) { const on = drag?.word === c && drag.j === i; tx.fillStyle = on ? PAL.acc : mixHex(col, '#ffffff', .6); tx.fillRect(a - (on ? 1 : .5), y + 3, on ? 2 : 1, CUE - 6); } });
+    } else if (t > c.a + .1 && t < c.b - .1 && w.length > 1) {   // курсор на репліці: які слова лишаться ліворуч, а які підуть праворуч
       const n = splitIdx(c, t, w), p = X(t);
       text(w.slice(0, n).join(' '), x0 + 4, p - 4, x0 + 7); text(w.slice(n).join(' '), p + 4, x1 - 4, p + 7);
       tx.fillStyle = PAL.play; tx.fillRect(p - 1, y + 2, 2, CUE - 4);
@@ -186,10 +190,17 @@ function drawTL() {
   }
   const mod = !loopKey && !drag?.hook && hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
   if (mod) {                                                      // що зробить Shift / Alt / Ctrl
-    const label = mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.label;
+    const label = mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.key === 'shift' && hover.y < TICK + 2 ? 'Shift: нова область аналізу' : mod.label;
     tx.font = font(12, 600); const lh = 22, w = tx.measureText(label).width + 16, lx = clamp(hover.x + 12, 0, TW - w), ly = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
     rr(lx, ly, w, lh, 0); tx.fillStyle = mod.col; tx.fill(); tx.fillStyle = mod.ink; tx.fillText(label, lx + 8, ly + lh * .68); tx.font = font(11);
   }
+}
+const wordMode = () => !!(hover?.ctrl || drag?.word);              // затиснутий Ctrl: межі слів у репліках
+function wordJoint(x, y) {                                        // стик двох слів під курсором: {q, j} або null
+  if (y < geo().cueY) return null; const row = spAt(y);
+  for (const q of P.cues) { if (rowOf(q) !== row || x < X(q.a) - 6 || x > X(q.b) + 6) continue;
+    const wt = wordTimes(q), j = wt.findIndex((v, i) => i && Math.abs(X(v) - x) < 6); if (j > 0) return {q, j}; }
+  return null;
 }
 let loopKey = false;                                              // затиснутий правий Alt: клік по кліпу — петля, перетягування — хук
 addEventListener('keydown', e => { if (e.code === 'AltRight') { loopKey = true; e.preventDefault(); } });
@@ -201,9 +212,9 @@ const hookOk = c => c.hook?.length === 2 && c.hook[1] - c.hook[0] >= .3 && c.hoo
 const hookLen = c => hookOk(c) ? toOut(c, c.hook[1]) - toOut(c, c.hook[0]) : 0;
 const clipLen = c => net(c) + hookLen(c);                           // довжина готового шорту: з хуком на початку
 const MODS = [{key: 'shift', label: 'Shift: новий кліп', col: '#3d4a5a', ink: '#e2dfda'}, {key: 'alt', label: 'Alt: вирізати шматок', col: '#5a2f2b', ink: '#f3dcd8'},
-              {key: 'ctrl', label: 'Ctrl: нова область аналізу', col: '#f2b33d', ink: '#1b1712'}];
+              {key: 'ctrl', label: 'Ctrl: тягни межі слів у репліках', col: '#f2b33d', ink: '#1b1712'}];
 let hover = null;                                                 // курсор над таймлайном і затиснуті модифікатори
-const setMods = e => { if (hover) { hover.shift = e.shiftKey; hover.alt = e.altKey; hover.ctrl = e.ctrlKey; if (e.shiftKey || e.altKey || e.ctrlKey) tl.style.cursor = 'crosshair'; } };
+const setMods = e => { if (hover) { hover.shift = e.shiftKey; hover.alt = e.altKey; hover.ctrl = e.ctrlKey; if (e.shiftKey || e.altKey) tl.style.cursor = 'crosshair'; } };
 addEventListener('keydown', e => { setMods(e); if (e.key === 'Alt' && hover) e.preventDefault(); }); addEventListener('keyup', setMods);
 tl.onpointerleave = () => hover = null;
 // ── магнетизм: краї кліпів, пропусків, області, реплік, елементів і курсор ──
@@ -280,12 +291,13 @@ tl.onpointerdown = e => {
   if (e.shiftKey && e.offsetY >= geo().cueY) {   // Shift+тягни в рядку реплік — нова репліка
     const sid = (subsEls()[spAt(e.offsetY)] || ensureSubs()).id, q = {a: snap(t), b: snap(t), text: 'Текст', k: [], sid}; P.cues.push(q); drag = {createCue: q, t0: q.a}; focus = 'cue'; return;
   }
-  if (e.shiftKey && inLane) {                                     // Shift+тягни — новий кліп
+  if (e.shiftKey && inLane && e.offsetY >= TICK + 2) {             // Shift+тягни — новий кліп
     const c = {a: snap(t), b: snap(t), on: true, score: null}; P.clips.push(c); sel = P.clips.length - 1; drag = {create: c, t0: c.a}; focus = 'clip'; return;
   }
-  if (e.ctrlKey && e.offsetY >= TICK + 2) {                       // Ctrl+тягни — нова область аналізу
+  if (e.shiftKey && e.offsetY < TICK + 2) {                       // Shift+тягни по шкалі часу — нова область аналізу
     P.region = [snap(t), snap(t)]; drag = {regionNew: P.region[0]}; return;
   }
+  if (e.ctrlKey) { const wj = wordJoint(e.offsetX, e.offsetY); if (wj) { drag = {word: wj.q, j: wj.j, k: wordTimes(wj.q)}; focus = 'cue'; return; } }   // Ctrl+тягни стик — де починається слово
   if (e.altKey && inLane) {                                       // Alt+тягни по кліпу — вирізати нудне
     const i = P.clips.findIndex(k => t >= k.a && t <= k.b); if (i < 0 || locked(P.clips[i])) { drag = null; return; }
     const c = P.clips[i]; (c.cut ||= []).push([t, t]); sel = i; drag = {i, cut: c.cut.length - 1, edge: 1}; return;
@@ -317,11 +329,15 @@ tl.onpointermove = e => {
   if (!drag) {
     if (!P || !dur) return;
     const h = hit(e.offsetX, e.offsetY);
-    tl.style.cursor = e.shiftKey || e.altKey || e.ctrlKey ? 'crosshair' : h.scrub ? 'pointer' : h.move != null ? (locked(P.clips[h.i]) ? 'default' : 'grab') : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
+    if (e.ctrlKey && wordJoint(e.offsetX, e.offsetY)) { tl.style.cursor = 'ew-resize'; return; }
+    tl.style.cursor = e.shiftKey || e.altKey ? 'crosshair' : e.ctrlKey ? 'default' : h.scrub ? 'pointer' : h.move != null ? (locked(P.clips[h.i]) ? 'default' : 'grab') : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
   }
   if (drag.hook) {
     if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return; drag.moved = true; delete drag.hook.loop;   // хук замість петлі
     const c = drag.hook, t = clamp(snap(clamp(Tt(e.offsetX), 0, dur), c), c.a, c.b); c.hook = [Math.min(drag.t0, t), Math.max(drag.t0, t)]; return;
+  }
+  if (drag.word) {                                                // межа слова: між сусідніми словами, без прилипання
+    const q = drag.word, k = drag.k, j = drag.j; k[j] = clamp(Tt(e.offsetX), k[j - 1] + .04, (k[j + 1] ?? q.b) - .04); q.k = [...k]; return;
   }
   if (drag.lasso) {
     drag.lasso[2] = Tt(e.offsetX); drag.lasso[3] = e.offsetY;
@@ -375,6 +391,7 @@ tl.onpointermove = e => {
 tl.addEventListener('pointermove', e => { snapOff = !!drag && e.ctrlKey && drag.regionNew == null; }, true);
 tl.onpointerup = e => {
   if (drag && drag.lasso) { const {moved, t} = drag; drag = null; return moved ? lassoDone() : seek(t); }
+  if (drag && drag.word) { const q = drag.word; drag = null; selectCue(P.cues.indexOf(q), false, false); return save(); }
   if (drag && drag.hook) {
     const c = drag.hook;
     if (!drag.moved) { if (loopOk(c, drag.t0)) { c.loop = drag.t0; delete c.hook; } }   // петля замість хука: або те, або те
@@ -388,13 +405,14 @@ tl.onpointerup = e => {
     const q = drag.createCue, nx = P.cues.find(x => x !== q && rowOf(x) === rowOf(q) && x.a > q.a); if (q.b - q.a < .3) q.b = Math.min(q.a + 1.5, nx ? nx.a : dur);
     overwrite('cue', q); P.cues.sort((x, y) => x.a - y.a); selectCue(P.cues.indexOf(q)); editCueText(); save();
   }
-  if (drag && drag.regionNew != null) {                           // Ctrl+клік без перетягування — область ±min від точки
+  if (drag && drag.regionNew != null) {                           // Shift+клік по шкалі без перетягування — область ±min від точки
     let [a, b] = P.region; const g = Math.min(10, dur); if (b - a < g) { a = clamp(a - g / 2, 0, dur - g); b = a + g; } P.region = [a, b]; save();
   }
   if (drag && drag.move != null && drag.i != null && !drag.moved) seek(Tt(e.offsetX));   // клік по кліпу — вибрати й перемотати сюди
   if (drag && drag.cut != null) P.clips[drag.i].cut = P.clips[drag.i].cut.filter(([u, v]) => v - u >= .2);    // випадковий клік, не пропуск
   if (drag && drag.i != null && (drag.edge || drag.move != null) && P.clips[drag.i] && !locked(P.clips[drag.i])) overwrite('clip', P.clips[drag.i]);
   if (drag && drag.i != null) commit();
+  if (drag && drag.cue != null && P.cues[drag.cue]?.k?.length) P.cues[drag.cue].k = P.cues[drag.cue].k.map(v => clamp(v, P.cues[drag.cue].a, P.cues[drag.cue].b));   // обрізали край — слова в межах репліки
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
   if (drag && drag.bar && drag.seg != null && drag.c.segs?.[drag.bar.id]) tidySegs(drag.c, drag.bar);
   if (drag && drag.cue != null && P.cues[selCue]) overwrite('cue', P.cues[selCue]);
