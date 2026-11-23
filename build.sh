@@ -7,7 +7,7 @@ rm -rf "$OUT/runtime" "$OUT/app" "$OUT/ffmpeg"   # data і renders корист�
 mkdir -p "$OUT/runtime/Lib/site-packages" "$OUT/app" "$W"
 [ -f "$W/py.zip" ] || curl -sSL -o "$W/py.zip" https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip
 # у програмі лише те, без чого вона не стартує; ffmpeg, розпізнавання мови й OpenCV вона завантажує сама, коли вперше знадобляться
-rm -rf "$W/wheels"; $PY -m pip download --platform win_amd64 --python-version 3.12 --only-binary=:all: --no-deps numpy pillow -d "$W/wheels" -q
+rm -rf "$W/wheels"; $PY -m pip download --platform win_amd64 --python-version 3.12 --only-binary=:all: --no-deps numpy pillow truststore==0.10.5 -d "$W/wheels" -q
 $PY -m pip install -q ziglang
 $PY - "$OUT" "$W" <<'PY'
 import sys, zipfile, pathlib
