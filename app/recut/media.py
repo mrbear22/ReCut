@@ -128,12 +128,12 @@ def twitch_peaks(src, rate):
     v, have = np.zeros(int(vod(src)["dur"] * rate) + 1, np.uint8), np.zeros(int(vod(src)["dur"] * rate) + 1, bool)
     for kind in ("view", "low"):
         init, parts = hls_index(src, kind); ini = init and hls_path(init)
-        if ini and not ini.is_file(): continue                      # fMP4 без init-шматка не розібрати
+        if ini and not os.path.exists(ini): continue                      # fMP4 без init-шматка не розібрати
         for t, d, u in parts:
             i, f = int(t * rate), hls_path(u)
-            if have[i:i + int(d * rate)].all() or not ((WAVES / f"{f.stem}_{rate}.u8").is_file() or f.is_file()): continue
+            if have[i:i + int(d * rate)].all() or not (os.path.exists(WAVES / f"{f.stem}_{rate}.u8") or os.path.exists(f)): continue
             try: s = segment_loudness(f, ini, rate)[:len(v) - i]
-            except FileNotFoundError: continue                       # кеш саме прибрав шматок
+            except OSError: continue                                 # кеш саме прибрав шматок або його тримає інша програма
             v[i:i + len(s)] = np.maximum(v[i:i + len(s)], s); have[i:i + len(s)] = True
     if not have.any(): return dict(rate=rate, t0=0, b64="")
     a, b = np.flatnonzero(have)[[0, -1]]; return wave(v[a:b + 1], rate, a / rate)

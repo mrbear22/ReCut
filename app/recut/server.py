@@ -92,7 +92,9 @@ def bind(tries=1):
 def clean_preview_cache():
     """Шматки прев'ю Twitch, старші за 3 дні, і недокачані — геть: більше не знадобляться."""
     for f in (DATA / "hls").glob("*.*"):
-        if f.suffix in (".part", ".m3u8") or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)
+        try:
+            if f.suffix in (".part", ".m3u8") or time.time() - f.stat().st_mtime > 3 * 86400: f.unlink(missing_ok=True)
+        except OSError: pass                                       # файл тримає інша програма — приберемо наступного разу
 
 def background(*fns):
     for fn, *args in fns: threading.Thread(target=fn, args=args, daemon=True).start()

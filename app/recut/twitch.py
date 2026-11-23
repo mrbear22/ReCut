@@ -142,23 +142,26 @@ def hls_path(url):
     HLS_CACHE.mkdir(exist_ok=True); return HLS_CACHE / (uuid.uuid5(uuid.NAMESPACE_URL, url).hex + Path(urllib.parse.urlsplit(url).path).suffix)
 
 def hls_trim():
-    """Понад межу — найстаріші шматки геть, крім тих, що потрібні просто зараз. Файл, який інший потік саме перейменував чи прибрав
-    (недокачаний .part, що став шматком), пропускаємо: кеш качають кілька потоків одночасно."""
+    """Понад межу — найстаріші шматки геть, крім тих, що потрібні просто зараз. Прибирання ніколи не зриває справжню роботу:
+    файл, який інший потік саме перейменував чи прибрав, або який тримає інша програма (ffmpeg, антивірус, видалення ще не завершене), — пропускаємо."""
     def stat(x):
         try: return x.stat()
-        except FileNotFoundError: return None
+        except OSError: return None
     seen = [(x, st) for x in HLS_CACHE.glob("*.*") if (st := stat(x))]
     total = sum(st.st_size for _, st in seen)
     for x, st in sorted(((x, st) for x, st in seen if x.suffix in (".ts", ".mp4") and time.time() - st.st_mtime > 900), key=lambda p: p[1].st_mtime):
         if total <= HLS_KEEP: break
-        total -= st.st_size; x.unlink(missing_ok=True)
+        try: x.unlink(missing_ok=True); total -= st.st_size
+        except OSError: pass
 
 def hls_file(url, stream=None):
     """Шматок запису в кеші на диску: качаємо один раз, хоч би скільки його просили (прев'ю, аналіз, рендер, два вікна).
     stream — віддавати байти ще й плеєру, щойно приходять; такий запит не повторюємо — плеєр перепитає сам."""
     f = hls_path(url)
     with HLS_LOCKS(f.name):
-        if f.is_file(): os.utime(f); return f                      # щойно потрібний — не викидати
+        try:
+            if f.is_file(): os.utime(f); return f                  # щойно потрібний — не викидати
+        except PermissionError: f = f.with_name(uuid.uuid4().hex + f.suffix)   # шматок тримає інша програма (антивірус, незавершене видалення) — качаємо окрему копію
         tmp = f.with_name(f"{uuid.uuid4().hex}.part")
         def attempt():
             with open_url(url) as r, open(tmp, "wb") as out:
