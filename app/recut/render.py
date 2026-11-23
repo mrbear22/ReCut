@@ -140,14 +140,11 @@ def bar_filter(e, k, last, out, total, W, enable=""):
     return [f"color=c={e.get('color', '#ffcc33')}:s={W}x{ev(float(e.get('h', 12)))}:r=30[pg{k}]",
             f"[{last}][pg{k}]overlay=x='-w+w*t/{total:.3f}':y={int(e['y'])}:shortest=1{enable}[{out}]"]
 
-def join_kept(keep, audio, asrc):
-    """Пропуски вирізано: збережені шматки відео (і звуку) — склеєні в [cv] ([ca])."""
-    n, seg, f = len(keep), [(s - keep[0][0], e - keep[0][0]) for s, e in keep], []
-    for t, p, s0 in (("v", "", "0:v"), ("a", "a", asrc))[:1 + audio]:
-        f.append(f"[{s0}]{p}split={n}" + "".join(f"[p{t}{i}]" for i in range(n)))
-        f += [f"[p{t}{i}]{p}trim=start={s:.3f}:end={e:.3f},{p}setpts=PTS-STARTPTS[k{t}{i}]" for i, (s, e) in enumerate(seg)]
-    f.append("".join(f"[kv{i}]" + (f"[ka{i}]" if audio else "") for i in range(n)) + f"concat=n={n}:v=1:a={int(audio)}[cv]" + "[ca]" * audio)
-    return f
+def join_kept(n, audio, na):
+    """Пропуски вирізано: кожен збережений шматок — свій вхід ffmpeg (0…n-1), тож вирізане не декодується й не качається; склеєні в [cv] ([ca])."""
+    f = ["".join(f"[{i}:a:{k}]" for k in range(na)) + f"amix=inputs={na}:normalize=0[ka{i}]" for i in range(n)] if audio and na > 1 else []   # звучать усі доріжки
+    a = lambda i: f"[ka{i}]" if na > 1 else f"[{i}:a]"
+    return f + ["".join(f"[{i}:v]" + (a(i) if audio else "") for i in range(n)) + f"concat=n={n}:v=1:a={int(audio)}[cv]" + "[ca]" * audio]
 
 def background(bg, W, H):
     """Фон [bg] з [bg0]: колір або розмите й затемнене відео (блюр у 1/4 роздільності — швидко)."""
@@ -221,9 +218,9 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs, canvas):
     """na: скільки звукових доріжок; inp: (id елемента, роль) -> номер входу ffmpeg; sizes: id -> розмір картинки елемента."""
     els = [e for e in elements if on(e) and e["type"] not in ("subs", "bg", "music")]; vids = [e for e in els if e["type"] in ("video", "cam")]
     bg = next((e for e in elements if e["type"] == "bg" and on(e)), {}); net = sum(e - s for s, e in keep); W, H = canvas
-    f, src, asrc = [], "0:v", "0:a"
-    if na > 1: f.append(amix(na, "am")); asrc = "am"                 # звучать усі доріжки
-    if len(keep) > 1: f += join_kept(keep, int(na > 0), asrc); src = "cv"
+    f, src = [], "0:v"
+    if len(keep) > 1: f += join_kept(len(keep), int(na > 0), na); src = "cv"
+    elif na > 1: f.append(amix(na, "am"))                               # звучать усі доріжки
     f += [f"[{src}]split={1 + len(vids)}[bg0]" + "".join(f"[s{i}]" for i in range(len(vids))), background(bg, W, H)]
     last = "bg"
     for n, e in enumerate(els, 1):
@@ -353,27 +350,29 @@ class RenderSession:
         while stem in self.used: stem = f"{base} ({len([u for u in self.used if u.startswith(base)]) + 1})"
         self.used.add(stem); return self.out / f"{stem}.mp4"
 
-    def inputs(self, cel):
-        """Картинки елементів, маски й рамки відео кліпу: (id, роль, файл), розміри картинок, номери входів ffmpeg."""
+    def inputs(self, cel, first):
+        """Картинки елементів, маски й рамки відео кліпу: (id, роль, файл), розміри картинок, номери входів ffmpeg (з first: перед ними — шматки відео)."""
         pngs, sizes = [], {}
         for e in (e for e in cel if on(e)):
             for role, path, size in self.pics(e):
                 pngs.append((e["id"], role, path))
                 if role == "art": sizes[e["id"]] = size
-        return pngs, sizes, {(eid, role): n for n, (eid, role, _) in enumerate(pngs, 1)}
+        return pngs, sizes, {(eid, role): n for n, (eid, role, _) in enumerate(pngs, first)}
 
     def encode_clip(self, i, n, c, keep, cel, dst, say, t0):
         """Кодування кліпу в dst: відео з кадруванням, елементи, субтитри, музика. Повертає, чи є звук."""
         a, b, net = keep[0][0], keep[-1][1], sum(e - s for s, e in keep)
-        pngs, sizes, inp = self.inputs(cel)
+        pngs, sizes, inp = self.inputs(cel, len(keep))
         if self.subs: Path(self.tmp, "subs.ass").write_text(subs_ass([q for q in self.cues if q["b"] > a and q["a"] < b], keep, self.subs_all, self.canvas), "utf-8")
         inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
         parts = music_parts(cel, net)
         inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
         vvol = float(next((e for e in self.elements if e["type"] == "video"), {}).get("vol", 1))
         main = ("ca" if len(keep) > 1 else "am" if self.na > 1 else "0:a") if self.na else None
-        afx, alabel = audio_filter(main, parts, 1 + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
-        encode([*local_input(self.src, "best", a, b, lambda f: report("render", f"Кліп {i} з {n} · завантажую з Twitch", min(.99, f), t0)), *inputs,
+        afx, alabel = audio_filter(main, parts, len(keep) + len(pngs), vvol, net) if parts or vvol != 1 else ([], None)
+        got = lambda k: lambda f: report("render", f"Кліп {i} з {n} · завантажую з Twitch", min(.99, (k + f) / len(keep)), t0)
+        video = [x for k, (s, e) in enumerate(keep) for x in local_input(self.src, "best", s, e, got(k))]   # лише те, що лишилось після вирізання
+        encode([*video, *inputs,
                 "-filter_complex", ";".join([build_filter(self.sw, self.sh, cel, keep, self.na, inp, sizes, bool(self.subs), self.canvas), *afx]),
                 "-map", "[v]", "-map", f"[{alabel}]" if alabel else f"[{main}]" if main in ("ca", "am") else "0:a?", *self.args,
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)], net, say, cwd=self.tmp)
