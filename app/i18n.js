@@ -111,6 +111,7 @@ const EN = {
   "Колір підсвітки": "Highlight colour",
   "ВЕЛИКІ ЛІТЕРИ": "ALL CAPS",
   "Обведення": "Outline",
+  "Колір обведення": "Outline colour",
   "Поява фрази": "Phrase entrance",
   "Для етерів": "For streams",
   "аватар з LIVE, нік, гра": "avatar with LIVE, nickname, game",

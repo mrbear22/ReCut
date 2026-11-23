@@ -33,7 +33,7 @@ function drawCue(el, k, c, t) {
   const line = ws.reduce((s, w) => s + w, 0) + sp * (words.length - 1), r = Math.min(1, el.w * k / line); z *= r;
   const cur = el.karaoke ? ks.findLastIndex(s => s <= t) : -1, y = (el.y + el.size * .7) * k;
   let x = (el.x + el.w / 2) * k - line * r / 2;
-  px.textBaseline = 'middle'; px.lineJoin = 'round'; px.lineWidth = el.outline * 2 * k * r; px.strokeStyle = '#000';
+  px.textBaseline = 'middle'; px.lineJoin = 'round'; px.lineWidth = el.outline * 2 * k * r; px.strokeStyle = el.stroke || '#000';
   words.forEach((w, i) => {
     const f = F(i), ww = ws[i] * r; px.font = font(z, f);
     if (el.outline) px.strokeText(w, x, y); px.fillStyle = i === cur ? el.hl : f.c || el.color; px.fillText(w, x, y);

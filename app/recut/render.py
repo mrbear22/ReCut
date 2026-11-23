@@ -24,7 +24,7 @@ def cue_owner(c, subs_all):
     """Елемент «Субтитри», якому належить репліка (кожен спікер — свій елемент); без позначки — першому."""
     return next((e for e in subs_all if e["id"] == c.get("sid")), subs_all[0] if subs_all else None)
 
-SUB_STYLE = ("font", "size", "color", "hl", "karaoke", "upper", "outline", "anim", "x", "y", "w")   # що репліка може мати своє
+SUB_STYLE = ("font", "size", "color", "hl", "karaoke", "upper", "outline", "stroke", "anim", "x", "y", "w")   # що репліка може мати своє
 
 def cue_style(c, el):
     """Стиль репліки: свій, якщо її від'єднали від глобального стилю доріжки, інакше — доріжки."""
@@ -49,10 +49,11 @@ class AssStyles:
 
     def name(self, st):
         size, x, w, base, bord = float(st.get("size", 84)), float(st["x"]), float(st.get("w", 900)), ass_col(st.get("color", "#ffffff")), float(st.get("outline", 6))
-        key = json.dumps([st.get("font"), round(size), base, bord, round(x), round(w)])
+        line = ass_col(st.get("stroke") or "#000000")
+        key = json.dumps([st.get("font"), round(size), base, line, bord, round(x), round(w)])
         if key not in self.names:
             self.names[key] = f"S{len(self.names)}"
-            self.lines.append(f"Style: {self.names[key]},{pick_font(st.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,"
+            self.lines.append(f"Style: {self.names[key]},{pick_font(st.get('font'))[0].replace(',', ' ')},{size:.0f},{base},{base},{line},&H64000000,-1,0,0,0,100,100,0,0,1,"
                               f"{bord:.1f},{size * 0.04:.1f},5,{max(0, x):.0f},{max(0, self.width - x - w):.0f},0,1")
         return self.names[key]
 

@@ -257,7 +257,7 @@ $('#cueBar').onclick = e => {
   if (a === 'merge') { const nx = P.cues.slice(selCue + 1).find(x => rowOf(x) === rowOf(q)); if (nx) mergeCues(q, nx); }
 };
 // ── репліка зі своїм стилем і місцем (не глобальна): q.own; у списку зліва — рядок під своєю доріжкою ──
-const SUB_STYLE = ['font', 'size', 'color', 'hl', 'karaoke', 'upper', 'outline', 'anim', 'x', 'y', 'w'];
+const SUB_STYLE = ['font', 'size', 'color', 'hl', 'karaoke', 'upper', 'outline', 'stroke', 'anim', 'x', 'y', 'w'];
 function cueStyle(q) {                                            // чим малювати репліку: її стиль або доріжки
   const el = cueOwner(q); if (!q.own || !el) return el;
   return Object.assign(q.own, {type: 'subs', id: el.id, on: el.on});

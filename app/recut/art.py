@@ -95,7 +95,7 @@ def make_text(el):
     for i, l in enumerate(lines):                                 # центр видимого малюнка рядка — точно посередині фону
         x0, _, x1, _ = ink[i]; base = PAD + py + i * lh + lh / 2 + (asc - desc) / 2
         d.text((PAD + cw / 2 - (x0 + x1) / 2, base), l, font=f, fill=el.get("color", "#ffffff"), anchor="ls",
-               stroke_width=stroke, stroke_fill="black")
+               stroke_width=stroke, stroke_fill=el.get("stroke") or "#000000")
     return img, cw, ch
 
 def make_social(el):

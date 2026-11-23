@@ -34,7 +34,7 @@ const TYPES = {
             ['style', 'seg', 'Вигляд', [['dark', 'Темна плашка'], ['brand', 'Колір мережі'], ['clean', 'Без плашки']]], ['font', 'font', 'Шрифт'],
             ['size', 'range', 'Розмір', [20, 140, 1, 'px']], ['anim', 'seg', 'Поява', ANIM]]),
   text:   T('Текст', 'T', '#9a86c6', ['size'], [['text', 'area', 'Текст'], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [16, 220, 1, 'px']],
-            ['color', 'color', 'Колір'], ['bgOn', 'toggle', 'Плашка під текстом'], ['bg', 'color', 'Колір плашки', null, e => e.bgOn], ['anim', 'seg', 'Поява', ANIM]]),
+            ['color', 'color', 'Колір'], ['stroke', 'color', 'Колір обведення', null, e => !e.bgOn], ['bgOn', 'toggle', 'Плашка під текстом'], ['bg', 'color', 'Колір плашки', null, e => e.bgOn], ['anim', 'seg', 'Поява', ANIM]]),
   chat:   T('Чат-повідомлення', '“', '#8a7fc0', ['s'], [['name', 'text', 'Нік глядача'], ['nameColor', 'color', 'Колір ніка'], ['text', 'area', 'Повідомлення'],
             ['font', 'font', 'Шрифт'], ['s', 'range', 'Розмір', [40, 220, 1, '%', 100]], ['anim', 'seg', 'Поява', ANIM]]),
   image:  T('Зображення', '▣', '#c49a6c', ['w'], [['path', 'file', 'Файл'], ['w', 'range', 'Ширина', [40, 1080, 1, 'px']], ['anim', 'seg', 'Поява', ANIM]]),
@@ -45,7 +45,7 @@ const TYPES = {
             ['fin', 'seg', 'Наростання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]], ['fout', 'seg', 'Згасання', [[0, 'Ні'], [.5, '0.5 с'], [1, '1 с'], [2, '2 с']]]]),
   subs:   T('Субтитри', 'CC', '#6aa87a', ['size', 'w'], [['name', 'text', 'Спікер'], ['font', 'font', 'Шрифт'], ['size', 'range', 'Розмір', [30, 160, 1, 'px']],
             ['color', 'color', 'Колір'], ['karaoke', 'toggle', 'Підсвічувати слово, що звучить'], ['hl', 'color', 'Колір підсвітки', null, e => e.karaoke],
-            ['upper', 'toggle', 'ВЕЛИКІ ЛІТЕРИ'], ['outline', 'range', 'Обведення', [0, 16, 1, 'px']], ['anim', 'seg', 'Поява фрази', ANIM.slice(0, 3)]]),
+            ['upper', 'toggle', 'ВЕЛИКІ ЛІТЕРИ'], ['outline', 'range', 'Обведення', [0, 16, 1, 'px']], ['stroke', 'color', 'Колір обведення', null, e => e.outline > 0], ['anim', 'seg', 'Поява фрази', ANIM.slice(0, 3)]]),
 };
 const CATALOG = [
   ['Для етерів', [
@@ -54,8 +54,8 @@ const CATALOG = [
     ['Нікнейм у соцмережі', 'логотип мережі й @нік', {type: 'social', net: 'tiktok', handle: '@nickname', style: 'dark', size: 46, y: 1700, anim: 'none'}]]],
   ['Текст', [
     ['Заголовок-хук', 'жирний текст на жовтому', {type: 'text', text: 'ЦЕ ТРЕБА БАЧИТИ', size: 70, color: '#111111', bg: '#ffcc33', bgOn: true, y: 120}],
-    ['Підпис з обведенням', 'текст просто поверх відео', {type: 'text', text: 'Текст', size: 80, color: '#ffffff', bg: '#000000', bgOn: false, y: 900}],
-    ['Субтитри', 'стиль автосубтитрів', {type: 'subs', size: 84, color: '#ffffff', hl: '#ffcc33', karaoke: true, upper: false, outline: 6, anim: 'pop', words: 3, lang: '', w: 900, x: 90, y: 1380}]]],
+    ['Підпис з обведенням', 'текст просто поверх відео', {type: 'text', text: 'Текст', size: 80, color: '#ffffff', stroke: '#000000', bg: '#000000', bgOn: false, y: 900}],
+    ['Субтитри', 'стиль автосубтитрів', {type: 'subs', size: 84, color: '#ffffff', hl: '#ffcc33', karaoke: true, upper: false, outline: 6, stroke: '#000000', anim: 'pop', words: 3, lang: '', w: 900, x: 90, y: 1380}]]],
   ['Оформлення', [
     ['Плашка відео', 'прев\'ю, назва, канал', {type: 'card', s: 1, y: 170, title: 'Назва відео', channel: 'Канал'}],
     ['Зображення / лого', 'PNG з прозорістю', {type: 'image', w: 240, y: 60}],
