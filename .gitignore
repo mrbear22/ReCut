@@ -4,3 +4,6 @@ dist/
 __pycache__/
 *.pyc
 cloudflare/worker.txt
+
+# інструмент розробника: неперекладені рядки
+check_i18n.py

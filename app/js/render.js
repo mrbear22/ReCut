@@ -127,14 +127,16 @@ function renderAll() { renderEls(); renderList(); renderCanvasBar(); fitCanvas()
   addEventListener('pagehide', () => window.reloading || navigator.sendBeacon('/api/bye', JSON.stringify({page})));   // закрили вікно — програма зупиняється одразу
   addEventListener('keydown', e => { if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.code === 'KeyR')) e.preventDefault(); }, true);   // перезавантаження сторінки = закриття вікна, тож його вимкнено
   Promise.all([api('/api/twitch'), api('/api/brands')]).then(([st, br]) => { pub.brands ||= br; twHead(st); }).catch(() => {});
+  show('home');                                                    // екран — одразу: головна не чекає ні сервера, ні останнього проєкту
+  const within = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: немає відповіді за ${ms / 1000} с`)), ms))]);   // завислий запит не тримає запуск
   let s = null;
   try {
-    for (let i = 0; !s; i++) s = await api('/api/state').catch(e => { if (i >= 20) throw e; return new Promise(r => setTimeout(r, 300)).then(() => null); });   // сервер ще піднімається — ще раз
+    for (let i = 0; !s; i++) s = await within(api('/api/state'), 5000, 'state').catch(e => { if (i >= 20) throw e; return new Promise(r => setTimeout(r, 300)).then(() => null); });   // сервер ще піднімається — ще раз
     cfg = s.cfg; renderPops(); setMode('short'); scaleUI();
     api('/api/fonts').then(f => $('#fontlist').innerHTML = f.map(n => `<option value="${esc(n)}">`).join(''));
-    const p = cfg.project && await api('/api/project?id=' + cfg.project).catch(() => null);
-    if (p) await openProject(p).catch(e => { reportError('open last project: ' + (e.stack || e)); });
+    const p = cfg.project && await within(api('/api/project?id=' + cfg.project), 10000, 'project').catch(() => null);
+    if (p) await within(openProject(p), 15000, 'open last project').catch(e => { reportError('open last project: ' + (e.stack || e)); });
   } catch (e) { reportError('startup: ' + (e.stack || e)); }
-  finally { show('home'); fitTL(); }                              // екран — завжди, навіть якщо щось вище не вдалося
+  finally { if ($('#home').classList.contains('on')) loadHome(); fitTL(); }   // налаштування й відкритий проєкт прийшли — головна з ними
   if (s?.job.running) rendering([['render', 60]], async () => {}, s.job.task).catch(() => {});   // вікно відкрили під час рендеру
 })();

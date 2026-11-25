@@ -84,6 +84,8 @@ def pick_encoder():
 # ── важке завантажується, коли вперше знадобиться: ffmpeg одразу після першого запуску, решта — під свою дію ──
 FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"   # з libass для субтитрів
 
+def ffmpeg_ready(): return not PACKAGED or (FFDIR / "ffmpeg.exe").is_file()   # у зібраній програмі ffmpeg качається при першому запуску
+
 def ffbin(name):
     """Шлях до ffmpeg/ffprobe. У зібраній програмі перший виклик завантажує ffmpeg у теку програми."""
     if not PACKAGED: return name                                   # із сорсів — той, що в PATH

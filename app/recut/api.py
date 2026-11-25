@@ -6,9 +6,9 @@ from . import brands, library
 from .analysis import AI, analyze
 from .art import art
 from .camera import detect_cam
-from .core import CFG, CODE_VERSION, FFDIR, HttpError, is_url, PACKAGED, PAD, PICKED, save_cfg, TASK
+from .core import CFG, CODE_VERSION, HttpError, is_url, PAD, PICKED, save_cfg, TASK
 from .fonts import FONTS, _fonts_ready
-from .media import duration, peaks, preview_mix, preview_video, probe
+from .media import duration, ffmpeg_ready, peaks, preview_mix, preview_video, probe
 from .projects import cover, delete_project, listing, load_project, new_project, project_files, update_project
 from .publishing import BUFFER, publish_batch, save_post, unqueue
 from .render import JOB, render_dir, start as start_render
@@ -35,7 +35,7 @@ class Reply:
 def state(q): return dict(cfg=CFG, job=JOB)
 
 @get("/api/status")
-def job_status(q): return dict(JOB, tasks=TASK.rows, ffmpeg=not PACKAGED or (FFDIR / "ffmpeg.exe").is_file())
+def job_status(q): return dict(JOB, tasks=TASK.rows, ffmpeg=ffmpeg_ready())
 
 @get("/api/version")
 def version(q): return dict(version=CODE_VERSION, app=VERSION, boot=WINDOWS.started)

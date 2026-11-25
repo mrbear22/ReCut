@@ -2,7 +2,7 @@
 import json, re, time, uuid
 from pathlib import Path
 from .core import CANVAS, CFG, is_url, LOCK, MIXES, PROJ, run, save_cfg, THUMBS
-from .media import ffbin, probe
+from .media import ffbin, ffmpeg_ready, probe
 
 # ── проєкти: кожен — окремий файл; новий — з типовими елементами (інші — лише імпортом) ──
 def proj_file(pid):
@@ -36,6 +36,7 @@ def projects():
 def cover(pid):
     """Обкладинка проєкту з власного відео: кадр на третині, один раз."""
     f = THUMBS / f"cover_{pid}.jpg"
+    if not f.is_file() and not ffmpeg_ready(): return ""             # ffmpeg ще качається: картинки головної не чекають його й не займають усі з'єднання сторінки
     if not f.is_file():
         p = load_project(pid); v = p.get("video", "")
         if not v or is_url(v) or not Path(v).is_file(): return ""

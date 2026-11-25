@@ -350,7 +350,11 @@ $('#list').addEventListener('drop', e => {
   sel = P.clips.indexOf(x); if (d.how === 'out') return x.g && ungroupClip(x);
   intoVideo(x, d.t, d.how !== 'before');
 });
-$('#list').addEventListener('dragend', () => { dragClip = null; clearDrop(); });
+$('#list').addEventListener('dragend', e => {                     // відпустили не в списку (таймлайн, прев'ю, повз вікно) — поза своєю склейкою кліп з неї виходить
+  const x = dragClip; dragClip = null; clearDrop(); if (!x?.g) return;
+  const b = $(`#list .vgrp[data-g="${CSS.escape(x.g)}"]`)?.getBoundingClientRect();
+  if (!b || e.clientX < b.left || e.clientX > b.right || e.clientY < b.top || e.clientY > b.bottom) { sel = P.clips.indexOf(x); ungroupClip(x); }
+});
 const addAt = t => { P.clips.push({a: t, b: Math.min(dur, t + (cfg.min_len + cfg.max_len) / 2), on: true, score: null}); sel = P.clips.length - 1; commit(); };
 
 // ── плеєр; кілька звукових доріжок звучать зведеним звуком, синхронним з відео ──
