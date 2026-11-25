@@ -229,11 +229,19 @@ function alignFmt(ow, nw, of) {                                   // текст 
 function editCueText() { cueEd.focus(); const r = document.createRange(); r.selectNodeContents(cueEd); getSelection().removeAllRanges(); getSelection().addRange(r); paintCueBar(); }
 cueEd.addEventListener('input', e => {
   const q = P.cues[selCue]; if (!q) return;
-  const text = cueEd.textContent.replace(/\n/g, ' '), of = q.fmt?.length === wordsOf(q).length ? q.fmt : null;
-  if (of) { const f = alignFmt(wordsOf(q), text.split(/\s+/).filter(Boolean), of); if (f.some(Boolean)) q.fmt = f; else delete q.fmt; }
+  const text = cueEd.textContent.replace(/\n/g, ' '), ow = wordsOf(q), nw = text.split(/\s+/).filter(Boolean), of = q.fmt?.length === ow.length ? q.fmt : null;
+  if (of) { const f = alignFmt(ow, nw, of); if (f.some(Boolean)) q.fmt = f; else delete q.fmt; }
   q.text = text; if (!e.isComposing) paintCue(q, caretOf()); save();
 });
-cueEd.addEventListener('compositionend', () => { const q = P.cues[selCue]; if (q) paintCue(q, caretOf()); });
+let edCue = null, edWas = '';                                     // яку репліку редагують і який текст був до того
+cueEd.addEventListener('focus', () => { edCue = P.cues[selCue]; edWas = edCue?.text ?? ''; });
+cueEd.addEventListener('blur', async () => {                      // текст змінили — час слів заново за звуком цього відрізка
+  const q = edCue, text = q?.text, video = P?.video; edCue = null;
+  if (!q || !video || text === edWas || !text.trim()) return;
+  try { const {k} = await api('/api/realign', {video, a: q.a, b: q.b, text, lang: cfg.stt_lang || ''}); if (q.text === text && P?.video === video) { q.k = k; save(); } }
+  catch (e) { msg('Не вдалося підігнати слова до звуку: ' + e.message, 1); }
+});
+cueEd.addEventListener('compositionend',() => { const q = P.cues[selCue]; if (q) paintCue(q, caretOf()); });
 cueEd.addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); cueEd.blur(); return; }
   const k = (e.ctrlKey || e.metaKey) && !e.altKey && {KeyB: 'b', KeyI: 'i', KeyU: 'u'}[e.code];
@@ -275,13 +283,18 @@ const inkOn = hex => { const n = parseInt(hex.slice(1), 16); return .2126 * (n >
 const info = c => clipLen(c).toFixed(1) + ' с';
 function renderList() {
   if (!P) return;
-  $('#list').innerHTML = P.clips.map((c, i) => `<div class="clip ${i === sel || multi.has(c) ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" title="${esc([c.why, c.score != null ? `оцінка ${c.score.toFixed(1)}` : ''].filter(Boolean).join(' · '))}"${c.col ? ` style="--cc:${c.col};--ci:${inkOn(c.col)}"` : ''}>
+  const row = c => { const i = P.clips.indexOf(c); return `<div class="clip ${i === sel || multi.has(c) ? 'sel' : ''} ${c.on ? '' : 'off'}" data-i="${i}" draggable="true" title="${esc([c.why, c.score != null ? `оцінка ${c.score.toFixed(1)}` : '', tr(c.g ? 'Тягни — змінити порядок у склейці · витягни назовні — знову окремий кліп' : 'Тягни на інший кліп — склеїти їх в один шорт'), tr('R — рендерити чи ні · L — заблокувати · ПКМ — усі дії')].filter(Boolean).join('\n'))}"${c.col ? ` style="--cc:${c.col};--ci:${inkOn(c.col)}"` : ''}>
     <input type="checkbox" data-f="on" ${c.on ? 'checked' : ''} aria-label="Рендерити" title="Рендерити"><b class="no">${i + 1}</b>
     <span class="tm"><input class="t" data-f="a" value="${fmt(c.a)}" aria-label="Початок"><span>–</span><input class="t" data-f="b" value="${fmt(c.b)}" aria-label="Кінець"></span>
     <span class="d">${info(c)}</span>
     <span class="ac"><button data-act="play" title="Програти" aria-label="Програти">▶</button><button data-act="del" title="Видалити" aria-label="Видалити">✕</button></span>
-    ${c.why ? `<small class="why">${esc(c.why)}</small>` : ''}</div>`).join('')
-    || '<p class="mut">Кліпів ще немає</p>';
+    ${c.why ? `<small class="why">${esc(c.why)}</small>` : ''}</div>`; };
+  const seen = new Set();                                         // відео з кількох кліпів — вкладеним списком там, де його перший за часом кліп
+  $('#list').innerHTML = P.clips.map(c => {
+    const g = groupOf(c); if (g.length < 2) return row(c); if (seen.has(c.g)) return ''; seen.add(c.g);
+    const len = g.filter(x => x.on).reduce((s, x) => s + clipLen(x), 0);
+    return `<div class="vgrp" data-g="${esc(c.g)}"><div class="vhd" title="Кліпи склейки йдуть згори вниз · тягни, щоб змінити порядок · витягни назовні — знову окремий кліп">Склейка · ${plural(g.length, 'кліп', 'кліпи', 'кліпів')} · ${len.toFixed(1)} с</div>${g.map(row).join('')}</div>`;
+  }).join('') || '<p class="mut">Кліпів ще немає</p>';
   const list = $('#list'), tw = Math.max(5, ...P.clips.flatMap(c => [fmt(c.a).length, fmt(c.b).length]));   // однакові ширини в усіх рядках: найдовший час і номер
   list.style.setProperty('--tw', tw + 'ch'); list.style.setProperty('--nd', String(P.clips.length).length + 'ch');
   $('#count').textContent = P.clips.length ? `· ${P.clips.filter(c => c.on).length}/${P.clips.length}` : '';
@@ -298,7 +311,7 @@ function select(i, focus) {
 let playSeq = null;                                               // програвання шорту шматками: хук, з петлі до кінця, з початку до петлі
 const clipParts = c => [...(hookOk(c) ? [[...c.hook]] : []), ...(c.loop != null && loopOk(c, c.loop) ? [[c.loop, c.b], [c.a, c.loop]] : [[c.a, c.b]])];
 function playClip(i) {
-  const c = P.clips[i], parts = clipParts(c); select(i, true);
+  const c = P.clips[i], parts = groupOf(c).filter(x => x.on || x === c).flatMap(clipParts); select(i, true);   // склейка — усі кліпи по черзі
   seek(parts[0][0]); if (parts.length > 1) playSeq = {parts, i: 0}; else stopAt = parts[0][1];
   vid.play();
 }
@@ -315,6 +328,29 @@ $('#list').onchange = e => {
   else { const v = parse(e.target.value); if (!isNaN(v)) c[f] = clamp(v, 0, dur); if (c.b - c.a < 1) f === 'a' ? c.a = c.b - 1 : c.b = c.a + 1; }
   sel = i; commit();
 };
+// ── склейка — перетягуванням у списку: на інший кліп — разом; усередині — порядок; назовні — знову окремий ──
+let dragClip = null;
+function clipDrop(e) {                                            // куди впаде кліп: {t, how: 'in' | 'before' | 'after' | 'out', r — що підсвітити}; null — нікуди
+  const r = e.target.closest('.clip'), t = r && P.clips[+r.dataset.i];
+  if (!t) { const v = e.target.closest('.vgrp'); return v ? {t: groupOf(P.clips.find(c => c.g === v.dataset.g)).at(-1), how: 'after', r: v} : {how: 'out'}; }
+  if (t === dragClip) return null;
+  const b = r.getBoundingClientRect(), y = (e.clientY - b.top) / b.height;
+  if (t.g) return {t, r, how: y < .5 ? 'before' : 'after'};       // у склейці — між кліпами
+  return y > .2 && y < .8 ? {t, r, how: 'in'} : dragClip.g ? {how: 'out'} : null;   // на окремий кліп — нове відео з обох
+}
+const clearDrop = () => $$('#list .dz-in,#list .dz-a,#list .dz-b').forEach(x => x.classList.remove('dz-in', 'dz-a', 'dz-b'));
+$('#list').addEventListener('pointerdown', e => { const r = e.target.closest('.clip'); if (r) r.draggable = !e.target.matches('input,button'); });   // у полях часу — виділяти текст, а не тягти
+$('#list').addEventListener('dragstart', e => { const r = e.target.closest('.clip'); if (!r) return; dragClip = P.clips[+r.dataset.i]; e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; });
+$('#list').addEventListener('dragover', e => {
+  if (!dragClip) return; const d = clipDrop(e); clearDrop(); if (!d) return; e.preventDefault();
+  d.r?.classList.add({in: 'dz-in', before: 'dz-a', after: 'dz-b'}[d.how] || 'dz-out');
+});
+$('#list').addEventListener('drop', e => {
+  if (!dragClip) return; e.preventDefault(); const d = clipDrop(e), x = dragClip; clearDrop(); dragClip = null; if (!d) return;
+  sel = P.clips.indexOf(x); if (d.how === 'out') return x.g && ungroupClip(x);
+  intoVideo(x, d.t, d.how !== 'before');
+});
+$('#list').addEventListener('dragend', () => { dragClip = null; clearDrop(); });
 const addAt = t => { P.clips.push({a: t, b: Math.min(dur, t + (cfg.min_len + cfg.max_len) / 2), on: true, score: null}); sel = P.clips.length - 1; commit(); };
 
 // ── плеєр; кілька звукових доріжок звучать зведеним звуком, синхронним з відео ──
@@ -360,6 +396,12 @@ document.onkeydown = e => {
   }
   const ctl = e.ctrlKey || e.metaKey, sh = e.shiftKey, k = e.code, c = P.clips[sel], t = vid.currentTime, el = focus === 'el' && elById(selEl), q = focus === 'cue' && P.cues[selCue];
   if (ctl && k === 'KeyD') { e.preventDefault(); return focus === 'clip' && c ? dupClip(c) : duplicate(); }
+  if (ctl && k === 'KeyG') {                                      // Ctrl+G — склеїти вибрані лассо кліпи; Ctrl+Shift+G — вийняти кліп зі склейки
+    e.preventDefault(); const cl = P.clips.filter(x => multi.has(x));
+    if (!sh && cl.length > 1) return groupClips(cl);
+    if (sh && c?.g) return ungroupClip(c);
+    return msg(sh ? 'Вибери кліп зі склейки' : 'Вибери лассо кілька кліпів', 1);
+  }
   if (ctl && ['KeyC', 'KeyV'].includes(k)) { e.preventDefault(); return k === 'KeyC' ? copySel() : paste(); }
   if (ctl && (k === 'Delete' || k === 'Backspace')) { e.preventDefault(); return el ? deleteEl(el) : removeSel(); }
   if (ctl || e.altKey) return;

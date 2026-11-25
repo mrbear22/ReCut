@@ -75,8 +75,9 @@ function drawShort() {
     else if (el.type === 'progress') { const c = clipAt(vid.currentTime); px.fillStyle = el.color; px.fillRect(0, el.y * k, (c ? toOut(c, vid.currentTime) / net(c) : .4) * pv.width, el.h * k); }
     else {
       ensureArt(el); const a = arts.get(aid(el)); if (!a || !a.img) continue;
-      const r = el[TYPES[el.type].size[0]] / a.v;
-      px.drawImage(a.img, (el.x - a.pad * r) * k, (el.y - a.pad * r) * k, a.img.naturalWidth * r * k, a.img.naturalHeight * r * k);
+      const r = el[TYPES[el.type].size[0]] / a.v, g = el.type === 'image' && gifOf(el.path);
+      if (g) px.drawImage(gifFrame(g, el), el.x * k, el.y * k, a.w * r * k, a.h * r * k);   // анімований стікер грає
+      else px.drawImage(a.img, (el.x - a.pad * r) * k, (el.y - a.pad * r) * k, a.img.naturalWidth * r * k, a.img.naturalHeight * r * k);
     }
   }
   const el = selShown(), s = pvScale(), hs = HANDLE_PX * s;

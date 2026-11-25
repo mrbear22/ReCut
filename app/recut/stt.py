@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, wait as wait_any
+from difflib import SequenceMatcher
 from .core import Cancelled, CFG, CHUNK, DATA, HERE, learn, MODELS, report, run, SP, STT_LOCK, STT_MODELS, sttm, TMP, TRANS, waiting
 from .libs import fetch_cuda, has_cuda_libs, libs_missing, need_libs, STT_LIBS
 from .media import all_audio, ffbin, peaks, probe, stamp
@@ -200,6 +201,34 @@ def make_cues(words, n):
     ph = phrases(words, n)
     return [dict(a=p[0][1], b=min(p[-1][2] + 0.3, nx[0][1] if nx else 1e9), text=" ".join(w[0] for w in p), k=[w[1] for w in p])
             for p, nx in zip(ph, ph[1:] + [None])]
+
+def align(words, text, a, b):
+    """Текст, який ввів користувач, → час кожного його слова за розпізнаним звуком.
+    Літери зіставляємо з розпізнаними (difflib): слово отримує час своєї першої збіглої літери; слова без збігу — між сусідами.
+    Повертає (частка збіглих літер, k)."""
+    norm = lambda s: re.sub(r"\W+", "", s.lower())
+    rc, rt = "", []                                                # розпізнані літери та час кожної
+    for w, wa, wb in words:
+        n = norm(w); rc += n; rt += [wa + (wb - wa) * i / len(n) for i in range(len(n))]
+    us = [norm(w) for w in text.split()]; starts = [sum(map(len, us[:i])) for i in range(len(us))]; uc = "".join(us)
+    at = {}
+    for i, j, n in SequenceMatcher(None, uc, rc, autojunk=False).get_matching_blocks():
+        for d in range(n): at[i + d] = rt[j + d]
+    k = [next((at[c] for c in range(s, s + len(u)) if c in at), None) for u, s in zip(us, starts)]
+    for i, t in enumerate(k):                                      # незбіглі — рівно між найближчими відомими (або краями репліки)
+        if t is not None: continue
+        l = next((j for j in range(i - 1, -1, -1) if k[j] is not None), None); r = next((j for j in range(i + 1, len(k)) if k[j] is not None), None)
+        lt, rt_ = (k[l] if l is not None else a), (k[r] if r is not None else b); lo = -1 if l is None else l; hi = len(k) if r is None else r
+        k[i] = lt + (rt_ - lt) * (i - lo) / (hi - lo)
+    out = []
+    for t in k: out.append(min(b, max(a, t, out[-1] if out else a)))   # у межах репліки й по порядку
+    return len(at) / max(1, len(uc)), out
+
+def realign(video, a, b, text, lang):
+    """Час слів відредагованої репліки за звуком цього відрізка: розпізнане береться з кешу, бракує — розпізнаємо лише його.
+    Кілька доріжок (окремі мовці) — беремо ту, з якою текст збігається найкраще."""
+    na = probe(video)[3]
+    return max((align(transcript(video, a, b, lang, t, "Підганяю слова до звуку")[0], text, a, b) for t in ([None] if na < 2 else range(na))), key=lambda r: r[0])[1]
 
 def subtitles(video, spans, lang, words):
     """Репліки для відрізків. Кілька звукових доріжок (OBS) — кожна окремим спікером; доріжка-копія чи лише чуже відлуння — не спікер."""

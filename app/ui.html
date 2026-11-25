@@ -63,7 +63,7 @@
       <span class="segb" id="canvasRatio" title="Розмір полотна"></span>
       <button id="arrange" class="ghost" title="Типове розташування">Авто-розкладка</button>
     </div>
-    <div class="cv"><i id="pvMarks"></i><canvas id="pv" class="short" width="540" height="960"></canvas><button id="pvZoom" class="ghost" hidden title="Вписати у вікно"></button></div>
+    <div class="cv"><i id="pvMarks"></i><canvas id="pv" class="short" width="540" height="960" title="Тягни елемент · кут — розмір · Shift — зберегти пропорції · Ctrl — без прилипання · колесо — масштаб · затиснуте колесо — рухати · ПКМ — усі дії"></canvas><button id="pvZoom" class="ghost" hidden title="Вписати у вікно"></button></div>
     <div class="ctrl"><button id="play" class="ghost" aria-label="Програти">▶</button><span id="time">0:00.0 / 0:00.0</span></div>
   </section>
 
@@ -79,7 +79,7 @@
   </section>
  </div>
  <footer>
-  <div id="tlGrip" title="Висота таймлайна" role="separator" aria-orientation="horizontal" aria-label="Висота таймлайна"></div>
+  <div id="tlGrip" title="Тягни — висота таймлайна · подвійний клік — як було" role="separator" aria-orientation="horizontal" aria-label="Висота таймлайна"></div>
   <div id="rbar">
     <div id="rband" title="Пересунути область"></div>
     <div id="ract" title="Пересунути область">
@@ -142,6 +142,11 @@
   <div id="impList"></div>
   <div class="row"><span class="grow"></span><button id="impCancel" class="ghost">Скасувати</button><button id="impGo" class="pri">Імпортувати</button></div>
 </div></div>
+<div id="lib" role="dialog" aria-label="Бібліотека"><div class="lbox">
+  <div class="lhead"><div class="seg" id="libTabs"><button data-t="emoji">Анімовані емодзі</button><button data-t="sfx">Звуки</button></div><input id="libQ" placeholder="Пошук англійською: fire, laugh…" aria-label="Пошук"><span class="grow"></span><button id="libClose" class="ghost" aria-label="Закрити">✕</button></div>
+  <div id="libBody"></div>
+  <small class="mut">Емодзі — Google Noto Animated Emoji (CC BY 4.0), звуки — Kenney та автори OpenGameArt (CC0): вільно, зокрема в комерційних відео.</small>
+</div></div>
 <div id="modal"><div class="mbox"><video id="mv" controls></video><div><button id="mreveal">Показати у папці</button><button id="mclose">Закрити</button></div></div></div>
 <video id="vid" preload="auto"></video>
 
@@ -153,6 +158,7 @@
 <script src="/js/preview.js"></script>
 <script src="/js/timeline.js"></script>
 <script src="/js/menus.js"></script>
+<script src="/js/library.js"></script>
 <script src="/js/render.js"></script>
 <script src="/publish.js"></script>
 </body></html>

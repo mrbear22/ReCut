@@ -8,6 +8,7 @@ from .api import ROUTES, Reply
 from .core import Cancelled, CFG, CFG_FILE, DATA, HERE, HttpError, rd, TASK
 from .fonts import scan_fonts
 from .media import prepare_ffmpeg
+from .publishing import media_janitor
 from .system import WINDOWS, open_window, reopen_window, stop_old_server, watch_window, watchdog, window_icon
 from .twitch import hls_js, hls_serve
 from .update import check_update
@@ -21,7 +22,8 @@ PAGE = {"/": ("ui.html", "text/html; charset=utf-8"), "/publish.js": ("publish.j
 def page_file(path):
     """Файл сторінки за адресою: (байти, тип) або None. Шрифти бренду — лише з теки fonts, без шляхів назовні."""
     if path in PAGE: name, ctype = PAGE[path]; return (HERE / name).read_bytes(), ctype
-    if path == "/i18n.js": return f"const SAVED_LANG = {json.dumps(CFG.get('lang', ''))};\n".encode() + (HERE / "i18n.js").read_bytes(), JS   # мова — з налаштувань програми
+    if path == "/i18n.js":                                         # мова з налаштувань, словники мов (lang/*.js) і рушій — одним файлом
+        return b"\n".join([f"const SAVED_LANG = {json.dumps(CFG.get('lang', ''))}, LANGS = {{}};".encode(), *(f.read_bytes() for f in sorted((HERE / "lang").glob("*.js"))), (HERE / "i18n.js").read_bytes()]), JS
     if path == "/hls.js": return hls_js(), JS
     if path.startswith("/js/") and re.fullmatch(r"[\w-]+\.js", name := path[4:]) and (HERE / "js" / name).is_file(): return (HERE / "js" / name).read_bytes(), JS
     if path.startswith("/fonts/") and re.fullmatch(r"[\w.-]+\.(woff2|css)", name := path[7:]) and (HERE / "fonts" / name).is_file():
@@ -106,7 +108,7 @@ def main():
     srv = bind(tries=40) if "--restart" in sys.argv else bind() or (stop_old_server(url) and bind(tries=20))   # після оновлення стара версія сама звільняє порт
     if not srv: return open_window(url)                           # вже запущено (та сама версія або рендерить) — просто відкрити вікно
     print(datetime.now(), "start", url)
-    background((scan_fonts,), (prepare_ffmpeg,), (check_update,))   # перший запуск: ffmpeg качається, поки відкривається вікно
+    background((scan_fonts,), (prepare_ffmpeg,), (check_update,), (media_janitor,))   # перший запуск: ffmpeg качається, поки відкривається вікно
     if "--no-window" in sys.argv: WINDOWS.tied = False                # сервер без свого вікна (розробка, тести): закриті сторінки його не зупиняють
     else:
         background((watchdog,), *([(window_icon,)] if os.name == "nt" else []))

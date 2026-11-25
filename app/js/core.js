@@ -148,6 +148,26 @@ const clipAt = t => P.clips.find(c => t >= c.a && t < c.b);
 const locked = c => !!c?.lock;                                    // заблокований кліп не рухається, не обрізається, не ріжеться й не видаляється
 const toggleLock = c => { c.lock = !c.lock || undefined; commit(); };
 const ctxClip = () => P.clips[sel] || clipAt(vid.currentTime) || P.clips[0];
+// ── склейка: кліпи зі спільною міткою c.g рендеряться в один шорт у порядку c.gi; кожен лишається собою (свої плитки, вирізане, хук) ──
+const groupOf = c => c?.g ? P.clips.filter(x => x.g === c.g).sort((x, y) => x.gi - y.gi) : c ? [c] : [];
+const setVideo = (g, list) => list.forEach((c, i) => { c.g = g; c.gi = i; });
+function tidyVideo(g) {                                           // частини без пропусків у порядку; кліп, що лишився сам, — звичайний
+  const rest = g ? groupOf(P.clips.find(c => c.g === g)) : [];
+  if (rest.length === 1) { delete rest[0].g; delete rest[0].gi; } else setVideo(g, rest);
+}
+function intoVideo(x, t, after) {                                 // кліп x — у склейку кліпу t, перед ним чи після; t ще окремий — нова склейка з обох
+  const old = x.g, list = groupOf(t).filter(c => c !== x); list.splice(list.indexOf(t) + !!after, 0, x);
+  setVideo(t.g || uid(), list); if (old !== x.g) tidyVideo(old); commit();
+}
+function groupClips(cl) {                                         // Ctrl+G: вибрані лассо — склейкою за часом; уже згруповані серед них зливаються
+  const gs = new Set(cl.map(c => c.g).filter(Boolean));
+  setVideo(uid(), P.clips.filter(c => cl.includes(c) || gs.has(c.g)).sort((x, y) => x.a - y.a));
+  msg(`Склейка з ${groupOf(cl[0]).length} кліпів`); commit();
+}
+function ungroupClip(c, all) {                                    // вийняти кліп зі склейки (all — розклеїти всю)
+  const g = c.g; for (const x of all ? groupOf(c) : [c]) { delete x.g; delete x.gi; }
+  tidyVideo(g); commit();
+}
 
 // ── збереження й undo/redo ──
 let undoSt = [], redoSt = [], curSnap = null, saveT;

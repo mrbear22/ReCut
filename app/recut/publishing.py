@@ -1,5 +1,5 @@
 """Публікація через Buffer: черга, сховище відео."""
-import os, threading, time, uuid
+import os, time, uuid
 from datetime import datetime
 from . import buffer
 from .core import DATA, report
@@ -34,7 +34,6 @@ def unqueue(pid, path):
 def publish_batch(pid, plan, privacy, limit=0):
     """Кожен шорт — у свої канали (вибрані на картці) на свій час; результат пишемо в проєкт, щоб бачити статус.
     limit — скільки постів тариф Buffer тримає в черзі каналу (0 — без межі): що не влазить, у сховище навіть не викладаємо."""
-    threading.Thread(target=cleanup_media, daemon=True).start()     # заодно прибрати вже опубліковане
     chans = {c["id"]: c for c in BUFFER.channels()}; p = load_project(pid); ok, errors = 0, []; t0 = time.time()
     room = {}
     if limit:
@@ -60,17 +59,27 @@ def publish_batch(pid, plan, privacy, limit=0):
     report("", "")
     return dict(ok=ok, errors=len(errors), first_error=errors[0] if errors else "")
 
-MEDIA_KEEP_S = 2 * 86400                                          # після запланованого часу відео ще дві доби лежить у сховищі: Buffer буває спізнюється
+MEDIA_GRACE_S, MEDIA_CHECK_S = 15 * 60, 10 * 60                   # Buffer забирає відео в момент публікації — чверть години запасу на це
 
 def cleanup_media():
-    """Прибрати зі сховища відео, які Buffer уже опублікував: місце безкоштовне лише до 10 ГБ."""
+    """Прибрати зі сховища відео, які Buffer уже опублікував: жоден їхній пост не чекає в черзі, і час вийшов."""
+    if not BUFFER.key: return
+    try: waiting = {q["id"] for q in BUFFER.scheduled()}
+    except Exception: return                                        # Buffer недоступний — перевіримо наступного разу
+    gone = lambda x: x["id"] not in waiting and datetime.fromisoformat(x["dueAt"].replace("Z", "+00:00")).timestamp() < time.time() - MEDIA_GRACE_S
     for p in projects():
         for r in p["renders"]:
             for f in r["files"]:
                 post = f.get("post", {}); u = post.get("mediaUrl", "")
                 sent = [x for x in post.get("buffer", {}).values() if x.get("id")]
-                if u and sent and all(datetime.fromisoformat(x["dueAt"].replace("Z", "+00:00")).timestamp() < time.time() - MEDIA_KEEP_S for x in sent):
-                    MEDIA.delete(u); save_post(p["id"], f["path"], {"mediaUrl": "", "mediaStamp": ""})
+                if u and sent and all(map(gone, sent)) and MEDIA.delete(u): save_post(p["id"], f["path"], {"mediaUrl": "", "mediaStamp": ""})
+
+def media_janitor():
+    """Поки програма відкрита — раз на 10 хвилин прибирати опубліковане."""
+    while True:
+        try: cleanup_media()
+        except Exception as e: print("cleanup_media:", e)
+        time.sleep(MEDIA_CHECK_S)
 
 def media_url(pid, f, progress=lambda frac: None):
     """Публічне посилання на файл шорту: викладаємо один раз, далі беремо збережене (поки файл той самий і лежить у нашому сховищі)."""

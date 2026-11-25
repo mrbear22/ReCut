@@ -1,7 +1,7 @@
 """Рендер шортів: фільтри ffmpeg, субтитри ASS, музика, хуки й петлі."""
 import json, os, re, shutil, tempfile, threading, time, uuid
 from pathlib import Path
-from .art import ART, art, frame, layer
+from .art import animated, ART, art, frame, layer
 from .core import Cancelled, CANVAS, ev, HttpError, learn, on, PAD, RENDERS, report, run, TASK, THUMBS
 from .fonts import pick_font
 from .media import amix, encode, ffbin, pick_encoder, probe
@@ -124,10 +124,11 @@ def clip_elements(elements, c):
         elif segs: out.append(dict(e, segs=segs, **{"from": segs[0][0], "to": segs[-1][1]}))   # анімація — на першому вході й останньому виході
     return out
 
-def overlay_art(e, i, size, last, nxt):
-    """Елемент-картинка (вхід i) з анімацією входу."""
+def overlay_art(e, i, size, last, nxt, moving=False):
+    """Елемент-картинка (вхід i) з анімацією входу. moving — анімований GIF без полів PAD: масштаб до size і грає з моменту появи."""
     st, en, anim = float(e.get("from") or 0), float(e.get("to") or 0), e.get("anim", "none")
-    x, y, pre = f"{int(e['x']) - PAD}", f"{int(e['y']) - PAD}", []
+    x, y, pre = f"{int(e['x']) - PAD * (not moving)}", f"{int(e['y']) - PAD * (not moving)}", []
+    if moving: pre += [f"scale={size[0]}:{size[1]}", f"setpts=PTS-STARTPTS+{st:.3f}/TB"]
     if anim != "none": pre += ["format=rgba", f"fade=t=in:st={st}:d=0.3:alpha=1"] + [f"fade=t=out:st={max(st, en - 0.3)}:d=0.3:alpha=1"] * (en > 0)
     if anim == "pop":
         k = f"(0.6+0.4*clip((t-{st})/0.25\\,0\\,1))"
@@ -225,7 +226,9 @@ def build_filter(sw, sh, elements, keep, na, inp, sizes, subs, canvas):
     f += [f"[{src}]split={1 + len(vids)}[bg0]" + "".join(f"[s{i}]" for i in range(len(vids))), background(bg, W, H)]
     last = "bg"
     for n, e in enumerate(els, 1):
-        if e["type"] in ART: f += overlay_art(e, inp[e["id"], "art"], sizes[e["id"]], last, f"l{n}"); last = f"l{n}"
+        if e["type"] in ART:
+            moving = (e["id"], "anim") in inp
+            f += overlay_art(e, inp[e["id"], "anim" if moving else "art"], sizes[e["id"]], last, f"l{n}", moving); last = f"l{n}"
         elif e["type"] == "progress": f += bar_filter(e, n, last, f"l{n}", net, W, when(e)); last = f"l{n}"   # смуга росте від 0 до повної ширини за кліп
         elif e["type"] == "fx": fx_f, last = fx_filter(e, n, last, W, H, net); f += fx_f
         else: layer_f, last = video_layer(e, n, vids.index(e), inp, sw, sh, last, zooms(e, els, net)); f += layer_f
@@ -333,7 +336,8 @@ class RenderSession:
         if key in self.made: return self.made[key]
         out = []
         def add(role, img): p = Path(self.tmp, f"{len(self.made)}_{role}.png"); img.save(p); out.append((role, str(p), img.size))
-        if e["type"] in ART: add("art", art(e)[0])
+        if animated(e): out.append(("anim", e["path"], art(e)[1:]))         # GIF іде у ffmpeg як є: кадри грають
+        elif e["type"] in ART: add("art", art(e)[0])
         if e["type"] in ("video", "cam"):
             mask, ring = frame(e, *layer(e, self.sw, self.sh)[1:])
             if mask: add("mask", mask)
@@ -357,7 +361,7 @@ class RenderSession:
         for e in (e for e in cel if on(e)):
             for role, path, size in self.pics(e):
                 pngs.append((e["id"], role, path))
-                if role == "art": sizes[e["id"]] = size
+                if role in ("art", "anim"): sizes[e["id"]] = size
         return pngs, sizes, {(eid, role): n for n, (eid, role, _) in enumerate(pngs, first)}
 
     def encode_clip(self, i, n, c, keep, cel, dst, say, t0):
@@ -365,7 +369,7 @@ class RenderSession:
         a, b, net = keep[0][0], keep[-1][1], sum(e - s for s, e in keep)
         pngs, sizes, inp = self.inputs(cel, len(keep))
         if self.subs: Path(self.tmp, "subs.ass").write_text(subs_ass([q for q in self.cues if q["b"] > a and q["a"] < b], keep, self.subs_all, self.canvas), "utf-8")
-        inputs = [x for _, role, p in pngs for x in ["-loop", "1", *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою
+        inputs = [x for _, role, p in pngs for x in [*(["-ignore_loop", "0"] if role == "anim" else ["-loop", "1"]), *(["-t", f"{b - a:.3f}"] if role == "mask" else []), "-i", p]]  # alphamerge не завершиться з нескінченною маскою; GIF — по колу
         parts = music_parts(cel, net)
         inputs += [x for path, off, _, length, *_ in parts for x in ["-ss", f"{off:.3f}", "-t", f"{length + .1:.3f}", "-i", path]]
         vvol = float(next((e for e in self.elements if e["type"] == "video"), {}).get("vol", 1))
@@ -379,18 +383,57 @@ class RenderSession:
                 "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(dst)], net, say, cwd=self.tmp)
         return bool(alabel or self.na)
 
-    def clip(self, i, n, c, say, t0):
-        """Шорт з кліпу: кодування, перестановка хука чи петлі, мініатюра, запис в історії."""
+    def piece(self, i, n, c, dst, say, t0, late_bars=False):
+        """Кліп у dst: кодування й перестановка хука чи петлі. late_bars — прогрес-бари не малювати (їх намалюють на всьому відео).
+        Повертає (тривалість, чи є звук, прогрес-бари)."""
         cel = clip_elements(self.elements, c); keep = kept(float(c["a"]), float(c["b"]), c.get("cut", []))
         if not keep: raise RuntimeError(f"Кліп {i} вирізано повністю")
         net = sum(e - s for s, e in keep); order = clip_parts(c, keep, net)
-        bars = [e for e in cel if e["type"] == "progress" and on(e)] if order else []   # з хуком чи петлею прогрес малюється вже після перестановки
-        self.partial = dst = self.file_for(c)
+        bars = [e for e in cel if e["type"] == "progress" and on(e)] if order or late_bars else []   # з хуком чи петлею прогрес малюється вже після перестановки
         sound = self.encode_clip(i, n, c, keep, [e for e in cel if e not in bars], dst, say, t0)
-        total = rearrange(dst, order, bars, self.args, sound, self.canvas[0], lambda s: say(net + s)) if order else net
+        total = rearrange(dst, order, [] if late_bars else bars, self.args, sound, self.canvas[0], lambda s: say(net + s)) if order else net
+        return total, sound, bars
+
+    def clip(self, i, n, cs, say, t0):
+        """Шорт з кліпу або зі склейки кількох кліпів (по черзі): кодування, мініатюра, запис в історії.
+        Частини відео кодуються кожна як звичайний кліп і склеюються; прогрес-бар росте вже на всьому відео."""
+        self.partial = dst = self.file_for(cs[0])
+        if len(cs) == 1: total = self.piece(i, n, cs[0], dst, say, t0)[0]
+        else:
+            done, pieces, bars = 0.0, [], {}
+            for k, c in enumerate(cs):
+                p = Path(self.tmp, f"piece{k}.mp4")
+                _, sound, b = self.piece(i, n, c, p, lambda s, d=done: say(d + s), t0, late_bars=True)
+                pieces.append((p, sound)); done += clip_work(c)
+                for e in b: bars.setdefault(e["id"], e)
+            total = join_pieces(dst, pieces, Path(self.tmp, "pieces.txt"), lambda s: say(done + s * .1))
+            if bars: rearrange(dst, [(0, total)], list(bars.values()), self.args, any(s for _, s in pieces), self.canvas[0], lambda s: say(done + s))
         thumb = THUMBS / f"{self.rec['id']}_{i:02d}.jpg"
         run([ffbin("ffmpeg"), "-y", "-v", "error", "-ss", "1", "-i", str(dst), "-frames:v", "1", "-vf", "scale=270:-2", str(thumb)])
-        self.rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(c["a"]), b=float(c["b"]), len=total)); self.save(); self.partial = None
+        self.rec["files"].append(dict(path=str(dst), thumb=str(thumb), a=float(cs[0]["a"]), b=float(cs[-1]["b"]), len=total)); self.save(); self.partial = None
+
+def join_pieces(dst, pieces, lst, tick):
+    """Кліпи склейки [(файл, чи є звук)] — в dst. Відео склеюється без перекодування (той самий кодер і полотно),
+    звук — фільтром: частина без звуку отримує тишу, щоб звук наступних не з'їхав. Повертає тривалість."""
+    lens = [probe(str(p))[2] for p, _ in pieces]; n = len(pieces)
+    lst.write_text("".join(f"file '{p.as_posix()}'\n" for p, _ in pieces), "utf-8")
+    audio = []
+    if any(s for _, s in pieces):
+        f = [f"[{k + 1}:a]aresample=48000,aformat=channel_layouts=stereo[a{k}]" if s else f"anullsrc=r=48000:cl=stereo,atrim=0:{lens[k]:.3f}[a{k}]"
+             for k, (_, s) in enumerate(pieces)]
+        audio = ["-filter_complex", ";".join(f + ["".join(f"[a{k}]" for k in range(n)) + f"concat=n={n}:v=0:a=1[a]"]), "-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+    encode(["-f", "concat", "-safe", "0", "-i", str(lst), *[x for p, _ in pieces for x in ("-i", str(p))], "-map", "0:v", "-c:v", "copy", *audio,
+            "-movflags", "+faststart", str(dst)], sum(lens), tick)
+    return sum(lens)
+
+def videos(clips):
+    """Що рендерити: кліпи зі спільною міткою g — склейка, один шорт у порядку gi, який задав автор; решта — кожен окремим шортом."""
+    out, group = [], {}
+    for c in sorted((c for c in clips if c.get("on", True)), key=lambda c: float(c["a"])):
+        if c.get("g") in group: group[c["g"]].append(c); continue
+        out.append([c])
+        if c.get("g"): group[c["g"]] = out[-1]
+    return [sorted(cs, key=lambda c: c.get("gi", 0)) for cs in out]
 
 def render(pid, clips, elements, cues, out_dir, task):
     """Рендер усіх увімкнених кліпів у теку out_dir; поступ — у рядку task, підсумок — у JOB. Скасували — недороблений кліп геть, готові лишаються."""
@@ -398,10 +441,10 @@ def render(pid, clips, elements, cues, out_dir, task):
     try:
         with tempfile.TemporaryDirectory() as tmp:
             session = RenderSession(pid, elements, cues, out_dir, tmp); session.save(); JOB["out"] = str(session.out); session.copy_fonts()
-            todo = [c for c in clips if c.get("on", True)]; units = [clip_work(c) for c in todo]; total, t0 = max(.1, sum(units)), time.time()
-            for i, c in enumerate(todo, 1):
+            todo = videos(clips); units = [sum(map(clip_work, cs)) for cs in todo]; total, t0 = max(.1, sum(units)), time.time()
+            for i, cs in enumerate(todo, 1):
                 done = sum(units[:i - 1]); say = lambda s, i=i, d=done: report("render", f"Кліп {i} з {len(todo)}", min(.99, (d + s) / total), t0)
-                say(0); session.clip(i, len(todo), c, say, t0)
+                say(0); session.clip(i, len(todo), cs, say, t0)
             learn("render", sum(units), t0)
     except Cancelled:
         JOB["cancelled"] = True
@@ -414,7 +457,7 @@ def start(pid, clips, elements, cues, music, out, task):
     if JOB["running"]: raise HttpError(409, "Рендер уже йде")
     if not out: raise HttpError(400, "Не обрано теку для шортів")
     update_project(pid, lambda pr: pr.update(clips=clips, elements=elements, cues=cues, music=music))
-    JOB.update(running=True, n=sum(c.get("on", True) for c in clips), err="", out="", cancelled=False,
+    JOB.update(running=True, n=len(videos(clips)), err="", out="", cancelled=False,
                id=uuid.uuid4().hex[:10], project=pid, task=task or uuid.uuid4().hex)
     threading.Thread(target=render, args=(pid, clips, elements, cues, out, JOB["task"]), daemon=True).start()
     TASK.begin(None)                                               # рядок поступу тепер веде потік рендеру: запит, закінчуючись, його не прибирає

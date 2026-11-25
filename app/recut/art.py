@@ -143,6 +143,12 @@ def make_chat(el):
         d.text((x, y), l, font=f, fill=(240, 240, 245))
     return img, cw, ch
 
+def animated(el):
+    """Зображення — анімований GIF (стікер): у відео воно грає, а не стоїть першим кадром."""
+    p = Path(el.get("path") or "-")
+    if el.get("type") != "image" or p.suffix.lower() != ".gif" or not p.is_file(): return False
+    with Image.open(p) as im: return getattr(im, "n_frames", 1) > 1
+
 ART = {"card": make_card, "stream": make_card, "text": make_text, "image": make_image,   # елементи, що малюються картинкою поверх відео
        "chat": make_chat, "social": make_social}
 

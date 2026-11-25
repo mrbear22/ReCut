@@ -50,7 +50,7 @@ function tidySegs(c, e) {                                         // по пор
 // приглушена палітра таймлайна (як кліпи в Resolve); поза областю аналізу — темніше тло
 const PAL = {out: '#0b0a09', bg: '#141311', ruler: '#181614', line: '#272420', grid: '#1b1917', tick: '#5a544c', text: '#958e83',
   curve: '#2c2618', curveOut: '#1a1712', acc: '#ffcc33', blue: '#5e7fa3', blueDk: '#2b3644', accDk: '#3d3216', off: '#56524d', offDk: '#22211f',
-  red: '#b5574e', redDk: '#3a2422', green: '#6aa87a', greenDk: '#263529', greenSel: '#36573f', cueText: '#e3ece5', guide: '#d08ab4', play: '#e2533f'};
+  red: '#b5574e', redDk: '#3a2422', green: '#6aa87a', greenDk: '#263529', greenSel: '#36573f', cueText: '#e3ece5', guide: '#d08ab4', play: '#e2533f', link: '#8fb0d6'};
 const mixHex = (a, b, t) => '#' + [1, 3, 5].map(i => Math.round(parseInt(a.substr(i, 2), 16) * (1 - t) + parseInt(b.substr(i, 2), 16) * t).toString(16).padStart(2, '0')).join('');
 function curvePath() {                                            // «енергія» моменту як суцільна фігура під усім полотном
   const path = new Path2D(); path.moveTo(0, TH);
@@ -86,6 +86,11 @@ function drawTL() {
   for (let t = Math.ceil(view.t0 / tick) * tick; t < view.t1; t += tick) { const x = X(t); tx.fillStyle = PAL.tick; tx.fillRect(x, TICK - 5, 1, 5); tx.fillStyle = PAL.text; tx.fillText(fmt(t).replace(/\.\d$/, ''), x + 4, TICK * .72); }
   // кліпи; у вибраному — смужки елементів
   if (!P.clips.length) { tx.font = font(clamp(Math.round(CUE * .5), 12, 17)); tx.fillStyle = PAL.tick; tx.fillText('кліпи · Shift + перетягування — новий кліп, або «Знайти моменти»', 8, (CTOP + cb) / 2 + 5); }
+  for (const c of P.clips) {                                      // склейка: перемичка від кліпу до наступного в ній
+    const g = groupOf(c), nx = g[g.indexOf(c) + 1]; if (!nx) continue;
+    const a = X(c.b), b = X(nx.a); if (b < 0 || a > TW) continue;
+    tx.fillStyle = PAL.link; tx.fillRect(a, CTOP + 9, b - a, 2); tx.fillRect(a, CTOP + 5, 2, 10); tx.fillRect(b - 2, CTOP + 5, 2, 10);
+  }
   P.clips.forEach((c, i) => {
     const x0 = X(c.a), x1 = X(c.b); if (x1 < 0 || x0 > TW) return;
     const s = i === sel || multi.has(c), ctx = c === cc, col = !c.on ? PAL.off : s ? PAL.acc : c.col || PAL.blue; tx.font = font(11, 600);
@@ -99,7 +104,7 @@ function drawTL() {
     tx.fillStyle = col; tx.fillRect(x0, CTOP + 6, 3, cb - CTOP - 12); tx.fillRect(x1 - 3, CTOP + 6, 3, cb - CTOP - 12);
     if (hookOk(c)) { const a = X(c.hook[0]), b = X(c.hook[1]); tx.fillStyle = HOOK_COL + '30'; tx.fillRect(a, CTOP + 1, b - a, cb - CTOP - 2); tx.fillStyle = HOOK_COL; tx.fillRect(a, CTOP + 1, b - a, 3); tx.fillStyle = col; }
     if (c.loop != null && loopOk(c, c.loop)) { const lx = X(c.loop); tx.fillStyle = LOOP_COL; tx.fillRect(lx - 1, CTOP + 1, 2, cb - CTOP - 2); tx.fillText('↻', lx + 5, CTOP + 15); }
-    tx.fillStyle = col; const head = `#${i + 1}  ${clipLen(c).toFixed(1)} с`; tx.fillText(head, x0 + 8, CTOP + 15);
+    const gr = groupOf(c); tx.fillStyle = col; const head = `#${i + 1}  ${clipLen(c).toFixed(1)} с${gr.length > 1 ? `  · склейка ${gr.indexOf(c) + 1}/${gr.length}` : ''}`; tx.fillText(head, x0 + 8, CTOP + 15);
     if (locked(c)) padlock(x0 + 14 + tx.measureText(head).width, CTOP + 6, col);
     if (!ctx) return;
     tx.font = font(clamp(Math.round(BAR * .6), 11, 15));            // у витягнутих доріжках підписи більші
@@ -190,7 +195,8 @@ function drawTL() {
   }
   const mod = !loopKey && !drag?.hook && hover && hover.y >= TICK && MODS.find(m => hover[m.key]);
   if (mod) {                                                      // що зробить Shift / Alt / Ctrl
-    const label = mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.key === 'shift' && hover.y < TICK + 2 ? 'Shift: нова область аналізу' : mod.label;
+    const label = mod.key === 'ctrl' && hover.y < geo().cueY && hit(hover.x, hover.y).bar?.type === 'music' ? 'Ctrl: тягни — прокрутити трек під плиткою'
+      : mod.key === 'alt' && !clipAt(Tt(hover.x)) ? 'Alt: тягни всередині кліпу' : mod.key === 'shift' && hover.y >= geo().cueY ? 'Shift: нова репліка' : mod.key === 'shift' && hover.y < TICK + 2 ? 'Shift: нова область аналізу' : mod.label;
     tx.font = font(12, 600); const lh = 22, w = tx.measureText(label).width + 16, lx = clamp(hover.x + 12, 0, TW - w), ly = clamp(hover.y - lh - 6, TICK + 2, TH - lh - 2);
     rr(lx, ly, w, lh, 0); tx.fillStyle = mod.col; tx.fill(); tx.fillStyle = mod.ink; tx.fillText(label, lx + 8, ly + lh * .68); tx.font = font(11);
   }
@@ -218,11 +224,11 @@ const setMods = e => { if (hover) { hover.shift = e.shiftKey; hover.alt = e.altK
 addEventListener('keydown', e => { setMods(e); if (e.key === 'Alt' && hover) e.preventDefault(); }); addEventListener('keyup', setMods);
 tl.onpointerleave = () => hover = null;
 // ── магнетизм: краї кліпів, пропусків, області, реплік, елементів і курсор ──
-function snapPts(own) {
-  const pts = [...(own === 'ph' ? [] : [vid.currentTime]), ...region()], c = P.clips.length ? ctxClip() : null;   // 'ph' — тягнуть сам курсор
-  for (const k of P.clips) if (k !== own) { pts.push(k.a, k.b); for (const u of k.cut || []) if (u !== own) pts.push(...u); }
-  for (const q of P.cues) if (q !== own) pts.push(q.a, q.b);
-  if (c) for (const e of laneEls()) for (const x of segsOf(c, e)) if (x !== own) pts.push(...segSpan(c, x));
+function snapPts(own) {                                          // own — те, що тягнуть (або кілька таких): до себе не прилипає
+  const mine = [].concat(own), pts = [...(own === 'ph' ? [] : [vid.currentTime]), ...region()], c = P.clips.length ? ctxClip() : null;   // 'ph' — тягнуть сам курсор
+  for (const k of P.clips) if (!mine.includes(k)) { pts.push(k.a, k.b); for (const u of k.cut || []) if (!mine.includes(u)) pts.push(...u); }
+  for (const q of P.cues) if (!mine.includes(q)) pts.push(q.a, q.b);
+  if (c) for (const e of laneEls()) for (const x of segsOf(c, e)) if (!mine.includes(x)) pts.push(...segSpan(c, x));
   return pts;
 }
 let snapOff = false;                                              // Ctrl під час перетягування — без магнетизму
@@ -241,6 +247,11 @@ function hit(x, y) {
   }
   if (y >= cueY) {
     const row = spAt(y), inRow = c => c && rowOf(c) === row;
+    for (const [j, c] of P.cues.entries()) {                       // стик двох реплік (як у Resolve): точно на ньому — обидві межі разом, трохи вбік — лише та репліка
+      if (!inRow(c) || Math.abs(X(c.b) - x) >= 6) continue;
+      const n = P.cues.findIndex(q => q !== c && inRow(q) && Math.abs(q.a - c.b) < .02); if (n < 0) continue;
+      const d = x - X(c.b); return Math.abs(d) <= 2 ? {cue: j, edge: 'b', roll: n} : d < 0 ? {cue: j, edge: 'b'} : {cue: n, edge: 'a'};
+    }
     for (const j of [selCue, ...P.cues.keys()]) {
       const c = P.cues[j]; if (!inRow(c)) continue;
       if (Math.abs(X(c.a) - x) < 5) return {cue: j, edge: 'a'};
@@ -303,7 +314,8 @@ tl.onpointerdown = e => {
     const c = P.clips[i]; (c.cut ||= []).push([t, t]); sel = i; drag = {i, cut: c.cut.length - 1, edge: 1}; return;
   }
   if (drag.region) { if (!P.region) P.region = region(); drag.r0 = [...P.region]; return; }
-  if (drag.bar) { selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
+  if (drag.bar && drag.move != null && e.ctrlKey && drag.bar.type === 'music') drag.scroll = true;   // Ctrl+тягни музику — прокрутити трек під плиткою
+  if (drag.bar) { onPv = false; selEl = drag.bar.id; selOwn = ownOf(drag.c, drag.bar); renderEls(); if (drag.pick) { seek(t); drag = {seek: true}; } return; }
   if (drag.seek && !drag.scrub) { drag = {lasso: [Tt(e.offsetX), e.offsetY, Tt(e.offsetX), e.offsetY], t: snap(t, 'ph')}; return; }   // порожнє місце: клік — курсор сюди, тягни — лассо (межі рамки — час: масштаб їх не зсуває)
   if (drag.seek) seek(snap(t, 'ph'));
   else if (drag.cue != null) selectCue(drag.cue, false, false);    // лише вибрати: редактор — якщо це клік, а не перетягування (див. pointerup)
@@ -322,15 +334,31 @@ tl.oncontextmenu = e => {
   const t = clamp(Tt(e.offsetX), 0, dur), h = hit(e.offsetX, e.offsetY), inCues = e.offsetY >= geo().cueY;
   if (multi.has(P.clips[h.i]) || multi.has(P.cues[h.cue])) return openMenu(e, multiMenu());   // ПКМ по вибраному лассо — дії з усім разом
   multi.clear();
+  if (h.bar) { selBar = h.seg != null ? {c: h.c, k: h.seg} : null; onPv = false; }   // «Копіювати» й «Дублювати» в меню — саме цієї плитки
   openMenu(e, h.cue != null ? cueMenu(h.cue, t) : h.bar ? [...segItems(h.bar, h.c, t, h.seg), ...elMenu(h.bar, t, 'звідси')] : h.i != null ? clipMenu(h.i, t, 'тут') : laneMenu(t, inCues, inCues ? spAt(e.offsetY) : 0));
 };
+function tlHint(h, y) {                                           // підказка до того, що під курсором: що зробить мишка й клавіші-модифікатори
+  if (h.roll != null) return 'Стик двох реплік: тягни — обидві межі разом · трохи вбік — лише одна';
+  if (h.cue != null) return h.edge ? 'Тягни — край репліки · Ctrl — без прилипання' : 'Клік — редагувати текст · тягни — рухати · Ctrl — межі слів · B — розрізати · J — об\'єднати з наступною · ПКМ — усі дії';
+  if (h.lane === 'subs') return 'Shift+тягни — нова репліка · Ctrl+тягни стик слів — де починається слово';
+  if (h.bar?.type === 'music') return h.edge ? 'Тягни — край плитки' : 'Тягни — плитка разом зі звуком · Ctrl+тягни — прокрутити трек під плиткою · ПКМ — усі дії';
+  if (h.bar) return h.edge ? 'Тягни — коли елемент з\'являється чи зникає' : 'Тягни — рухати плитку · Ctrl+D — ще одна плитка поруч · Ctrl+C / Ctrl+V — на курсор · B — розрізати · ПКМ — усі дії';
+  if (h.region) return 'Тягни — край області аналізу';
+  if (h.scrub) return 'Клік — перемотати · Shift+тягни — нова область аналізу';
+  if (h.cut != null) return 'Тягни — край вирізаного шматка';
+  if (h.edge) return 'Тягни — край кліпу (Q / W — на курсор) · Ctrl — без прилипання';
+  if (h.i != null) return 'Тягни — рухати кліп · Alt+тягни — вирізати шматок · правий Alt+клік — петля · правий Alt+тягни — хук · ПКМ — усі дії';
+  return y < geo().cb ? 'Тягни — лассо · Shift+тягни — новий кліп · колесо — масштаб · затиснуте колесо — рухати' : '';
+}
+let tlTitle = '';
 tl.onpointermove = e => {
   hover = {x: e.offsetX, y: e.offsetY, shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey};
   if (!drag) {
     if (!P || !dur) return;
-    const h = hit(e.offsetX, e.offsetY);
-    if (e.ctrlKey && wordJoint(e.offsetX, e.offsetY)) { tl.style.cursor = 'ew-resize'; return; }
-    tl.style.cursor = e.shiftKey || e.altKey ? 'crosshair' : e.ctrlKey ? 'default' : h.scrub ? 'pointer' : h.move != null ? (locked(P.clips[h.i]) ? 'default' : 'grab') : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
+    const h = hit(e.offsetX, e.offsetY), tip = tr(tlHint(h, e.offsetY));
+    if (tip !== tlTitle) tl.title = tlTitle = tip;                  // атрибут — лише коли підказка змінилась: інакше вона блимає
+    if (e.ctrlKey && (wordJoint(e.offsetX, e.offsetY) || (h.bar?.type === 'music' && h.move != null))) { tl.style.cursor = 'ew-resize'; return; }
+    tl.style.cursor = e.shiftKey || e.altKey ? 'crosshair' : e.ctrlKey ? 'default' : h.scrub ? 'pointer' : h.move != null ? (locked(P.clips[h.i]) ? 'default' : 'grab') : h.roll != null ? 'col-resize' : h.region || h.edge != null ? 'ew-resize' : h.pick ? 'pointer' : 'default'; return;
   }
   if (drag.hook) {
     if (!drag.moved && Math.abs(e.offsetX - drag.x0) < 4) return; drag.moved = true; delete drag.hook.loop;   // хук замість петлі
@@ -362,18 +390,21 @@ tl.onpointermove = e => {
     const mus = e.type === 'music', off = e.off || 0;
     if (drag.edge === 'a') x[0] = clamp(toOut(c, snap(raw, x)), mus ? Math.max(0, -off) : 0, end - .2);
     else if (drag.edge === 'b') { const v = Math.min(toOut(c, snap(raw, x)), mus ? (e.dur || 1e9) - off : 1e9); x[1] = v >= n - .05 ? 0 : Math.max(v, (x[0] || 0) + .2); }
-    else if (mus) {                                              // зсув треку під шматками
+    else if (drag.scroll) {                                       // Ctrl: трек прокручується під плитками, плитки стоять
       const sg = segsOf(c, e), lo = -Math.min(...sg.map(y => y[0] || 0)), hi = (e.dur || 1e9) - Math.max(...sg.map(y => y[1] || n));
       drag.off0 ??= off; e.off = clamp(drag.off0 - (toOut(c, raw) - ((x[0] || 0) + drag.move)), lo, Math.max(lo, hi));
     } else {                                                       // «до кінця» лишається таким, поки смужка впирається в кінець
       const len = end - (x[0] || 0), start = toSrc(c, clamp(toOut(c, raw) - drag.move, 0, n - len), true);
       const nf = clamp(toOut(c, snapSpan(start, toSrc(c, toOut(c, start) + len) - start, x)), 0, n - len);
+      drag.s0 ??= x[0] || 0; drag.off0 ??= off;
       x[0] = nf; x[1] = nf + len < n - .05 ? nf + len : 0;
+      if (mus && segsOf(c, e).length === 1) e.off = drag.off0 - (nf - drag.s0);   // єдина плитка музики несе свій звук із собою
     }
     return;
   }
   if (drag.cue != null) {
-    const c = P.cues[drag.cue];
+    const c = P.cues[drag.cue], nx = P.cues[drag.roll];
+    if (nx) { c.b = nx.a = clamp(snap(raw, [c, nx]), c.a + .2, nx.b - .2); return; }   // спільний край: одна репліка коротшає, сусідня довшає
     if (drag.edge === 'a') c.a = Math.min(snap(raw, c), c.b - .2); else if (drag.edge === 'b') c.b = Math.max(snap(raw, c), c.a + .2);
     else { const len = c.b - c.a, sh = clamp(snapSpan(raw - drag.move, len, c), 0, dur - len) - c.a; c.a += sh; c.b += sh; if (c.k) c.k = c.k.map(v => v + sh); }
     return;
@@ -412,7 +443,7 @@ tl.onpointerup = e => {
   if (drag && drag.cut != null) P.clips[drag.i].cut = P.clips[drag.i].cut.filter(([u, v]) => v - u >= .2);    // випадковий клік, не пропуск
   if (drag && drag.i != null && (drag.edge || drag.move != null) && P.clips[drag.i] && !locked(P.clips[drag.i])) overwrite('clip', P.clips[drag.i]);
   if (drag && drag.i != null) commit();
-  if (drag && drag.cue != null && P.cues[drag.cue]?.k?.length) P.cues[drag.cue].k = P.cues[drag.cue].k.map(v => clamp(v, P.cues[drag.cue].a, P.cues[drag.cue].b));   // обрізали край — слова в межах репліки
+  if (drag && drag.cue != null) for (const q of [P.cues[drag.cue], P.cues[drag.roll]]) if (q?.k?.length) q.k = q.k.map(v => clamp(v, q.a, q.b));   // обрізали край — слова в межах репліки (і сусідньої на спільному краї)
   if (drag && drag.cue != null) { const c = P.cues[drag.cue]; P.cues.sort((x, y) => x.a - y.a); selCue = P.cues.indexOf(c); }
   if (drag && drag.bar && drag.seg != null && drag.c.segs?.[drag.bar.id]) tidySegs(drag.c, drag.bar);
   if (drag && drag.cue != null && P.cues[selCue]) overwrite('cue', P.cues[selCue]);

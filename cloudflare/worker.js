@@ -1,25 +1,33 @@
 // ReCut: сховище відео для Buffer на Cloudflare R2.
-// Програма кладе сюди шорт (PUT), Buffer забирає його за посиланням у момент публікації (GET/HEAD частинами),
-// після публікації програма прибирає файл (DELETE). Правило життєвого циклу R2 видаляє все, що старше 45 днів.
+// Програма кладе сюди шорт частинами (multipart: POST ?uploads → PUT ?uploadId&part=N → POST ?uploadId),
+// Buffer забирає його за посиланням у момент публікації (GET/HEAD частинами),
+// щойно пост вийшов — програма прибирає файл (DELETE). Правило життєвого циклу R2 — лише запобіжник для забутих файлів.
 // Прив'язка: R2-бакет з назвою змінної MEDIA (Settings → Bindings).
 
 const UPLOAD_KEY = 'b32da63b13f2f4263d6baf0f3ecb65fa';   // той самий ключ, що в програмі: не пароль, а захист від випадкових завантажень
-const MAX_BYTES = 100 * 1024 * 1024;                      // безкоштовний Worker не приймає тіло запиту понад 100 МБ
+const MAX_BYTES = 100 * 1024 * 1024;                      // безкоштовний Worker не приймає тіло запиту понад 100 МБ — тому великі файли йдуть частинами
 const NAME = /^\/v\/[a-f0-9]{16,40}\.mp4$/;
+const TYPE = {httpMetadata: {contentType: 'video/mp4'}};
 
 export default {
   async fetch(req, env) {
-    const path = new URL(req.url).pathname;
+    const url = new URL(req.url), path = url.pathname, q = url.searchParams;
     if (!NAME.test(path)) return new Response('Not found', {status: 404});
-    const key = path.slice(1);
+    const key = path.slice(1), done = () => new Response(url.origin + path, {status: 201});
 
-    if (req.method === 'PUT' || req.method === 'DELETE') {
+    if (req.method === 'PUT' || req.method === 'POST' || req.method === 'DELETE') {
       if (req.headers.get('x-upload-key') !== UPLOAD_KEY) return new Response('Forbidden', {status: 403});
-      if (req.method === 'DELETE') { await env.MEDIA.delete(key); return new Response(null, {status: 204}); }
-      const size = +req.headers.get('content-length');
-      if (!size || size > MAX_BYTES) return new Response('Too large', {status: 413});
-      await env.MEDIA.put(key, req.body, {httpMetadata: {contentType: 'video/mp4'}});
-      return new Response(new URL(req.url).origin + path, {status: 201});
+      const up = q.get('uploadId') && env.MEDIA.resumeMultipartUpload(key, q.get('uploadId'));
+      if (req.method === 'POST' && q.has('uploads')) return Response.json({uploadId: (await env.MEDIA.createMultipartUpload(key, TYPE)).uploadId});
+      if (req.method === 'POST' && up) { await up.complete(await req.json()); return done(); }
+      if (req.method === 'PUT' && up) return Response.json(await up.uploadPart(+q.get('part'), req.body));
+      if (req.method === 'DELETE') { await (up ? up.abort() : env.MEDIA.delete(key)); return new Response(null, {status: 204}); }
+      if (req.method === 'PUT') {                            // одним запитом — так викладали старі версії програми
+        const size = +req.headers.get('content-length');
+        if (!size || size > MAX_BYTES) return new Response('Too large', {status: 413});
+        await env.MEDIA.put(key, req.body, TYPE); return done();
+      }
+      return new Response('Bad request', {status: 400});
     }
 
     if (req.method === 'HEAD') {
@@ -38,7 +46,7 @@ export default {
       return new Response(obj.body, {status: 206, headers: headersOf(obj, {
         'content-length': length, 'content-range': `bytes ${offset}-${offset + length - 1}/${obj.size}`})});
     }
-    return new Response('Method not allowed', {status: 405, headers: {allow: 'GET, HEAD, PUT, DELETE'}});
+    return new Response('Method not allowed', {status: 405, headers: {allow: 'GET, HEAD, PUT, POST, DELETE'}});
   },
 };
 

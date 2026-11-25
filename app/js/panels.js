@@ -108,7 +108,7 @@ function renderEls() {
     const Ty = TYPES[e.type], note = e.type === 'fx' ? tr(fxName(e)) : e.title || e.text || e.channel || e.name || e.handle || '', lane = !['subs', 'bg'].includes(e.type);
     const has = c => inClip(c, e) && segsOf(c, e).length > 0, here = !cc || has(cc), where = lane && !here ? 'не в цьому кліпі' : '';
     const dh = lane && P.clips.some(c => !has(c)) ? `<em class="dh">${here ? 'тягни на інші кліпи' : 'тягни на кліп'}</em>` : '';   // лише під курсором
-    return `<div class="el ${e.id === selEl && !selOwn ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
+    return `<div class="el ${e.id === selEl && !selOwn ? 'sel' : ''} ${e.on ? '' : 'off'} ${lane && !here ? 'away' : ''}" data-id="${e.id}" draggable="${lane}" title="${lane ? 'Тягни на кліп на таймлайні — додати в нього · ' : ''}H — сховати · ] / [ — шар вище / нижче · ПКМ — усі дії"><span class="ic" style="background:${Ty.col}">${Ty.ic}</span>
       <span class="nm">${Ty.name}${where ? `<em class="${dh ? 'dn' : ''}">${where}</em>` : ''}${dh}${note ? `<small>${esc(note)}</small>` : ''}</span>
       <span class="tl">${canOwn(e) && cc && here ? `<button data-a="link" class="lnk ${ownOf(cc, e) ? 'own' : ''}" title="${ownOf(cc, e) ? 'Свій у цьому кліпі · G' : 'Глобальний · G'}" aria-label="Глобальний">${ownOf(cc, e) ? ICON_UNLINK : ICON_LINK}</button>` : ''}<button data-a="eye" title="${e.on ? 'Сховати' : 'Показати'}" aria-label="Видимість">${e.on ? '◉' : '○'}</button>
       <button data-a="up" title="Вище" aria-label="Вище">↑</button><button data-a="down" title="Нижче" aria-label="Нижче">↓</button>
@@ -160,9 +160,13 @@ function moveEl(el, where) {                                      // поряд�
 }
 $('#cat').innerHTML = CATALOG.map(([g, items], gi) => `<h4>${g}</h4><div class="cg">${items.map(([n, d, p], i) =>
   `<button data-g="${gi}" data-i="${i}"><i>${TYPES[p.type].ic}</i><b>${n}</b></button>`).join('')}</div>`).join('') +
+  '<h4>Бібліотека</h4><div class="cg"><button data-lib="emoji"><i>☺</i><b>Анімовані емодзі</b></button><button data-lib="sfx"><i>♫</i><b>Звуки</b></button></div>' +
   '<button class="wide" id="impOpen" style="margin-top:14px">Імпорт з іншого проєкту…</button>';
 $('#addEl').onclick = e => P ? togglePop('#cat', e) : msg('Спершу відкрий або створи проєкт', 1);
-$('#cat').addEventListener('click', e => { if (e.target.closest('#impOpen')) { $('#cat').classList.remove('on'); openImport(); } });
+$('#cat').addEventListener('click', e => {
+  if (e.target.closest('#impOpen')) { $('#cat').classList.remove('on'); openImport(); }
+  const lb = e.target.closest('[data-lib]'); if (lb) { $('#cat').classList.remove('on'); openLib(lb.dataset.lib); }
+});
 $('#cat').onclick = e => {
   const b = e.target.closest('button[data-g]'); if (!b || !P) return; $('#cat').classList.remove('on');
   const {stack, ...p} = CATALOG[b.dataset.g][1][b.dataset.i][2];

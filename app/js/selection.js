@@ -10,10 +10,25 @@ document.addEventListener('pointerdown', e => {                   // клік д
   if (selCue < 0 || e.target.closest('#cueEdit,#ctx')) return;
   selCue = -1; $('#cueEdit').classList.remove('on'); drawTL();
 }, true);
-for (const id of ['#layers', '#propsBox']) $(id).addEventListener('pointerdown', () => { focus = 'el'; selBar = null; }); pv.addEventListener('pointerdown', () => { focus = 'el'; selBar = null; });
+for (const id of ['#layers', '#propsBox']) $(id).addEventListener('pointerdown', () => { focus = 'el'; selBar = null; onPv = false; }); pv.addEventListener('pointerdown', () => { focus = 'el'; selBar = null; onPv = true; });
 $('#list').addEventListener('pointerdown', () => focus = 'clip');
-let selBar = null;                                                // шматок елемента, вибраний на таймлайні: {c, k}
+let selBar = null, onPv = false;                                  // плитка елемента, вибрана на таймлайні: {c, k}; onPv — елемент вибрали на прев'ю
 const elClip = () => selBar?.c || clipAt(vid.currentTime) || (P.clips.length ? ctxClip() : null);
+const tileable = e => !!e && !['subs', 'bg'].includes(e.type);
+function curTile() {                                              // з якою плиткою працюють Ctrl+C / Ctrl+D: вибрана на таймлайні, а на прев'ю — та, що зараз видно
+  const e = focus === 'el' && elById(selEl); if (!tileable(e)) return null;
+  if (selBar) return segsOf(selBar.c, e)[selBar.k] ? selBar : null;
+  const c = onPv && clipAt(vid.currentTime); if (!c || !inClip(c, e)) return null;
+  const rel = toOut(c, vid.currentTime), n = net(c), k = segsOf(c, e).findIndex(([a, b]) => rel >= (a || 0) && rel < (b || n));
+  return k < 0 ? null : {c, k};
+}
+const tileLen = ({c, k}, e) => { const x = segsOf(c, e)[k]; return (x[1] || net(c)) - (x[0] || 0); };
+function placeTile(c, e, s, len) {                                // нова плитка елемента в кліпі з моменту s: як усе покладене зверху, підрізає те, що під нею
+  const n = net(c), b = Math.min(n, s + len); if (b - s < .2) return msg('Тут немає місця для плитки', 1);
+  const rest = ([u, v]) => { u ||= 0; v ||= n; return [[u, Math.min(v, s)], [Math.max(u, b), v]].filter(([p, q]) => q - p >= .2); };
+  const segs = c.segs[e.id] = [...ownSegs(c, e).flatMap(rest), [s, b]].sort((x, y) => x[0] - y[0]).map(([p, q]) => [p, q >= n - .05 ? 0 : q]);
+  selEl = e.id; selOwn = ownOf(c, e); selBar = {c, k: segs.findIndex(([p]) => p === s)}; focus = 'el'; renderEls(); save();
+}
 function removeFromClip(el, c = elClip(), k = selBar?.c === c ? selBar.k : null) {   // Del: лише з цього кліпу; шматок — лише шматок
   if (!c || ['subs', 'bg'].includes(el.type) || !inClip(c, el) || !segsOf(c, el).length) return false;
   const sg = c.segs?.[el.id];
@@ -65,20 +80,24 @@ function removeSel() {
 }
 function copySel() {
   const [kind, v] = focus === 'cue' && P.cues[selCue] ? ['cue', P.cues[selCue]] : focus === 'el' && elById(selEl) ? ['el', elById(selEl)] : ['clip', P.clips[sel]];
-  if (!v) return; clipboard = {kind, v: structuredClone(v), segs: kind === 'el' && P.clips.length ? structuredClone(segsOf(ctxClip(), v)) : null};
-  msg(`Скопійовано: ${kind === 'el' ? TYPES[v.type].name.toLowerCase() : kind === 'cue' ? 'репліку' : 'кліп'}`);
+  if (!v) return; const tile = kind === 'el' && curTile();
+  clipboard = {kind, v: structuredClone(v), segs: kind === 'el' && P.clips.length ? structuredClone(segsOf(ctxClip(), v)) : null, tile: tile && tileLen(tile, v)};
+  msg(`Скопійовано: ${tile ? 'плитку' : kind === 'el' ? TYPES[v.type].name.toLowerCase() : kind === 'cue' ? 'репліку' : 'кліп'}`);
 }
 const shiftCuts = (cut, d) => (cut || []).map(([x, y]) => [x + d, y + d]);
-const duplicate = () => focus === 'cue' && P.cues[selCue] ? dupCue(P.cues[selCue]) : focus === 'el' && selBar?.c && canOwn(elById(selEl)) ? dupBar() : (copySel(), paste());
-function dupBar() {                                               // Ctrl+D по смужці: копія — окремий елемент лише в цьому кліпі, одразу після неї
-  const {c, k} = selBar, e = elById(selEl), x = segsOf(c, e)[k]; if (!x) return;
-  const n = net(c), end = x[1] || n, len = end - (x[0] || 0), s = Math.min(end, Math.max(0, n - len));
-  const el = {...structuredClone(effEl(e, c)), id: uid(), solo: true}; delete el._own;
-  (c.segs ||= {})[el.id] = [[s, s + len < n - .05 ? s + len : 0]];
-  P.elements.splice(P.elements.indexOf(e) + 1, 0, el); selEl = el.id; selOwn = null; selBar = {c, k: 0}; renderEls(); save();
+function duplicate() {                                            // плитка — ще одна плитка поруч; елемент зі списку — новий елемент
+  if (focus === 'cue' && P.cues[selCue]) return dupCue(P.cues[selCue]);
+  const t = curTile(); if (!t) { copySel(); return paste(); }
+  const e = elById(selEl), x = segsOf(t.c, e)[t.k], n = net(t.c), end = x[1] || n;
+  if (end > n - .2) return msg('Після плитки кліп закінчується', 1);
+  placeTile(t.c, e, end, tileLen(t, e));
 }
-function paste(t = vid.currentTime) {                             // елемент — трохи зсунутим; кліп і репліку — на курсор
+function paste(t = vid.currentTime) {                             // плитка — на курсор у тій самій доріжці; елемент — трохи зсунутим; кліп і репліку — на курсор
   if (!clipboard) return; const {kind, v} = clipboard, sh = t - (v.a ?? 0);
+  if (kind === 'el' && clipboard.tile && elById(v.id)) {
+    const c = clipAt(t); if (!c) return msg('Курсор не на кліпі', 1);
+    return placeTile(c, elById(v.id), toOut(c, t), clipboard.tile);
+  }
   if (kind === 'el') {
     if (SINGLE.includes(v.type) && els().some(e => e.type === v.type)) return msg(`${TYPES[v.type].name} може бути лише один`, 1);
     const el = {...structuredClone(v), id: uid(), x: (v.x ?? 0) + 40, y: v.y + 40}, c = P.clips.length ? ctxClip() : null;

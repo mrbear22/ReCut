@@ -13,7 +13,7 @@ YOUTUBE_CATEGORY = "20"                                            # «Ігри�
 # або видаляють файл за години (uguu). Тому відео лежать у сховищі розробника: Cloudflare R2 за Worker (cloudflare/worker.js).
 MEDIA_BASE = "https://shortsmaker-media.mykhailoholotiuk.workers.dev/"           # адреса Worker (cloudflare/worker.js)
 MEDIA_KEY = "b32da63b13f2f4263d6baf0f3ecb65fa"                    # такий самий у worker.js: не пароль, а захист від випадкових завантажень
-MEDIA_MAX_MB, UPLOAD_CHUNK = 95, 256 * 1024                        # безкоштовний Worker не приймає понад 100 МБ
+PART, UPLOAD_CHUNK = 64 * 2 ** 20, 256 * 1024                      # безкоштовний Worker не приймає запит понад 100 МБ — більший файл іде кількома частинами
 
 
 class Buffer:
@@ -135,25 +135,45 @@ class WorkerMedia:
 
     base = MEDIA_BASE
 
-    def upload(self, path, name, progress=lambda frac: None):
-        path = Path(path); size = path.stat().st_size
-        if size > MEDIA_MAX_MB * 2 ** 20: raise RuntimeError(f"Шорт більший за {MEDIA_MAX_MB} МБ — сховище не прийме")
-        u = urllib.parse.urlsplit(self.base + "v/" + name); c = http.client.HTTPSConnection(u.netloc, timeout=120)
+    def _call(self, method, path, body=b"", size=None, feed=None):
+        """Запит до Worker; feed(conn) сам шле тіло довжини size — великий файл не тримаємо в пам'яті."""
+        u = urllib.parse.urlsplit(self.base + path); c = http.client.HTTPSConnection(u.netloc, timeout=120)
         try:
-            c.putrequest("PUT", u.path)
-            for k, v in {"Content-Type": "video/mp4", "Content-Length": size, "X-Upload-Key": MEDIA_KEY, "User-Agent": "ReCut"}.items(): c.putheader(k, str(v))
-            c.endheaders(); sent = 0
-            with path.open("rb") as fh:                              # частинами: великий файл не в пам'яті й видно поступ
-                while chunk := fh.read(UPLOAD_CHUNK):
-                    c.send(chunk); sent += len(chunk); progress(sent / size)
-            r = c.getresponse(); body = r.read().decode("utf-8", "ignore").strip()
+            c.putrequest(method, u.path + (f"?{u.query}" if u.query else ""))
+            for k, v in {"Content-Length": len(body) if size is None else size, "X-Upload-Key": MEDIA_KEY, "User-Agent": "ReCut"}.items(): c.putheader(k, str(v))
+            c.endheaders(); feed(c) if feed else c.send(body)
+            r = c.getresponse(); out = r.read().decode("utf-8", "ignore").strip()
         except OSError as e: raise RuntimeError(f"Не вдалося викласти відео: {e}") from e
         finally: c.close()
-        if r.status != 201: raise RuntimeError(f"Сховище відео відповіло {r.status}: {body[:150]}")
-        return self.base + "v/" + name
+        if r.status >= 300: raise RuntimeError(f"Сховище відео відповіло {r.status}: {out[:150]}")
+        return out
+
+    def upload(self, path, name, progress=lambda frac: None):
+        """Частинами по PART (обмеження Worker на запит), обірвана частина пробує ще двічі; розмір файлу не обмежений."""
+        path, key = Path(path), "v/" + name; size = path.stat().st_size
+        q = f"{key}?uploadId={urllib.parse.quote(json.loads(self._call('POST', key + '?uploads'))['uploadId'], safe='')}"
+        try:
+            parts = []
+            with path.open("rb") as fh:
+                for n, at in enumerate(range(0, max(size, 1), PART), 1):
+                    length = min(PART, size - at)
+                    def feed(c):
+                        fh.seek(at); left = length
+                        while left and (chunk := fh.read(min(UPLOAD_CHUNK, left))):
+                            c.send(chunk); left -= len(chunk); progress((at + length - left) / size)
+                    for attempt in range(3):
+                        try: parts.append(json.loads(self._call("PUT", f"{q}&part={n}", size=length, feed=feed))); break
+                        except RuntimeError:
+                            if attempt == 2: raise
+            self._call("POST", q, json.dumps(parts).encode())
+        except Exception:
+            try: self._call("DELETE", q)                           # недокачане не лишаємо в сховищі
+            except RuntimeError: pass
+            raise
+        return self.base + key
 
     def delete(self, url):
-        """Прибрати відео, яке Buffer уже опублікував. Не вийшло — не біда: сховище саме чистить усе старше 45 днів."""
-        if not url.startswith(self.base): return
-        try: urllib.request.urlopen(urllib.request.Request(url, method="DELETE", headers={"X-Upload-Key": MEDIA_KEY, "User-Agent": "ReCut"}), timeout=30).close()
-        except OSError: pass
+        """Прибрати відео, яке Buffer уже опублікував. Не вийшло — спробуємо під час наступної перевірки."""
+        if not url.startswith(self.base): return False
+        try: self._call("DELETE", url[len(self.base):]); return True
+        except RuntimeError: return False

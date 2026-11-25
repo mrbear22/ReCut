@@ -46,8 +46,10 @@ const CLIP_COLORS = [[null, 'Без кольору'], ['#c25b52', 'Червон�
 function clipMenu(i, t, at) {
   const c = P.clips[i], cut = (c.cut || []).find(([u, v]) => t >= u && t <= v);
   sel = i; selCue = -1; focus = 'clip'; $('#cueEdit').classList.remove('on'); renderList(); renderProps();
-  const lk = locked(c);
-  return [{hd: `Кліп #${i + 1} · ${net(c).toFixed(1)} с`}, {label: lk ? 'Розблокувати кліп' : 'Заблокувати кліп', key: 'L', run: () => toggleLock(c)}, {label: 'Додати музику в кліп', key: 'M', run: () => addMusicEl(c)},
+  const lk = locked(c), gr = groupOf(c);
+  return [{hd: gr.length > 1 ? `Кліп #${i + 1} · ${gr.indexOf(c) + 1} з ${gr.length} у склейці` : `Кліп #${i + 1} · ${net(c).toFixed(1)} с`},
+    gr.length > 1 && {label: 'Вийняти зі склейки', key: 'Ctrl+Shift+G', run: () => ungroupClip(c)},
+    gr.length > 1 && {label: 'Розклеїти на окремі кліпи', run: () => ungroupClip(c, true)}, {label: lk ? 'Розблокувати кліп' : 'Заблокувати кліп', key: 'L', run: () => toggleLock(c)}, {label: 'Додати музику в кліп', key: 'M', run: () => addMusicEl(c)},
     {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: (c.col || null) === col, run: () => { c.col = col || undefined; commit(); }}))},
     cut && !lk && {label: 'Повернути вирізане', run: () => { c.cut = c.cut.filter(u => u !== cut); commit(); }},
     {label: 'Програти кліп', key: 'Shift+Space', run: () => playClip(P.clips.indexOf(c))},
@@ -202,6 +204,7 @@ function multiMenu() {
   return [{hd: `Вибрано: ${[cl.length && plural(cl.length, 'кліп', 'кліпи', 'кліпів'), qs.length && plural(qs.length, 'репліка', 'репліки', 'реплік')].filter(Boolean).join(', ')}`},
     ...(qs.length ? [{hd: 'Перенести репліки до спікера'}, ...subsEls().map((s, r) => ({label: subName(s, r), on: qs.every(q => cueOwner(q) === s), run: () => moveCues(qs, s)})),
       {label: 'Новий спікер', run: () => { const from = cueOwner(qs[0]) || ensureSubs(); if (!from.name) from.name = tr('Спікер 1'); moveCues(qs, addSubsEl(P.elements, '', from)); }}, '-'] : []),
+    ...(cl.length > 1 ? [{label: 'Склеїти в один шорт', key: 'Ctrl+G', on: cl.every(c => c.g && c.g === cl[0].g), run: () => groupClips(cl)}] : []),
     ...(cl.length ? [{label: cl.every(c => c.on) ? 'Не рендерити ці кліпи' : 'Рендерити ці кліпи', run: () => { const v = !cl.every(c => c.on); cl.forEach(c => c.on = v); commit(); }},
       {row: CLIP_COLORS.map(([col, title]) => ({sw: col, title, on: cl.every(c => (c.col || null) === col), run: () => { cl.forEach(c => c.col = col || undefined); commit(); }}))}, '-'] : []),
     {label: 'Видалити вибране', key: 'Del', run: deleteMulti}];

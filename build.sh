@@ -16,7 +16,7 @@ zipfile.ZipFile(w / "py.zip").extractall(out / "runtime")
 for whl in (w / "wheels").glob("*.whl"): zipfile.ZipFile(whl).extractall(out / "runtime/Lib/site-packages")
 next((out / "runtime").glob("python*._pth")).write_text("python312.zip\n.\nLib\\site-packages\n..\\app\nimport site\n")
 PY
-cp app/shorts.py app/ui.html app/styles.css app/publish.js app/i18n.js app/icon-32.png app/icon-256.png app/favicon.ico "$OUT/app/" && cp -r app/js "$OUT/app/" && mkdir -p "$OUT/app/recut" && cp app/recut/*.py "$OUT/app/recut/" && cp -r app/fonts "$OUT/app/"   # код програми — пакет recut; шрифти й значок вікна
+cp app/shorts.py app/ui.html app/styles.css app/publish.js app/i18n.js app/icon-32.png app/icon-256.png app/favicon.ico "$OUT/app/" && cp -r app/js app/lang "$OUT/app/" && mkdir -p "$OUT/app/recut" && cp app/recut/*.py "$OUT/app/recut/" && cp -r app/fonts "$OUT/app/" && cp CREDITS.md "$OUT/"   # код програми — пакет recut; шрифти й значок вікна; автори матеріалів бібліотеки
 (cd launcher && $PY -m ziglang cc -target x86_64-windows-gnu -municode -O2 -s -Wl,--subsystem,windows launcher.c app.rc -o "../$OUT/ReCut.exe")
 printf '@echo off\r\n"%%~dp0runtime\\python.exe" "%%~dp0app\\shorts.py"\r\npause\r\n' > "$OUT/ReCut (debug).bat"
 VER=$(sed -n 's/^REPO, VERSION = .*"\([0-9.]*\)".*/\1/p' app/recut/update.py)   # версія — тег релізу

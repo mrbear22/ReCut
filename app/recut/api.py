@@ -2,7 +2,7 @@
 Функція отримує параметри запиту (GET — рядок запиту, POST — JSON) і повертає відповідь як дані (JSON) або Reply."""
 import base64, io, threading, webbrowser
 from datetime import datetime
-from . import brands
+from . import brands, library
 from .analysis import AI, analyze
 from .art import art
 from .camera import detect_cam
@@ -13,7 +13,7 @@ from .projects import cover, delete_project, listing, load_project, new_project,
 from .publishing import BUFFER, publish_batch, save_post, unqueue
 from .render import JOB, render_dir, start as start_render
 from .storage import clear_store, storage
-from .stt import subtitles
+from .stt import realign, subtitles
 from .system import LINKS, WINDOWS, ask_dir, ask_file, finish_update, quit_app, reveal
 from .twitch import TW_PENDING, check_vod, preview_progress, status as twitch_status, tw_login, tw_logout, twitch_videos, vod
 from .update import UPDATE, VERSION, apply_update
@@ -120,6 +120,23 @@ def find_moments(d): return analyze(d["video"], d.get("region"), d.get("suggest"
 
 @post("/api/subs")
 def make_subtitles(d): return subtitles(d["video"], d.get("spans") or [d["region"]], d.get("lang", ""), d.get("words", 3))
+
+@post("/api/realign")
+def realign_cue(d): return dict(k=realign(d["video"], float(d["a"]), float(d["b"]), d["text"], d.get("lang", "")))
+
+# ── бібліотека: анімовані емодзі й звуки (качаються при першому використанні) ──
+@get("/api/lib/emoji")
+def lib_emoji(q): return library.emoji_list()
+
+@post("/api/lib/emoji")
+def lib_emoji_file(d): p = library.emoji(d["code"]); PICKED.add(p); return dict(path=p)
+
+@get("/api/lib/sounds")
+def lib_sounds(q): return library.sound_packs()
+
+@post("/api/lib/sounds")
+def lib_sound_pack(d):
+    out = library.sound_pack(d["id"]); PICKED.update(s["path"] for s in out); return out   # прослухати й додати
 
 @post("/api/element")
 def element_image(d):
